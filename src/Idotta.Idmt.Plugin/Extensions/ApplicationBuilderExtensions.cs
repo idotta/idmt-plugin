@@ -50,7 +50,12 @@ public static class ApplicationBuilderExtensions
         
         try
         {
-            if (autoMigrate || options.Value.Database.AutoMigrate)
+            // For in-memory database, just ensure created
+            if (context.Database.IsInMemory())
+            {
+                context.Database.EnsureCreated();
+            }
+            else if (autoMigrate || options.Value.Database.AutoMigrate)
             {
                 context.Database.Migrate();
             }
