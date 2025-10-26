@@ -5,8 +5,9 @@ Identity MultiTenant plugin library for ASP.NET Core that provides automatic ide
 ## Features
 
 - **Multi-Tenant Support**: Built-in multi-tenancy using Finbuckle.MultiTenant
-- **Identity Management**: ASP.NET Core Identity integration with JWT authentication
-- **Vertical Slice Architecture**: Each identity endpoint has its own handler (Login, Register, Logout)
+- **Identity Management**: ASP.NET Core Identity integration with JWT and cookie authentication
+- **Vertical Slice Architecture**: Each identity endpoint has its own handler interface and implementation
+- **Minimal APIs**: Modern endpoint routing with clean, composable APIs
 - **Configurable**: Extensive configuration options for identity, JWT, and multi-tenancy
 - **Database Agnostic**: Works with any Entity Framework Core provider
 
@@ -15,7 +16,7 @@ Identity MultiTenant plugin library for ASP.NET Core that provides automatic ide
 ### 1. Install the Package
 
 ```bash
-dotnet add package Idotta.Idmt.Plugin
+dotnet add package Idmt.Plugin
 ```
 
 ### 2. Configure Services
