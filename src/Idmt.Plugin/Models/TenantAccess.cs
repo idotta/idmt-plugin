@@ -1,0 +1,39 @@
+namespace Idmt.Plugin.Models;
+
+/// <summary>
+/// Entity to track which staff users can access which tenants
+/// </summary>
+public sealed class TenantAccess
+{
+    public Guid Id { get; set; } = Guid.CreateVersion7();
+
+    /// <summary>
+    /// System user ID (user in "system" tenant)
+    /// </summary>
+    public Guid UserId { get; set; }
+
+    /// <summary>
+    /// Target tenant ID the user can access
+    /// </summary>
+    public string TenantId { get; set; } = null!;
+
+    /// <summary>
+    /// When access was granted
+    /// </summary>
+    public DateTime GrantedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Who granted the access
+    /// </summary>
+    public Guid? GrantedBy { get; set; }
+
+    /// <summary>
+    /// Whether access is currently active
+    /// </summary>
+    public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// Optional expiration date
+    /// </summary>
+    public DateTime? ExpiresAt { get; set; }
+}

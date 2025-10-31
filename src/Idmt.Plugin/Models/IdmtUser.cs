@@ -5,35 +5,46 @@ namespace Idmt.Plugin.Models;
 /// <summary>
 /// Multi-tenant application user that extends IdentityUser
 /// </summary>
-public class IdmtUser : IdentityUser
+public class IdmtUser : IdentityUser<Guid>
 {
-    /// <summary>
-    /// The tenant identifier this user belongs to
-    /// </summary>
-    public string? TenantId { get; set; }
+    public override Guid Id { get; set; } = Guid.CreateVersion7();
+
+    public override string? SecurityStamp { get; set; } = Guid.NewGuid().ToString();
+
+    public override string? ConcurrencyStamp { get; set; } = Guid.NewGuid().ToString();
 
     /// <summary>
-    /// User's first name
+    /// The tenant this user belongs to (null for system users).
     /// </summary>
-    public string? FirstName { get; set; }
+    public string TenantId { get; set; } = null!;
 
     /// <summary>
-    /// User's last name
-    /// </summary>
-    public string? LastName { get; set; }
-
-    /// <summary>
-    /// Indicates if the user is active
+    /// Soft delete flag - inactive users are considered deleted.
     /// </summary>
     public bool IsActive { get; set; } = true;
 
     /// <summary>
-    /// Date when the user was created
+    /// When this user was created.
     /// </summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     /// <summary>
-    /// Date when the user was last updated
+    /// When this user was last updated.
     /// </summary>
-    public DateTime? UpdatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// When this user last logged in.
+    /// </summary>
+    public DateTime? LastLoginAt { get; set; }
+
+    /// <summary>
+    /// ID of the user who created this user.
+    /// </summary>
+    public Guid CreatedBy { get; set; } = Guid.Empty;
+
+    /// <summary>
+    /// ID of the user who last updated this user.
+    /// </summary>
+    public Guid UpdatedBy { get; set; } = Guid.Empty;
 }

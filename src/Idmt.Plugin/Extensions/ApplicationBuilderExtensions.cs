@@ -4,8 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Finbuckle.MultiTenant;
 using Idmt.Plugin.Configuration;
-using Idmt.Plugin.Models;
 using Idmt.Plugin.Middleware;
+using Idmt.Plugin.Persistence;
 
 namespace Idmt.Plugin.Extensions;
 

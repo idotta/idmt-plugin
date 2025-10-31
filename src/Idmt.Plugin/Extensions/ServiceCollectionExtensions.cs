@@ -11,6 +11,7 @@ using Idmt.Plugin.Models;
 using Idmt.Plugin.Features.Login;
 using Idmt.Plugin.Features.Register;
 using Idmt.Plugin.Features.Logout;
+using Idmt.Plugin.Persistence;
 
 namespace Idmt.Plugin.Extensions;
 
@@ -44,6 +45,7 @@ public static class ServiceCollectionExtensions
         // Add multi-tenant services
         services.AddMultiTenant<TenantInfo>()
             .WithHeaderStrategy("tenant-id")
+            .WithEFCoreStore
             .WithInMemoryStore();
 
         // Add Entity Framework with multi-tenant support

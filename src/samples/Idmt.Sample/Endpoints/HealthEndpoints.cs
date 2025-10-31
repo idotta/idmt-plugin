@@ -1,5 +1,5 @@
 using Finbuckle.MultiTenant;
-using Idmt.Plugin.Models;
+using Idmt.Plugin.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
