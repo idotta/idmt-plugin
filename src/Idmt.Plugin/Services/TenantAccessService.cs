@@ -101,18 +101,19 @@ internal sealed class TenantAccessService(
             else
             {
                 dbContext.Users.Add(targetUser);
+
+                // Copy roles from system user to target tenant user
+                foreach (var roleId in userRoleIds)
+                {
+                    var userRole = new IdentityUserRole<Guid>
+                    {
+                        UserId = targetUser.Id,
+                        RoleId = roleId
+                    };
+                    dbContext.UserRoles.Add(userRole);
+                }
             }
 
-            // Copy roles from system user to target tenant user
-            foreach (var roleId in userRoleIds)
-            {
-                var userRole = new IdentityUserRole<Guid>
-                {
-                    UserId = targetUser.Id,
-                    RoleId = roleId
-                };
-                dbContext.UserRoles.Add(userRole);
-            }
             await dbContext.SaveChangesAsync();
         }
         catch (Exception)

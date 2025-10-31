@@ -94,15 +94,32 @@ public class IdmtDbContext
             entity.HasIndex(ta => ta.TenantId);
             entity.HasIndex(ta => ta.IsActive);
         });
-    }
 
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        if (TenantInfo != null)
+        // Configure TenantInfo - IdmtTenantStoreDbContext accesses this table but doesn't configure it
+        builder.Entity<IdmtTenantInfo>(entity =>
         {
-            // Configure tenant-specific options if needed
-        }
+            entity.ToTable("TenantInfo");
+            entity.HasKey(ti => ti.Id);
+            entity.Property(ti => ti.Id).HasMaxLength(64);
+            entity.HasIndex(ti => ti.Identifier).IsUnique();
 
-        base.OnConfiguring(optionsBuilder);
+            // Indexes for common queries on custom properties
+            entity.HasIndex(ti => ti.IsActive);
+            entity.HasIndex(ti => ti.CreatedAt);
+            entity.HasIndex(ti => new { ti.IsActive, ti.CreatedAt });
+
+            // Property configurations for custom properties
+            entity.Property(ti => ti.Name).HasMaxLength(200);
+            entity.Property(ti => ti.DisplayName).HasMaxLength(200);
+            entity.Property(ti => ti.Plan).HasMaxLength(100);
+            entity.Property(ti => ti.CreatedAt).IsRequired();
+            entity.Property(ti => ti.UpdatedAt).IsRequired();
+            entity.Property(ti => ti.IsActive).IsRequired().HasDefaultValue(true);
+
+            // Authentication paths with defaults
+            entity.Property(ti => ti.LoginPath).HasMaxLength(256).HasDefaultValue("/login");
+            entity.Property(ti => ti.LogoutPath).HasMaxLength(256).HasDefaultValue("/logout");
+            entity.Property(ti => ti.AccessDeniedPath).HasMaxLength(256).HasDefaultValue("/access-denied");
+        });
     }
 }

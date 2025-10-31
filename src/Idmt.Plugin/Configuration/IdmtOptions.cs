@@ -6,11 +6,6 @@ namespace Idmt.Plugin.Configuration;
 public class IdmtOptions
 {
     /// <summary>
-    /// JWT configuration options
-    /// </summary>
-    public JwtOptions Jwt { get; set; } = new();
-
-    /// <summary>
     /// Identity configuration options
     /// </summary>
     public IdentityOptions Identity { get; set; } = new();
@@ -24,37 +19,6 @@ public class IdmtOptions
     /// Database configuration options
     /// </summary>
     public DatabaseOptions Database { get; set; } = new();
-}
-
-/// <summary>
-/// JWT authentication configuration
-/// </summary>
-public class JwtOptions
-{
-    /// <summary>
-    /// JWT secret key
-    /// </summary>
-    public string SecretKey { get; set; } = string.Empty;
-
-    /// <summary>
-    /// JWT issuer
-    /// </summary>
-    public string Issuer { get; set; } = string.Empty;
-
-    /// <summary>
-    /// JWT audience
-    /// </summary>
-    public string Audience { get; set; } = string.Empty;
-
-    /// <summary>
-    /// JWT expiration time in minutes
-    /// </summary>
-    public int ExpirationMinutes { get; set; } = 60;
-
-    /// <summary>
-    /// Refresh token expiration time in days
-    /// </summary>
-    public int RefreshTokenExpirationDays { get; set; } = 7;
 }
 
 /// <summary>
@@ -122,7 +86,7 @@ public class MultiTenantOptions
     /// <summary>
     /// Tenant resolution strategy (header, subdomain, etc.)
     /// </summary>
-    public string Strategy { get; set; } = "header";
+    public string[] Strategies { get; set; } = ["header", "claim", "route"];
 
     /// <summary>
     /// Strategy-specific configuration
@@ -136,14 +100,14 @@ public class MultiTenantOptions
 public class DatabaseOptions
 {
     /// <summary>
-    /// Connection string template with placeholder for tenant
+    /// Use in-memory database. Use this when you want to use a in-memory database for testing purposes.
     /// </summary>
-    public string ConnectionStringTemplate { get; set; } = string.Empty;
+    public bool UseInMemory { get; set; } = false;
 
     /// <summary>
-    /// Whether to use shared database with tenant isolation
+    /// Connection string template with placeholder for tenant's properties
     /// </summary>
-    public bool UseSharedDatabase { get; set; } = true;
+    public string ConnectionStringTemplate { get; set; } = string.Empty;
 
     /// <summary>
     /// Auto-migrate database on startup
