@@ -6,6 +6,8 @@ using Idmt.Plugin.Features.Register;
 using Idmt.Plugin.Features.Login;
 using Idmt.Plugin.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Finbuckle.MultiTenant;
+using Idmt.Plugin.Models;
 
 namespace Idmt.Plugin.Extensions;
 
@@ -14,11 +16,11 @@ namespace Idmt.Plugin.Extensions;
 /// </summary>
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddIdmt(
+    public static IServiceCollection AddIdmt<TDbContext>(
         this IServiceCollection services,
         IConfiguration configuration,
         Action<DbContextOptionsBuilder>? configureDb = null,
-        Action<IdmtOptions>? configureOptions = null)
+        Action<IdmtOptions>? configureOptions = null) where TDbContext : IdmtDbContext
     {
         // Configure options
         var idmtOptions = new IdmtOptions();
@@ -30,11 +32,14 @@ public static class ServiceCollectionExtensions
             configureOptions?.Invoke(opts);
         });
 
-        if (configureDb != null)
-        {
-            services.AddDbContext<IdmtDbContext>(configureDb);
-            services.AddScoped<IdmtDbContext>(provider => provider.GetRequiredService<IdmtDbContext>());
-        }
+        services.AddDbContext<TDbContext>(configureDb);
+        services.AddScoped<IdmtDbContext>(provider => provider.GetRequiredService<TDbContext>());
+
+        // Add MultiTenant
+        services.AddMultiTenant<IdmtTenantInfo>()
+            // TODO: Add strategies
+            .WithEFCoreStore<IdmtTenantStoreDbContext, IdmtTenantInfo>()
+            .WithPerTenantAuthentication();
 
         services.RegisterFeatures();
 

@@ -1,0 +1,37 @@
+---
+alwaysApply: true
+---
+
+# IDMT Plugin
+
+Identity MultiTenant plugin library for ASP.NET Core that provides automatic identity management (authentication and authorization) and multi-tenancy support using Finbuckle.MultiTenant and Microsoft.AspNetCore.Identity.
+
+## Features
+
+- **Multi-Tenant Support**: Built-in multi-tenancy using Finbuckle.MultiTenant
+- **Identity Management**: ASP.NET Core Identity integration with cookie authentication and identity's custom bearer token
+- **Vertical Slice Architecture**: Each identity endpoint has its own handler interface and implementation
+- **Minimal APIs**: Modern endpoint routing with clean, composable APIs
+- **Configurable**: Extensive configuration options for identity, and multi-tenancy
+- **Database Agnostic**: Works with any Entity Framework Core provider
+
+## Architecture
+
+### Vertical Slice Pattern
+
+The library implements a vertical slice architecture where each feature is self-contained:
+
+### Multi-Tenancy
+
+Multi-tenancy is achieved through:
+- Tenant-aware user model `IdmtUser`
+- Global roles `IdmtRole`
+- Automatic tenant filtering in Entity Framework queries
+- Tenant resolution strategies (header, claim, route)
+- Tenant information managed using a the EFCore MultiTenant Store
+- Per-Tenant Authentication. The login session for a given request will only be valid for the current tenant. Subsequent requests from the same client, but for a different tenant (e.g. a different path when using the route strategy), will not leak the previous login session into the tenant. 
+
+## Main libraries links
+
+- Finbuckle.MultiTenant Docs: https://www.finbuckle.com/MultiTenant/Docs/
+- Finbuckle.MultiTenant Github: https://github.com/Finbuckle/Finbuckle.MultiTenant.git
