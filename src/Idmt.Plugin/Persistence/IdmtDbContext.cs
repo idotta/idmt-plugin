@@ -3,6 +3,7 @@ using Finbuckle.MultiTenant;
 using Finbuckle.MultiTenant.EntityFrameworkCore;
 using Idmt.Plugin.Models;
 using Finbuckle.MultiTenant.Abstractions;
+using Idmt.Plugin.Services;
 
 namespace Idmt.Plugin.Persistence;
 
@@ -12,24 +13,31 @@ namespace Idmt.Plugin.Persistence;
 public class IdmtDbContext
     : MultiTenantIdentityDbContext<IdmtUser, IdmtRole, Guid>
 {
+    private readonly ICurrentUserService _currentUserService;
+
     public IdmtDbContext(
-        IMultiTenantContextAccessor multiTenantContextAccessor)
+        IMultiTenantContextAccessor multiTenantContextAccessor, ICurrentUserService currentUserService)
         : base(multiTenantContextAccessor)
     {
+        _currentUserService = currentUserService;
     }
 
     public IdmtDbContext(
         IMultiTenantContextAccessor multiTenantContextAccessor,
-        DbContextOptions options)
+        DbContextOptions options,
+        ICurrentUserService currentUserService)
         : base(multiTenantContextAccessor, options)
     {
+        _currentUserService = currentUserService;
     }
 
     public IdmtDbContext(
         IMultiTenantContextAccessor multiTenantContextAccessor,
-        DbContextOptions<IdmtDbContext> options)
+        DbContextOptions<IdmtDbContext> options,
+        ICurrentUserService currentUserService)
         : base(multiTenantContextAccessor, options)
     {
+        _currentUserService = currentUserService;
     }
 
     /// <summary>
@@ -40,7 +48,7 @@ public class IdmtDbContext
     /// <summary>
     /// Audit logs for tracking user actions.
     /// </summary>
-    public DbSet<IdmtAuditLog> IdentityAuditLogs { get; set; } = null!;
+    public DbSet<IdmtAuditLog> AuditLogs { get; set; } = null!;
 
     /// <summary>
     /// Tenant access for tracking which system users can access which tenants.
@@ -122,4 +130,67 @@ public class IdmtDbContext
             entity.Property(ti => ti.AccessDeniedPath).HasMaxLength(256).HasDefaultValue("/access-denied");
         });
     }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var entries = ChangeTracker.Entries<IAuditable>().ToArray();
+
+        foreach (var entry in entries)
+        {
+            if (entry.State == EntityState.Added)
+            {
+                AuditLogs.Add(new IdmtAuditLog
+                {
+                    UserId = _currentUserService.UserId,
+                    TenantId = entry.Entity.GetTenantId(),
+                    Action = "Created",
+                    Resource = entry.Entity.GetName(),
+                    ResourceId = entry.Entity.GetId(),
+                    Success = true,
+                    Timestamp = DateTime.UtcNow,
+                    IpAddress = _currentUserService.IpAddress,
+                    UserAgent = _currentUserService.UserAgent,
+                });
+            }
+            else if (entry.State == EntityState.Deleted)
+            {
+                AuditLogs.Add(new IdmtAuditLog
+                {
+                    UserId = _currentUserService.UserId,
+                    TenantId = entry.Entity.GetTenantId(),
+                    Action = "Deleted",
+                    Resource = entry.Entity.GetName(),
+                    ResourceId = entry.Entity.GetId(),
+                    Success = true,
+                    Timestamp = DateTime.UtcNow,
+                    IpAddress = _currentUserService.IpAddress,
+                    UserAgent = _currentUserService.UserAgent,
+                });
+            }
+            else if (entry.State == EntityState.Modified)
+            {
+                string details = string.Join(", ", entry.Properties
+                    .Where(prop => prop.IsModified)
+                    .Select(prop => prop.Metadata.Name));
+                AuditLogs.Add(new IdmtAuditLog
+                {
+                    UserId = _currentUserService.UserId,
+                    TenantId = entry.Entity.GetTenantId(),
+                    Action = "Modified",
+                    Resource = entry.Entity.GetName(),
+                    ResourceId = entry.Entity.GetId(),
+                    Details = details,
+                    Success = true,
+                    Timestamp = DateTime.UtcNow,
+                    IpAddress = _currentUserService.IpAddress,
+                    UserAgent = _currentUserService.UserAgent,
+                });
+            }
+        }
+
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    public override int SaveChanges() =>
+        SaveChangesAsync(CancellationToken.None).GetAwaiter().GetResult();
 }

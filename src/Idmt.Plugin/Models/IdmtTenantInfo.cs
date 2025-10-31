@@ -6,7 +6,7 @@ namespace Idmt.Plugin.Models;
 /// Represents the information for a tenant in the multi-tenant application.
 /// Implements ITenantInfo interface from Finbuckle.MultiTenant.
 /// </summary>
-public class IdmtTenantInfo : ITenantInfo
+public class IdmtTenantInfo : ITenantInfo, IAuditable
 {
     /// <summary>
     /// Unique ID for the tenant (string representation of a GUID).
@@ -77,4 +77,10 @@ public class IdmtTenantInfo : ITenantInfo
     /// Path to the access denied page for this tenant; defaults to "/access-denied".
     /// </summary>
     public string? AccessDeniedPath { get; set; } = "/access-denied";
+
+    public string GetId() => Id ?? string.Empty;
+
+    public string GetName() => nameof(IdmtTenantInfo);
+
+    public string? GetTenantId() => Id;
 }

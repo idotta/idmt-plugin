@@ -3,7 +3,7 @@ namespace Idmt.Plugin.Models;
 /// <summary>
 /// Entity to track which staff users can access which tenants
 /// </summary>
-public sealed class TenantAccess
+public sealed class TenantAccess : IAuditable
 {
     public Guid Id { get; set; } = Guid.CreateVersion7();
 
@@ -36,4 +36,10 @@ public sealed class TenantAccess
     /// Optional expiration date
     /// </summary>
     public DateTime? ExpiresAt { get; set; }
+
+    public string GetId() => Id.ToString();
+
+    public string GetName() => nameof(TenantAccess);
+
+    public string? GetTenantId() => TenantId;
 }

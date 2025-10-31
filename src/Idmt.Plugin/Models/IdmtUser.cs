@@ -5,7 +5,7 @@ namespace Idmt.Plugin.Models;
 /// <summary>
 /// Multi-tenant application user that extends IdentityUser
 /// </summary>
-public class IdmtUser : IdentityUser<Guid>
+public class IdmtUser : IdentityUser<Guid>, IAuditable
 {
     public override Guid Id { get; set; } = Guid.CreateVersion7();
 
@@ -14,7 +14,7 @@ public class IdmtUser : IdentityUser<Guid>
     public override string? ConcurrencyStamp { get; set; } = Guid.NewGuid().ToString();
 
     /// <summary>
-    /// The tenant this user belongs to (null for system users).
+    /// The tenant this user belongs to.
     /// </summary>
     public string TenantId { get; set; } = null!;
 
@@ -47,4 +47,10 @@ public class IdmtUser : IdentityUser<Guid>
     /// ID of the user who last updated this user.
     /// </summary>
     public Guid UpdatedBy { get; set; } = Guid.Empty;
+
+    public string GetId() => Id.ToString();
+
+    public string GetName() => nameof(IdmtUser);
+
+    public string? GetTenantId() => TenantId;
 }

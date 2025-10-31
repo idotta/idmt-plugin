@@ -4,7 +4,7 @@ namespace Idmt.Plugin.Models;
 /// Represents a specific permission granted to a user within a tenant.
 /// This provides fine-grained access control beyond roles.
 /// </summary>
-public sealed class UserPermission
+public sealed class UserPermission : IAuditable
 {
     /// <summary>
     /// Unique identifier for this permission grant.
@@ -45,4 +45,10 @@ public sealed class UserPermission
     /// Whether this permission is currently active.
     /// </summary>
     public bool IsActive { get; set; } = true;
+
+    public string GetId() => Id.ToString();
+
+    public string GetName() => nameof(UserPermission);
+
+    public string? GetTenantId() => TenantId;
 }
