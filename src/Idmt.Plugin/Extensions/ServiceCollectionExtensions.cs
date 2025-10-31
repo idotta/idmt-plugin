@@ -4,6 +4,8 @@ using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Features.Logout;
 using Idmt.Plugin.Features.Register;
 using Idmt.Plugin.Features.Login;
+using Idmt.Plugin.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Idmt.Plugin.Extensions;
 
@@ -15,6 +17,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddIdmt(
         this IServiceCollection services,
         IConfiguration configuration,
+        Action<DbContextOptionsBuilder>? configureDb = null,
         Action<IdmtOptions>? configureOptions = null)
     {
         // Configure options
@@ -26,6 +29,14 @@ public static class ServiceCollectionExtensions
             configuration.GetSection("Idmt").Bind(opts);
             configureOptions?.Invoke(opts);
         });
+
+        if (configureDb != null)
+        {
+            services.AddDbContext<IdmtDbContext>(configureDb);
+            services.AddScoped<IdmtDbContext>(provider => provider.GetRequiredService<IdmtDbContext>());
+        }
+
+        services.RegisterFeatures();
 
         return services;
     }
