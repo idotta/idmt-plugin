@@ -1,5 +1,3 @@
-using Idmt.Plugin.Features.Logout;
-
 namespace Idmt.Plugin.Features.Logout;
 
 /// <summary>
@@ -14,5 +12,5 @@ public interface ILogoutHandler
     /// <param name="userId">Current user ID</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Logout response</returns>
-    Task<LogoutResponse> HandleAsync(LogoutRequest request, string? userId, CancellationToken cancellationToken);
+    Task<LogoutResponse> HandleAsync(LogoutRequest request, string? userId, CancellationToken cancellationToken = default);
 }

@@ -1,5 +1,3 @@
-using Idmt.Plugin.Features.Login;
-
 namespace Idmt.Plugin.Features.Login;
 
 /// <summary>
@@ -19,5 +17,5 @@ public interface ILoginHandler
         LoginRequest loginRequest,
         bool useCookies,
         bool useSessionCookies,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken = default);
 }
