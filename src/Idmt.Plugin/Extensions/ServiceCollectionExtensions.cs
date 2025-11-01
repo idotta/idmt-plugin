@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Features.Logout;
 using Idmt.Plugin.Features.Register;
-using Idmt.Plugin.Features.Login;
 using Idmt.Plugin.Persistence;
 using Idmt.Plugin.Services;
 using Idmt.Plugin.Middleware;
@@ -11,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Finbuckle.MultiTenant;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Features.Login;
 
 namespace Idmt.Plugin.Extensions;
 
@@ -199,6 +199,7 @@ public static class ServiceCollectionExtensions
         .AddRoles<IdmtRole>()
         .AddEntityFrameworkStores<IdmtDbContext>()
         .AddSignInManager<BetterSignInManager>()
+        .AddClaimsPrincipalFactory<IdmtUserClaimsPrincipalFactory>()
         .AddDefaultTokenProviders();
 
         // Configure application cookie for per-tenant authentication

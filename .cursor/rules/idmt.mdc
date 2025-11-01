@@ -34,4 +34,4 @@ Multi-tenancy is achieved through:
 ## Main libraries links
 
 - Finbuckle.MultiTenant Docs: https://www.finbuckle.com/MultiTenant/Docs/
-- Finbuckle.MultiTenant Github: https://github.com/Finbuckle/Finbuckle.MultiTenant.git
+- Finbuckle.MultiTenant Github: https://github.com/Finbuckle/Finbuckle.MultiTenant.git. Finbuckle's samples are not organized well, so don't forget to look for samples in the different links provided in samples/README.md (like [v8.0.0](https://github.com/Finbuckle/Finbuckle.MultiTenant/tree/v8.0.0/samples/)).

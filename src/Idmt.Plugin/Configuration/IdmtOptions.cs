@@ -6,6 +6,11 @@ namespace Idmt.Plugin.Configuration;
 public class IdmtOptions
 {
     /// <summary>
+    /// Application configuration options
+    /// </summary>
+    public ApplicationOptions Application { get; set; } = new();
+
+    /// <summary>
     /// Identity configuration options
     /// </summary>
     public IdentityOptions Identity { get; set; } = new();
@@ -19,6 +24,18 @@ public class IdmtOptions
     /// Database configuration options
     /// </summary>
     public DatabaseOptions Database { get; set; } = new();
+}
+
+/// <summary>
+/// Application configuration options
+/// </summary>
+public class ApplicationOptions
+{
+    public string BaseUrl { get; set; } = string.Empty;
+    public string PasswordResetPath { get; set; } = "/reset-password";
+    public string PasswordSetupPath { get; set; } = "/password-setup";
+    public string PasswordSetTokenParameter { get; set; } = "token";
+    public string PasswordSetEmailParameter { get; set; } = "email";
 }
 
 /// <summary>

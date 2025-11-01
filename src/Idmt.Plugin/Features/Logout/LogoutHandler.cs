@@ -1,22 +1,21 @@
+using Idmt.Plugin.Models;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
+
 namespace Idmt.Plugin.Features.Logout;
 
-internal sealed class LogoutHandler : ILogoutHandler
+internal sealed class LogoutHandler(ILogger<LogoutHandler> logger, SignInManager<IdmtUser> signInManager) : ILogoutHandler
 {
-    public async Task<LogoutResponse> HandleAsync(LogoutRequest request, string? userId = null, CancellationToken cancellationToken = default)
+    public async Task HandleAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            return new LogoutResponse
-            {
-            };
+            await signInManager.SignOutAsync();
         }
         catch (Exception ex)
         {
-            return new LogoutResponse
-            {
-                Success = false,
-                ErrorMessage = "An error occurred during logout: " + ex.Message
-            };
+            logger.LogError(ex, "An error occurred during logout");
+            throw;
         }
     }
 }
