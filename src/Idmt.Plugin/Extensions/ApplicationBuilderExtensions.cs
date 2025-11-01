@@ -8,6 +8,7 @@ using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Middleware;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
+using Microsoft.AspNetCore.Identity;
 
 namespace Idmt.Plugin.Extensions;
 
@@ -32,6 +33,9 @@ public static class ApplicationBuilderExtensions
 
         // Add current user middleware after authentication
         app.UseMiddleware<CurrentUserMiddleware>();
+
+        // Verify that the user store supports email operations (required for Idmt.Plugin)
+        VerifyUserStoreSupportsEmail(app);
 
         return app;
     }
@@ -138,6 +142,16 @@ public static class ApplicationBuilderExtensions
             };
 
             await tenantStore.TryAddAsync(defaultTenant);
+        }
+    }
+
+    private static void VerifyUserStoreSupportsEmail(IApplicationBuilder app)
+    {
+        var scope = app.ApplicationServices.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdmtUser>>();
+        if (!userManager.SupportsUserEmail)
+        {
+            throw new NotSupportedException($"Idmt.Plugin requires a user store with email support.");
         }
     }
 }
