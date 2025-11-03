@@ -41,13 +41,15 @@ public static class ServiceCollectionExtensions
         ConfigureDatabase<TDbContext>(services, configureDb, idmtOptions);
 
         // 3. Configure MultiTenant
-        ConfigureMultiTenant(services, idmtOptions);
+        // ConfigureMultiTenant(services, idmtOptions);
 
         // 4. Configure Identity
         ConfigureIdentity(services, idmtOptions);
 
         // 5. Configure Authentication
         ConfigureAuthentication(services, idmtOptions);
+
+        ConfigureMultiTenant(services, idmtOptions);
 
         // 6. Register Application Services
         RegisterApplicationServices(services);
@@ -256,6 +258,8 @@ public static class ServiceCollectionExtensions
         // Register scoped services for per-request context
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ITenantAccessService, TenantAccessService>();
+        services.AddScoped<IdmtEmailService>();
+        services.AddTransient<IEmailSender<IdmtUser>, IdmtEmailSender>();
 
         // Register HTTP context accessor for service access to HTTP context
         services.AddHttpContextAccessor();

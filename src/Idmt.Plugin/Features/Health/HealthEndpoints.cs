@@ -1,9 +1,12 @@
-using Finbuckle.MultiTenant;
+using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Persistence;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 
-namespace Idmt.Sample.Endpoints;
+namespace Idmt.Plugin.Features.Health;
 
 /// <summary>
 /// Health and status endpoints using minimal APIs
@@ -108,15 +111,13 @@ public static class HealthEndpoints
                 Identifier = currentTenant.Identifier
             } : null,
             ServerTime = DateTime.UtcNow,
-            Features = new List<string>
-            {
+            Features =
+            [
                 "Multi-Tenant Support",
-                "JWT Authentication", 
-                "ASP.NET Core Identity",
                 "Vertical Slice Architecture",
                 "Minimal APIs",
                 "OpenAPI/Swagger Documentation"
-            }
+            ]
         };
 
         return Results.Ok(systemInfo);
@@ -146,7 +147,7 @@ public class SystemInfoResponse
     public string Environment { get; set; } = string.Empty;
     public TenantInfo? CurrentTenant { get; set; }
     public DateTime ServerTime { get; set; }
-    public List<string> Features { get; set; } = new();
+    public List<string> Features { get; set; } = [];
 }
 
 /// <summary>

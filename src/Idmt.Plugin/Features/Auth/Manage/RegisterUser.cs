@@ -110,7 +110,6 @@ public static class RegisterUser
         UserManager<IdmtUser> userManager,
         RoleManager<IdmtRole> roleManager,
         IUserStore<IdmtUser> userStore,
-        IUserEmailStore<IdmtUser> emailStore,
         ICurrentUserService currentUserService,
         IdmtDbContext dbContext,
         LinkGenerator linkGenerator,
@@ -161,6 +160,8 @@ public static class RegisterUser
 
             // Set username and email using store-specific methods (ensures proper normalization)
             await userStore.SetUserNameAsync(user, request.Username ?? request.Email, cancellationToken);
+            IUserEmailStore<IdmtUser> emailStore = userStore as IUserEmailStore<IdmtUser>
+                ?? throw new NotSupportedException("The user store does not support email functionality.");
             await emailStore.SetEmailAsync(user, request.Email, cancellationToken);
 
             // Use a database transaction to ensure atomicity: all operations (role check, user creation, role assignment) 

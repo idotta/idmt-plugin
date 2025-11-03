@@ -12,10 +12,6 @@ namespace Idmt.Plugin.Persistence;
 /// </summary>
 public class IdmtTenantStoreDbContext : EFCoreStoreDbContext<IdmtTenantInfo>
 {
-    public IdmtTenantStoreDbContext(DbContextOptions options) : base(options)
-    {
-    }
-
     public IdmtTenantStoreDbContext(DbContextOptions<IdmtTenantStoreDbContext> options) : base(options)
     {
     }

@@ -7,8 +7,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Idmt.Plugin", "Idmt.Plugin\
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "samples", "samples", "{A98C7932-C24A-431A-9944-987E193ACFBC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Idmt.Sample", "samples\Idmt.Sample\Idmt.Sample.csproj", "{7E99D668-69C6-45C9-BCD1-7B3A6691647F}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Idmt.BasicSample", "samples\Idmt.BasicSample\Idmt.BasicSample.csproj", "{7A3DB082-6320-4B95-B0E1-848688215E21}"
 EndProject
 Global
@@ -16,25 +14,20 @@ Global
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
-	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{733A6665-226B-498C-97F1-3F33063A4CEB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{733A6665-226B-498C-97F1-3F33063A4CEB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{733A6665-226B-498C-97F1-3F33063A4CEB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{733A6665-226B-498C-97F1-3F33063A4CEB}.Release|Any CPU.Build.0 = Release|Any CPU
-		{7E99D668-69C6-45C9-BCD1-7B3A6691647F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{7E99D668-69C6-45C9-BCD1-7B3A6691647F}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{7E99D668-69C6-45C9-BCD1-7B3A6691647F}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{7E99D668-69C6-45C9-BCD1-7B3A6691647F}.Release|Any CPU.Build.0 = Release|Any CPU
 		{7A3DB082-6320-4B95-B0E1-848688215E21}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{7A3DB082-6320-4B95-B0E1-848688215E21}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7A3DB082-6320-4B95-B0E1-848688215E21}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7A3DB082-6320-4B95-B0E1-848688215E21}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{7E99D668-69C6-45C9-BCD1-7B3A6691647F} = {A98C7932-C24A-431A-9944-987E193ACFBC}
 		{7A3DB082-6320-4B95-B0E1-848688215E21} = {A98C7932-C24A-431A-9944-987E193ACFBC}
 	EndGlobalSection
 EndGlobal

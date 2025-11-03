@@ -24,15 +24,6 @@ public class IdmtDbContext
 
     public IdmtDbContext(
         IMultiTenantContextAccessor multiTenantContextAccessor,
-        DbContextOptions options,
-        ICurrentUserService currentUserService)
-        : base(multiTenantContextAccessor, options)
-    {
-        _currentUserService = currentUserService;
-    }
-
-    public IdmtDbContext(
-        IMultiTenantContextAccessor multiTenantContextAccessor,
         DbContextOptions<IdmtDbContext> options,
         ICurrentUserService currentUserService)
         : base(multiTenantContextAccessor, options)

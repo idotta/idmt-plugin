@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-
 builder.Services.AddOpenApi();
 
 builder.Services.AddIdmt(builder.Configuration,
@@ -18,6 +17,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseIdmt();
+
+app.MapIdmtEndpoints();
 
 app.EnsureIdmtDatabase();
 await app.SeedIdmtDataAsync();
