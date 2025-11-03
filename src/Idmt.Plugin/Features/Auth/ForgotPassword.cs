@@ -20,7 +20,7 @@ public static class ForgotPassword
         Task<ForgotPasswordResponse> HandleAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default);
     }
 
-    public sealed class ForgotPasswordHandler(
+    internal sealed class ForgotPasswordHandler(
         UserManager<IdmtUser> userManager,
         IEmailSender<IdmtUser> emailSender,
         LinkGenerator linkGenerator,

@@ -19,7 +19,7 @@ public static class ResendConfirmationEmail
         Task<ResendConfirmationEmailResponse> HandleAsync(ResendConfirmationEmailRequest request, CancellationToken cancellationToken = default);
     }
 
-    public sealed class ResendConfirmationEmailHandler(
+    internal sealed class ResendConfirmationEmailHandler(
         UserManager<IdmtUser> userManager,
         IdmtEmailService emailService,
         LinkGenerator linkGenerator,

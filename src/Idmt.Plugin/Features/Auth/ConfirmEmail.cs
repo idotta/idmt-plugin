@@ -15,7 +15,7 @@ public static class ConfirmEmail
         Task<ConfirmEmailResponse> HandleAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default);
     }
 
-    public sealed class ConfirmEmailHandler(UserManager<IdmtUser> userManager) : IConfirmEmailHandler
+    internal sealed class ConfirmEmailHandler(UserManager<IdmtUser> userManager) : IConfirmEmailHandler
     {
         public async Task<ConfirmEmailResponse> HandleAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default)
         {

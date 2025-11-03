@@ -17,7 +17,7 @@ public static class ResetPassword
         Task<ResetPasswordResponse> HandleAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default);
     }
 
-    public sealed class ResetPasswordHandler(
+    internal sealed class ResetPasswordHandler(
         UserManager<IdmtUser> userManager
         ) : IResetPasswordHandler
     {

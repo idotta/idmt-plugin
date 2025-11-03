@@ -274,6 +274,10 @@ public static class ServiceCollectionExtensions
 
         // Auth/Manage
         services.AddScoped<RegisterUser.IRegisterUserHandler, RegisterUser.RegisterHandler>();
+        services.AddScoped<UnregisterUser.IUnregisterUserHandler, UnregisterUser.UnregisterUserHandler>();
+        services.AddScoped<UpdateUser.IUpdateUserHandler, UpdateUser.UpdateUserHandler>();
+        services.AddScoped<GetUserInfo.IGetUserInfoHandler, GetUserInfo.GetUserInfoHandler>();
+        services.AddScoped<UpdateUserInfo.IUpdateUserInfoHandler, UpdateUserInfo.UpdateUserInfoHandler>();
     }
 
     private static void RegisterMiddleware(IServiceCollection services)
