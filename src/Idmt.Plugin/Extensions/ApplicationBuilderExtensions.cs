@@ -9,6 +9,8 @@ using Idmt.Plugin.Middleware;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Routing;
+using Idmt.Plugin.Features.Auth;
 
 namespace Idmt.Plugin.Extensions;
 
@@ -38,6 +40,12 @@ public static class ApplicationBuilderExtensions
         VerifyUserStoreSupportsEmail(app);
 
         return app;
+    }
+
+    public static IEndpointRouteBuilder UseIdmtAuth(this IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapAuthEndpoints();
+        return endpoints;
     }
 
     /// <summary>

@@ -1,0 +1,6 @@
+@Idmt.BasicSample_HostAddress = http://localhost:5172
+
+GET {{Idmt.BasicSample_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

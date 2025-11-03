@@ -32,10 +32,8 @@ public class IdmtOptions
 public class ApplicationOptions
 {
     public string BaseUrl { get; set; } = string.Empty;
-    public string PasswordResetPath { get; set; } = "/reset-password";
-    public string PasswordSetupPath { get; set; } = "/password-setup";
-    public string PasswordSetTokenParameter { get; set; } = "token";
-    public string PasswordSetEmailParameter { get; set; } = "email";
+    public const string PasswordResetEndpointName = "ResetPassword";
+    public const string ConfirmEmailEndpointName = "ConfirmEmail";
 }
 
 /// <summary>

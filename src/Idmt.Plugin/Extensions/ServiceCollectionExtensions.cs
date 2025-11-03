@@ -1,8 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Idmt.Plugin.Configuration;
-using Idmt.Plugin.Features.Logout;
-using Idmt.Plugin.Features.Register;
 using Idmt.Plugin.Persistence;
 using Idmt.Plugin.Services;
 using Idmt.Plugin.Middleware;
@@ -10,7 +8,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Finbuckle.MultiTenant;
 using Idmt.Plugin.Models;
-using Idmt.Plugin.Features.Login;
+using Idmt.Plugin.Features.Auth;
+using Idmt.Plugin.Features.Auth.Manage;
 
 namespace Idmt.Plugin.Extensions;
 
@@ -264,10 +263,17 @@ public static class ServiceCollectionExtensions
 
     private static void RegisterFeatures(IServiceCollection services)
     {
-        // Register feature handlers following the vertical slice pattern
-        services.AddScoped<ILoginHandler, LoginHandler>();
-        services.AddScoped<IRegisterHandler, RegisterHandler>();
-        services.AddScoped<ILogoutHandler, LogoutHandler>();
+        // Auth
+        services.AddScoped<Login.ILoginHandler, Login.LoginHandler>();
+        services.AddScoped<Logout.ILogoutHandler, Logout.LogoutHandler>();
+        services.AddScoped<RefreshToken.IRefreshTokenHandler, RefreshToken.RefreshTokenHandler>();
+        services.AddScoped<ConfirmEmail.IConfirmEmailHandler, ConfirmEmail.ConfirmEmailHandler>();
+        services.AddScoped<ResendConfirmationEmail.IResendConfirmationEmailHandler, ResendConfirmationEmail.ResendConfirmationEmailHandler>();
+        services.AddScoped<ForgotPassword.IForgotPasswordHandler, ForgotPassword.ForgotPasswordHandler>();
+        services.AddScoped<ResetPassword.IResetPasswordHandler, ResetPassword.ResetPasswordHandler>();
+
+        // Auth/Manage
+        services.AddScoped<RegisterUser.IRegisterUserHandler, RegisterUser.RegisterHandler>();
     }
 
     private static void RegisterMiddleware(IServiceCollection services)
