@@ -82,7 +82,7 @@ public static class AuthEndpoints
         return TypedResults.NoContent();
     }
 
-    private static async Task<Results<Ok<AccessTokenResponse>, UnauthorizedHttpResult, SignInHttpResult, ChallengeHttpResult, ValidationProblem>> RefreshAsync(
+    private static async Task<Results<Ok<AccessTokenResponse>, SignInHttpResult, ChallengeHttpResult, ValidationProblem>> RefreshAsync(
         [FromBody] RefreshToken.RefreshTokenRequest request,
         [FromServices] RefreshToken.IRefreshTokenHandler handler,
         HttpContext context)

@@ -91,7 +91,7 @@ public static class ManageEndpoints
         return TypedResults.Ok();
     }
 
-    private static async Task<Results<Ok<GetUserInfo.GetUserInfoResponse>, NotFound, ValidationProblem>> GetUserInfoAsync(
+    private static async Task<Results<Ok<GetUserInfo.GetUserInfoResponse>, NotFound>> GetUserInfoAsync(
         ClaimsPrincipal user,
         [FromServices] GetUserInfo.IGetUserInfoHandler handler,
         HttpContext context)
