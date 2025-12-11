@@ -12,7 +12,8 @@ internal sealed class TenantAccessService(
     IMultiTenantContextAccessor tenantAccessor,
     ITenantResolver<IdmtTenantInfo> tenantResolver,
     IMultiTenantContextSetter tenantContextSetter,
-    IMultiTenantStore<IdmtTenantInfo> tenantStore) : ITenantAccessService
+    IMultiTenantStore<IdmtTenantInfo> tenantStore,
+    ICurrentUserService currentUserService) : ITenantAccessService
 {
     public async Task<IdmtTenantInfo[]> GetUserAccessibleTenantsAsync(Guid userId)
     {
@@ -178,6 +179,39 @@ internal sealed class TenantAccessService(
         {
             tenantContextSetter.MultiTenantContext = currentTenant;
             dbContext.TenantMismatchMode = TenantMismatchMode.Throw;
+        }
+
+        return true;
+    }
+
+    public bool CanAssignRole(string role)
+    {
+        if (currentUserService.IsInRole(IdmtDefaultRoleTypes.SysSupport) && role == IdmtDefaultRoleTypes.SysAdmin)
+        {
+            return false;
+        }
+
+        if (currentUserService.IsInRole(IdmtDefaultRoleTypes.TenantAdmin) &&
+           (role == IdmtDefaultRoleTypes.SysAdmin || role == IdmtDefaultRoleTypes.SysSupport))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    public bool CanManageUser(IEnumerable<string> targetUserRoles)
+    {
+        if (currentUserService.IsInRole(IdmtDefaultRoleTypes.SysSupport) &&
+            targetUserRoles.Contains(IdmtDefaultRoleTypes.SysAdmin))
+        {
+            return false;
+        }
+
+        if (currentUserService.IsInRole(IdmtDefaultRoleTypes.TenantAdmin) &&
+            (targetUserRoles.Contains(IdmtDefaultRoleTypes.SysAdmin) || targetUserRoles.Contains(IdmtDefaultRoleTypes.SysSupport)))
+        {
+            return false;
         }
 
         return true;

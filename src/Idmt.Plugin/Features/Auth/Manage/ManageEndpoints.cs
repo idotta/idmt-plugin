@@ -62,7 +62,7 @@ public static class ManageEndpoints
         return TypedResults.Ok(response);
     }
 
-    private static async Task<Results<Ok<UnregisterUser.UnregisterUserResponse>, UnauthorizedHttpResult>> UnregisterUserAsync(
+    private static async Task<Results<Ok<UnregisterUser.UnregisterUserResponse>, ProblemHttpResult>> UnregisterUserAsync(
         [FromRoute] Guid userId,
         ClaimsPrincipal user,
         [FromServices] UnregisterUser.IUnregisterUserHandler handler,
@@ -71,21 +71,22 @@ public static class ManageEndpoints
         var result = await handler.HandleAsync(userId, cancellationToken: context.RequestAborted);
         if (!result.Success)
         {
-            return TypedResults.Unauthorized();
+            var errorMessage = result.Errors is not null ? string.Join("; ", result.Errors) : "Failed to unregister user";
+            return TypedResults.Problem(errorMessage, statusCode: result.StatusCode);
         }
         return TypedResults.Ok(result);
     }
 
-    private static async Task<Results<Ok, NotFound>> UpdateUserAsync(
+    private static async Task<Results<Ok, NotFound, ProblemHttpResult>> UpdateUserAsync(
         [FromRoute] Guid userId,
         [FromBody] UpdateUser.UpdateUserRequest request,
         [FromServices] UpdateUser.IUpdateUserHandler handler,
         HttpContext context)
     {
         var result = await handler.HandleAsync(userId, request, cancellationToken: context.RequestAborted);
-        if (!result)
+        if (!result.Success)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(result.ErrorMessage, statusCode: StatusCodes.Status403Forbidden);
         }
         return TypedResults.Ok();
     }

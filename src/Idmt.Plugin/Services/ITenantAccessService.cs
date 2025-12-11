@@ -41,4 +41,18 @@ public interface ITenantAccessService
     /// <param name="tenantId">The ID of the tenant.</param>
     /// <returns>True if access was revoked, false otherwise.</returns>
     Task<bool> RevokeTenantAccessAsync(Guid userId, string tenantId);
+
+    /// <summary>
+    /// Checks if the current user can assign the specified role.
+    /// </summary>
+    /// <param name="role">The role to check.</param>
+    /// <returns>True if the current user can assign the role, false otherwise.</returns>
+    bool CanAssignRole(string role);
+
+    /// <summary>
+    /// Checks if the current user can manage a user with the specified roles.
+    /// </summary>
+    /// <param name="targetUserRoles">The roles of the target user.</param>
+    /// <returns>True if the current user can manage the user, false otherwise.</returns>
+    bool CanManageUser(IEnumerable<string> targetUserRoles);
 }

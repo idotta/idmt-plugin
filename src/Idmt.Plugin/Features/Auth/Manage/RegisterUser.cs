@@ -111,6 +111,7 @@ public static class RegisterUser
         RoleManager<IdmtRole> roleManager,
         IUserStore<IdmtUser> userStore,
         ICurrentUserService currentUserService,
+        ITenantAccessService tenantAccessService,
         IdmtDbContext dbContext,
         LinkGenerator linkGenerator,
         IHttpContextAccessor httpContextAccessor,
@@ -139,6 +140,17 @@ public static class RegisterUser
             if (httpContextAccessor.HttpContext is null)
             {
                 throw new InvalidOperationException("No HTTP context was found.");
+            }
+
+            // Security check: Validate role assignment permissions based on current user's role
+            if (!tenantAccessService.CanAssignRole(request.Role))
+            {
+                return new RegisterUserResponse
+                {
+                    Success = false,
+                    StatusCode = StatusCodes.Status403Forbidden,
+                    ErrorMessage = "Insufficient permissions to assign this role."
+                };
             }
 
             // Create user entity with basic information, no password set
