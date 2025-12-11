@@ -5,30 +5,30 @@ namespace Idmt.Plugin.Models;
 /// <summary>
 /// Multi-tenant application role that extends IdentityRole
 /// </summary>
-public class IdmtRole : IdentityRole
+public class IdmtRole : IdentityRole<Guid>
 {
-    /// <summary>
-    /// The tenant identifier this role belongs to
-    /// </summary>
-    public string? TenantId { get; set; }
+    public IdmtRole() : base() { }
 
-    /// <summary>
-    /// Role description
-    /// </summary>
-    public string? Description { get; set; }
+    public IdmtRole(string name) : base(name) { }
 
-    /// <summary>
-    /// Indicates if the role is active
-    /// </summary>
-    public bool IsActive { get; set; } = true;
+    public override Guid Id { get; set; } = Guid.CreateVersion7();
+    public override string? ConcurrencyStamp { get; set; } = Guid.NewGuid().ToString();
 
-    /// <summary>
-    /// Date when the role was created
-    /// </summary>
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public virtual string[] RoleTypes => [
+        IdmtDefaultRoleTypes.SysAdmin,
+        IdmtDefaultRoleTypes.SysSupport,
+        IdmtDefaultRoleTypes.TenantAdmin,
+        IdmtDefaultRoleTypes.TenantUser
+    ];
+}
 
-    /// <summary>
-    /// Date when the role was last updated
-    /// </summary>
-    public DateTime? UpdatedAt { get; set; }
+/// <summary>
+/// Default role types for the IDMT plugin.
+/// </summary>
+public static class IdmtDefaultRoleTypes
+{
+    public const string SysAdmin = "SysAdmin";
+    public const string SysSupport = "SysSupport";
+    public const string TenantAdmin = "TenantAdmin";
+    public const string TenantUser = "TenantUser";
 }

@@ -1,0 +1,13 @@
+---
+alwaysApply: true
+---
+
+# Available MCP servers
+
+## Microsoft Learn
+
+You are able to use the Microsoft Learn MCP (ms-learn), that adds trusted and up-to-date Learn content as context to language models. It is a remote MCP server that uses streamable http. It lets AI agents send a query to Microsoft Learn and returns a JSON-encoded response with chunks of publicly available documentation. You can use it to get more information on the microsoft tools being used, like [Identity](https://learn.microsoft.com/en-us/aspnet/core/security/authentication/identity?view=aspnetcore-9.0).
+
+## Github
+
+You are able to use the github MCP. Use all its tools as they were designed. You also can use it to query the code of open-source libraries being used, like [Finbuckle.MultiTenant](https://github.com/Finbuckle/Finbuckle.MultiTenant.git) and [Identity](https://github.com/dotnet/AspNetCore/tree/main/src/Identity).

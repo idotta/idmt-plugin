@@ -22,7 +22,7 @@ dotnet add package Idmt.Plugin
 ### 2. Configure Services
 
 ```csharp
-using Idotta.Idmt.Plugin.Extensions;
+using Idmt.Plugin.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -159,7 +159,7 @@ X-Tenant-ID: your-tenant
 
 ## Sample Application
 
-See the `samples/Idotta.Idmt.Sample` project for a complete working example that demonstrates:
+See the `samples/Idmt.Sample` project for a complete working example that demonstrates:
 
 - Service configuration
 - API controllers using the vertical slice handlers
@@ -169,7 +169,7 @@ See the `samples/Idotta.Idmt.Sample` project for a complete working example that
 ### Running the Sample
 
 ```bash
-cd samples/Idotta.Idmt.Sample
+cd samples/Idmt.Sample
 dotnet run
 ```
 

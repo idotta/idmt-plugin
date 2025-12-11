@@ -1,16 +1,15 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
-using Finbuckle.MultiTenant;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Persistence;
+using Idmt.Plugin.Services;
+using Idmt.Plugin.Middleware;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
+using Finbuckle.MultiTenant;
 using Idmt.Plugin.Models;
-using Idmt.Plugin.Features.Login;
-using Idmt.Plugin.Features.Register;
-using Idmt.Plugin.Features.Logout;
+using Idmt.Plugin.Features.Auth;
+using Idmt.Plugin.Features.Auth.Manage;
 
 namespace Idmt.Plugin.Extensions;
 
@@ -20,147 +19,162 @@ namespace Idmt.Plugin.Extensions;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds IDMT identity and multi-tenant services to the service collection
+    /// Adds IDMT (Identity MultiTenant) services to the application with custom DbContext.
+    /// Configures Identity, MultiTenant, authentication, and all required services.
     /// </summary>
+    /// <typeparam name="TDbContext">The custom DbContext type that extends IdmtDbContext</typeparam>
     /// <param name="services">The service collection</param>
-    /// <param name="configuration">Configuration</param>
-    /// <param name="configureOptions">Optional configuration action</param>
-    /// <returns>The service collection</returns>
-    public static IServiceCollection AddIdmt(
+    /// <param name="configuration">The application configuration</param>
+    /// <param name="configureDb">Optional action to configure the DbContext</param>
+    /// <param name="configureOptions">Optional action to configure IDMT options</param>
+    /// <returns>The service collection for method chaining</returns>
+    public static IServiceCollection AddIdmt<TDbContext>(
         this IServiceCollection services,
         IConfiguration configuration,
-        Action<IdmtOptions>? configureOptions = null)
+        Action<DbContextOptionsBuilder>? configureDb = null,
+        Action<IdmtOptions>? configureOptions = null) where TDbContext : IdmtDbContext
     {
-        // Configure options
-        var idmtOptions = new IdmtOptions();
-        configuration.GetSection("Idmt").Bind(idmtOptions);
-        configureOptions?.Invoke(idmtOptions);
-        services.Configure<IdmtOptions>(opts =>
-        {
-            configuration.GetSection("Idmt").Bind(opts);
-            configureOptions?.Invoke(opts);
-        });
+        // 1. Configure and register IDMT Options
+        var idmtOptions = ConfigureIdmtOptions(services, configuration, configureOptions);
 
-        // Add multi-tenant services
-        services.AddMultiTenant<TenantInfo>()
-            .WithHeaderStrategy("tenant-id")
-            .WithInMemoryStore();
+        // 2. Configure Database Contexts
+        ConfigureDatabase<TDbContext>(services, configureDb, idmtOptions);
 
-        // Add Entity Framework with multi-tenant support
-        services.AddDbContext<IdmtDbContext>((serviceProvider, options) =>
-        {
-            var tenantInfo = serviceProvider.GetService<IMultiTenantContextAccessor>()?.MultiTenantContext?.TenantInfo;
-            
-            if (idmtOptions.Database.UseSharedDatabase)
-            {
-                // Use shared database with tenant isolation
-                options.UseInMemoryDatabase("IdmtSharedDb");
-            }
-            else
-            {
-                // Use tenant-specific database
-                var connectionString = idmtOptions.Database.ConnectionStringTemplate.Replace("{tenant}", tenantInfo?.Id ?? "default");
-                options.UseInMemoryDatabase($"IdmtDb_{tenantInfo?.Id ?? "default"}");
-            }
-        });
+        // 3. Configure MultiTenant
+        // ConfigureMultiTenant(services, idmtOptions);
 
-        // Configure ASP.NET Core Identity
-        services.AddIdentity<IdmtUser, IdmtRole>(options =>
-        {
-            // Password settings
-            options.Password.RequireDigit = idmtOptions.Identity.Password.RequireDigit;
-            options.Password.RequireLowercase = idmtOptions.Identity.Password.RequireLowercase;
-            options.Password.RequireUppercase = idmtOptions.Identity.Password.RequireUppercase;
-            options.Password.RequireNonAlphanumeric = idmtOptions.Identity.Password.RequireNonAlphanumeric;
-            options.Password.RequiredLength = idmtOptions.Identity.Password.RequiredLength;
-            options.Password.RequiredUniqueChars = idmtOptions.Identity.Password.RequiredUniqueChars;
+        // 4. Configure Identity
+        ConfigureIdentity(services, idmtOptions);
 
-            // User settings
-            options.User.RequireUniqueEmail = idmtOptions.Identity.User.RequireUniqueEmail;
-            options.User.AllowedUserNameCharacters = idmtOptions.Identity.User.AllowedUserNameCharacters;
+        // 5. Configure Authentication
+        ConfigureAuthentication(services, idmtOptions);
 
-            // Sign-in settings
-            options.SignIn.RequireConfirmedEmail = idmtOptions.Identity.SignIn.RequireConfirmedEmail;
-            options.SignIn.RequireConfirmedPhoneNumber = idmtOptions.Identity.SignIn.RequireConfirmedPhoneNumber;
-        })
-        .AddEntityFrameworkStores<IdmtDbContext>()
-        .AddDefaultTokenProviders();
+        ConfigureMultiTenant(services, idmtOptions);
 
-        // Configure JWT authentication
-        if (!string.IsNullOrEmpty(idmtOptions.Jwt.SecretKey))
-        {
-            services.AddAuthentication(options =>
-            {
-                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-            })
-            .AddJwtBearer(options =>
-            {
-                options.TokenValidationParameters = new TokenValidationParameters
-                {
-                    ValidateIssuer = true,
-                    ValidateAudience = true,
-                    ValidateLifetime = true,
-                    ValidateIssuerSigningKey = true,
-                    ValidIssuer = idmtOptions.Jwt.Issuer,
-                    ValidAudience = idmtOptions.Jwt.Audience,
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(idmtOptions.Jwt.SecretKey)),
-                    ClockSkew = TimeSpan.Zero
-                };
-            });
-        }
+        // 6. Register Application Services
+        RegisterApplicationServices(services);
 
-        // Register feature handlers
-        services.AddScoped<ILoginHandler, LoginHandler>();
-        services.AddScoped<IRegisterHandler, RegisterHandler>();
-        services.AddScoped<ILogoutHandler, LogoutHandler>();
+        // 7. Register Feature Handlers
+        RegisterFeatures(services);
+
+        // 8. Register Middleware
+        RegisterMiddleware(services);
 
         return services;
     }
 
     /// <summary>
-    /// Adds IDMT services with Entity Framework
+    /// Adds IDMT services using the default IdmtDbContext.
     /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="configuration">Configuration</param>
-    /// <param name="configureDb">Database configuration action</param>
-    /// <param name="configureOptions">Optional configuration action</param>
-    /// <returns>The service collection</returns>
-    public static IServiceCollection AddIdmtWithEntityFramework<TContext>(
+    public static IServiceCollection AddIdmt(
         this IServiceCollection services,
         IConfiguration configuration,
-        Action<DbContextOptionsBuilder> configureDb,
+        Action<DbContextOptionsBuilder>? configureDb = null,
         Action<IdmtOptions>? configureOptions = null)
-        where TContext : IdmtDbContext
     {
-        // Configure options
+        return services.AddIdmt<IdmtDbContext>(configuration, configureDb, configureOptions);
+    }
+
+    #region Private Configuration Methods
+
+    private static IdmtOptions ConfigureIdmtOptions(
+        IServiceCollection services,
+        IConfiguration configuration,
+        Action<IdmtOptions>? configureOptions)
+    {
         var idmtOptions = new IdmtOptions();
         configuration.GetSection("Idmt").Bind(idmtOptions);
         configureOptions?.Invoke(idmtOptions);
+
         services.Configure<IdmtOptions>(opts =>
         {
             configuration.GetSection("Idmt").Bind(opts);
             configureOptions?.Invoke(opts);
         });
 
-        // Add multi-tenant services
-        services.AddMultiTenant<TenantInfo>()
-            .WithHeaderStrategy("tenant-id")
-            .WithInMemoryStore();
-
-        // Add Entity Framework with custom configuration
-        services.AddDbContext<TContext>(configureDb);
-        services.AddScoped<IdmtDbContext>(provider => provider.GetRequiredService<TContext>());
-
-        // Configure Identity and other services
-        return AddIdentityAndServices<TContext>(services, idmtOptions);
+        return idmtOptions;
     }
 
-    private static IServiceCollection AddIdentityAndServices<TContext>(IServiceCollection services, IdmtOptions idmtOptions)
-        where TContext : IdmtDbContext
+    private static void ConfigureDatabase<TDbContext>(
+        IServiceCollection services,
+        Action<DbContextOptionsBuilder>? configureDb,
+        IdmtOptions idmtOptions) where TDbContext : IdmtDbContext
     {
-        // Configure ASP.NET Core Identity
-        services.AddIdentity<IdmtUser, IdmtRole>(options =>
+        // Register main application DbContext
+        if (configureDb != null)
+        {
+            services.AddDbContext<TDbContext>(configureDb);
+        }
+        else
+        {
+            // If no configuration provided, register without options
+            // The consumer app must provide database configuration
+            services.AddDbContext<TDbContext>();
+        }
+
+        // Register as IdmtDbContext for DI
+        services.AddScoped<IdmtDbContext>(provider => provider.GetRequiredService<TDbContext>());
+
+        // Register Tenant Store DbContext
+        // The Tenant Store typically shares the same database configuration as the main context
+        // but could be configured differently if needed
+        if (configureDb != null)
+        {
+            services.AddDbContext<IdmtTenantStoreDbContext>(configureDb);
+        }
+        else
+        {
+            services.AddDbContext<IdmtTenantStoreDbContext>();
+        }
+    }
+
+    private static void ConfigureMultiTenant(IServiceCollection services, IdmtOptions idmtOptions)
+    {
+        var builder = services.AddMultiTenant<IdmtTenantInfo>()
+            .WithEFCoreStore<IdmtTenantStoreDbContext, IdmtTenantInfo>();
+
+        // Register configured strategies
+        foreach (var strategy in idmtOptions.MultiTenant.Strategies)
+        {
+            switch (strategy.ToLowerInvariant())
+            {
+                case "header":
+                    builder.WithHeaderStrategy(
+                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("HeaderName", "__tenant__"));
+                    break;
+
+                case "route":
+                    builder.WithRouteStrategy(
+                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("RouteParameter", "__tenant__"));
+                    break;
+
+                case "claim":
+                    builder.WithClaimStrategy(
+                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("ClaimType", "tenant"));
+                    break;
+
+                case "host":
+                    builder.WithHostStrategy(
+                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("HostTemplate", "__tenant__.*"));
+                    break;
+
+                case "basepath":
+                    builder.WithBasePathStrategy();
+                    break;
+
+                default:
+                    throw new InvalidOperationException($"Unknown tenant resolution strategy: {strategy}");
+            }
+        }
+
+        // Enable per-tenant authentication - critical for proper multi-tenant isolation
+        builder.WithPerTenantAuthentication();
+    }
+
+    private static void ConfigureIdentity(IServiceCollection services, IdmtOptions idmtOptions)
+    {
+        // Add Identity with custom options
+        services.AddIdentityCore<IdmtUser>(options =>
         {
             // Password settings
             options.Password.RequireDigit = idmtOptions.Identity.Password.RequireDigit;
@@ -177,39 +191,104 @@ public static class ServiceCollectionExtensions
             // Sign-in settings
             options.SignIn.RequireConfirmedEmail = idmtOptions.Identity.SignIn.RequireConfirmedEmail;
             options.SignIn.RequireConfirmedPhoneNumber = idmtOptions.Identity.SignIn.RequireConfirmedPhoneNumber;
+
+            // Lockout settings (best practices)
+            options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
+            options.Lockout.MaxFailedAccessAttempts = 5;
+            options.Lockout.AllowedForNewUsers = true;
         })
-        .AddEntityFrameworkStores<TContext>()
+        .AddRoles<IdmtRole>()
+        .AddEntityFrameworkStores<IdmtDbContext>()
+        .AddSignInManager<BetterSignInManager>()
+        .AddClaimsPrincipalFactory<IdmtUserClaimsPrincipalFactory>()
         .AddDefaultTokenProviders();
 
-        // Configure JWT authentication
-        if (!string.IsNullOrEmpty(idmtOptions.Jwt.SecretKey))
+        // Configure application cookie for per-tenant authentication
+        services.ConfigureApplicationCookie(options =>
         {
-            services.AddAuthentication(options =>
-            {
-                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-            })
-            .AddJwtBearer(options =>
-            {
-                options.TokenValidationParameters = new TokenValidationParameters
-                {
-                    ValidateIssuer = true,
-                    ValidateAudience = true,
-                    ValidateLifetime = true,
-                    ValidateIssuerSigningKey = true,
-                    ValidIssuer = idmtOptions.Jwt.Issuer,
-                    ValidAudience = idmtOptions.Jwt.Audience,
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(idmtOptions.Jwt.SecretKey)),
-                    ClockSkew = TimeSpan.Zero
-                };
-            });
-        }
+            options.Cookie.Name = ".Idmt.Application";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
+            options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
+            options.ExpireTimeSpan = TimeSpan.FromDays(14);
+            options.SlidingExpiration = true;
 
-        // Register feature handlers
-        services.AddScoped<ILoginHandler, LoginHandler>();
-        services.AddScoped<IRegisterHandler, RegisterHandler>();
-        services.AddScoped<ILogoutHandler, LogoutHandler>();
-
-        return services;
+            // Use tenant-specific paths if available (set by middleware)
+            options.LoginPath = "/login";
+            options.LogoutPath = "/logout";
+            options.AccessDeniedPath = "/access-denied";
+        });
     }
+
+    private static void ConfigureAuthentication(IServiceCollection services, IdmtOptions idmtOptions)
+    {
+        // Configure authentication with both cookie and bearer token support
+        services.AddAuthentication(options =>
+        {
+            // Default scheme for web applications
+            options.DefaultScheme = "CookieOrBearer";
+            options.DefaultSignInScheme = IdentityConstants.ApplicationScheme;
+            options.DefaultAuthenticateScheme = "CookieOrBearer";
+            options.DefaultChallengeScheme = "CookieOrBearer";
+        })
+        .AddPolicyScheme("CookieOrBearer", "CookieOrBearer", options =>
+        {
+            options.ForwardDefaultSelector = context =>
+            {
+                var auth = context.Request.Headers.Authorization.ToString();
+                return !string.IsNullOrEmpty(auth) && auth.StartsWith("Bearer ")
+                    ? IdentityConstants.BearerScheme
+                    : IdentityConstants.ApplicationScheme;
+            };
+        })
+        .AddBearerToken(IdentityConstants.BearerScheme)
+        .AddIdentityCookies();
+
+        // Add authorization policies
+        services.AddAuthorization(options =>
+        {
+            // Add default policies
+            options.AddPolicy("RequireAuthenticatedUser", policy =>
+                policy.RequireAuthenticatedUser());
+        });
+    }
+
+    private static void RegisterApplicationServices(IServiceCollection services)
+    {
+        // Register scoped services for per-request context
+        services.AddScoped<ICurrentUserService, CurrentUserService>();
+        services.AddScoped<ITenantAccessService, TenantAccessService>();
+        services.AddScoped<IdmtEmailService>();
+        services.AddTransient<IEmailSender<IdmtUser>, IdmtEmailSender>();
+
+        // Register HTTP context accessor for service access to HTTP context
+        services.AddHttpContextAccessor();
+    }
+
+    private static void RegisterFeatures(IServiceCollection services)
+    {
+        // Auth
+        services.AddScoped<Login.ILoginHandler, Login.LoginHandler>();
+        services.AddScoped<Logout.ILogoutHandler, Logout.LogoutHandler>();
+        services.AddScoped<RefreshToken.IRefreshTokenHandler, RefreshToken.RefreshTokenHandler>();
+        services.AddScoped<ConfirmEmail.IConfirmEmailHandler, ConfirmEmail.ConfirmEmailHandler>();
+        services.AddScoped<ResendConfirmationEmail.IResendConfirmationEmailHandler, ResendConfirmationEmail.ResendConfirmationEmailHandler>();
+        services.AddScoped<ForgotPassword.IForgotPasswordHandler, ForgotPassword.ForgotPasswordHandler>();
+        services.AddScoped<ResetPassword.IResetPasswordHandler, ResetPassword.ResetPasswordHandler>();
+
+        // Auth/Manage
+        services.AddScoped<RegisterUser.IRegisterUserHandler, RegisterUser.RegisterHandler>();
+        services.AddScoped<UnregisterUser.IUnregisterUserHandler, UnregisterUser.UnregisterUserHandler>();
+        services.AddScoped<UpdateUser.IUpdateUserHandler, UpdateUser.UpdateUserHandler>();
+        services.AddScoped<GetUserInfo.IGetUserInfoHandler, GetUserInfo.GetUserInfoHandler>();
+        services.AddScoped<UpdateUserInfo.IUpdateUserInfoHandler, UpdateUserInfo.UpdateUserInfoHandler>();
+    }
+
+    private static void RegisterMiddleware(IServiceCollection services)
+    {
+        // Register middleware as scoped services
+        services.AddScoped<CurrentUserMiddleware>();
+    }
+
+    #endregion
 }
