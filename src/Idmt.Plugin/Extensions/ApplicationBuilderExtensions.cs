@@ -16,6 +16,8 @@ using Idmt.Plugin.Features.Sys;
 
 namespace Idmt.Plugin.Extensions;
 
+public delegate Task SeedDataAsync(IServiceProvider services);
+
 /// <summary>
 /// Extension methods for configuring IDMT application pipeline
 /// </summary>
@@ -106,7 +108,7 @@ public static class ApplicationBuilderExtensions
     /// <param name="app">The application builder</param>
     /// <param name="seedAction">Optional custom seed action</param>
     /// <returns>The application builder</returns>
-    public static async Task<IApplicationBuilder> SeedIdmtDataAsync(this IApplicationBuilder app, Func<IServiceProvider, Task>? seedAction = null)
+    public static async Task<IApplicationBuilder> SeedIdmtDataAsync(this IApplicationBuilder app, SeedDataAsync? seedAction = null)
     {
         using var scope = app.ApplicationServices.CreateScope();
         var services = scope.ServiceProvider;

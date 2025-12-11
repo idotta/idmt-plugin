@@ -22,6 +22,9 @@ app.MapIdmtEndpoints();
 
 await app.EnsureIdmtDatabaseAsync();
 
-await app.SeedIdmtDataAsync();
+var seedAction = app.Services.GetRequiredService<SeedDataAsync>();
+await app.SeedIdmtDataAsync(seedAction);
 
 app.Run();
+
+public partial class Program;
