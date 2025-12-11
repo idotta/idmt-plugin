@@ -1,3 +1,4 @@
+using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
 using Microsoft.AspNetCore.Builder;
@@ -28,6 +29,10 @@ public static class SysEndpoints
         sys.MapDelete("/users/{userId:guid}/tenants/{tenantId}", RevokeTenantAccessAsync)
             .WithName("RevokeTenantAccess")
             .WithSummary("Revoke user access from a tenant");
+
+        sys.MapGet("/info", GetSystemInfoAsync)
+            .WithName("GetSystemInfo")
+            .WithSummary("Detailed system information");
     }
 
     private static async Task<Ok<TenantInfoResponse[]>> GetUserTenantsAsync(
@@ -62,6 +67,35 @@ public static class SysEndpoints
             : TypedResults.NotFound("User or Tenant not found, or operation failed.");
     }
 
+    private static Task<Ok<SystemInfoResponse>> GetSystemInfoAsync(
+        [FromServices] IMultiTenantContextAccessor tenantAccessor)
+    {
+        var currentTenant = tenantAccessor.MultiTenantContext?.TenantInfo;
+
+        var systemInfo = new SystemInfoResponse
+        {
+            ApplicationName = "IDMT Sample API",
+            Version = "1.0.0",
+            Environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production",
+            CurrentTenant = currentTenant != null ? new TenantInfo
+            {
+                Id = currentTenant.Id,
+                Name = currentTenant.Name,
+                Identifier = currentTenant.Identifier
+            } : null,
+            ServerTime = DT.UtcNow,
+            Features =
+            [
+                "Multi-Tenant Support",
+                "Vertical Slice Architecture",
+                "Minimal APIs",
+                "OpenAPI/Swagger Documentation"
+            ]
+        };
+
+        return Task.FromResult(TypedResults.Ok(systemInfo));
+    }
+
     public record GrantAccessRequest(DateTime? ExpiresAt);
 
     public record TenantInfoResponse(
@@ -71,4 +105,27 @@ public static class SysEndpoints
         string DisplayName,
         string Plan
     );
+}
+
+/// <summary>
+/// System information response
+/// </summary>
+public class SystemInfoResponse
+{
+    public string ApplicationName { get; set; } = string.Empty;
+    public string Version { get; set; } = string.Empty;
+    public string Environment { get; set; } = string.Empty;
+    public TenantInfo? CurrentTenant { get; set; }
+    public DateTime ServerTime { get; set; }
+    public List<string> Features { get; set; } = [];
+}
+
+/// <summary>
+/// Tenant information for responses
+/// </summary>
+public class TenantInfo
+{
+    public string? Id { get; set; }
+    public string? Name { get; set; }
+    public string? Identifier { get; set; }
 }

@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Routing;
 using Idmt.Plugin.Features.Auth;
 using System.Reflection;
+using Idmt.Plugin.Features.Sys;
 
 namespace Idmt.Plugin.Extensions;
 
@@ -46,6 +47,8 @@ public static class ApplicationBuilderExtensions
     public static IEndpointRouteBuilder MapIdmtEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapAuthEndpoints();
+        endpoints.MapSysEndpoints();
+        endpoints.MapHealthChecks("/healthz").RequireAuthorization("RequireSysUser");
         return endpoints;
     }
 
@@ -161,7 +164,7 @@ public static class ApplicationBuilderExtensions
 
         // Fallback: Use reflection to access service descriptors for older .NET versions
         var serviceDescriptors = GetServiceDescriptors(serviceProvider);
-        var userStoreDescriptor = serviceDescriptors.FirstOrDefault(sd => sd.ServiceType == typeof(IUserStore<IdmtUser>)) 
+        var userStoreDescriptor = serviceDescriptors.FirstOrDefault(sd => sd.ServiceType == typeof(IUserStore<IdmtUser>))
             ?? throw new InvalidOperationException("No IUserStore<IdmtUser> is registered. Ensure Identity is configured before calling UseIdmt().");
 
         // Check if the implementation type implements IUserEmailStore<IdmtUser>
@@ -186,10 +189,10 @@ public static class ApplicationBuilderExtensions
         // Use reflection to access the internal CallSiteFactory which contains the service descriptors
         // This avoids resolving services and prevents circular dependency issues
         object? callSiteFactory = null;
-        
+
         var field = serviceProvider.GetType().GetField("_serviceProvider", BindingFlags.NonPublic | BindingFlags.Instance)
             ?? serviceProvider.GetType().GetField("_callSiteFactory", BindingFlags.NonPublic | BindingFlags.Instance);
-        
+
         if (field != null)
         {
             callSiteFactory = field.GetValue(serviceProvider);

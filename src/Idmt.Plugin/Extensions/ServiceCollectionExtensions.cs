@@ -294,6 +294,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<UpdateUser.IUpdateUserHandler, UpdateUser.UpdateUserHandler>();
         services.AddScoped<GetUserInfo.IGetUserInfoHandler, GetUserInfo.GetUserInfoHandler>();
         services.AddScoped<UpdateUserInfo.IUpdateUserInfoHandler, UpdateUserInfo.UpdateUserInfoHandler>();
+
+        // Health
+        services.AddHealthChecks()
+            .AddCheck<Features.Health.BasicHealthCheck>("basic");
     }
 
     private static void RegisterMiddleware(IServiceCollection services)
