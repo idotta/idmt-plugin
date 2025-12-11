@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using Idmt.Plugin.Configuration;
-using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -20,17 +19,17 @@ public static class ManageEndpoints
             .WithOpenApi();
 
         manage.MapPost("/users", RegisterUserAsync)
-            .RequireAuthorization(policy => policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin, IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.TenantAdmin))
+            .RequireAuthorization("RequireSysUser")
             .WithSummary("Register user")
             .WithDescription("Register a new user for a tenant (Admin/System only)");
 
         manage.MapDelete("/users/{userId:guid}", UnregisterUserAsync)
-            .RequireAuthorization(policy => policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin, IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.TenantAdmin))
+            .RequireAuthorization("RequireTenantManager")
             .WithSummary("Delete user")
             .WithDescription("Delete a user within the same tenant (Admin/System only)");
 
         manage.MapPut("/users/{userId:guid}", UpdateUserAsync)
-            .RequireAuthorization(policy => policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin, IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.TenantAdmin))
+            .RequireAuthorization("RequireTenantManager")
             .WithSummary("Activate/Deactivate user")
             .WithDescription("Activate/Deactivate a user within the same tenant (Admin/System only)");
 

@@ -40,148 +40,180 @@ internal sealed class TenantAccessService(
 
     public async Task<bool> GrantTenantAccessAsync(Guid userId, string tenantId, DateTime? expiresAt = null)
     {
-        var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId);
-        if (user is null)
-        {
-            return false;
-        }
-
-        var targetTenant = await tenantResolver.ResolveAsync(tenantId);
-        if (targetTenant is null)
-        {
-            return false;
-        }
-
-        var userRoleIds = await dbContext.UserRoles
-            .Where(ur => ur.UserId == userId)
-            .Select(ur => ur.RoleId)
-            .ToListAsync();
-
-        var tenantAccess = await dbContext.TenantAccess
-            .FirstOrDefaultAsync(ta => ta.UserId == userId && ta.TenantId == tenantId);
-
-        if (tenantAccess is not null)
-        {
-            tenantAccess.IsActive = true;
-            tenantAccess.ExpiresAt = expiresAt;
-            dbContext.TenantAccess.Update(tenantAccess);
-        }
-        else
-        {
-            tenantAccess = new TenantAccess
-            {
-                UserId = userId,
-                TenantId = tenantId,
-                IsActive = true,
-                ExpiresAt = expiresAt
-            };
-            dbContext.TenantAccess.Add(tenantAccess);
-        }
-
-        var currentTenant = tenantAccessor.MultiTenantContext;
+        var previousMode = dbContext.TenantMismatchMode;
         dbContext.TenantMismatchMode = TenantMismatchMode.Ignore;
+
         try
         {
-            // Temporary set the tenant context to the target tenant
-            tenantContextSetter.MultiTenantContext = targetTenant;
-
-            var targetUser = await dbContext.Users
-                .FirstOrDefaultAsync(u => u.Email == user.Email && u.UserName == user.UserName && u.TenantId == tenantId);
-
-            bool userExists = targetUser is not null;
-            targetUser ??= user;
-
-            targetUser.TenantId = tenantId;
-            targetUser.IsActive = true;
-
-            if (userExists)
+            var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            if (user is null)
             {
-                dbContext.Users.Update(targetUser);
+                return false;
+            }
+
+            var targetTenant = await tenantResolver.ResolveAsync(tenantId);
+            if (targetTenant is null)
+            {
+                return false;
+            }
+
+            var userRoleIds = await dbContext.UserRoles
+                .Where(ur => ur.UserId == userId)
+                .Select(ur => ur.RoleId)
+                .ToListAsync();
+
+            var tenantAccess = await dbContext.TenantAccess
+                .FirstOrDefaultAsync(ta => ta.UserId == userId && ta.TenantId == tenantId);
+
+            if (tenantAccess is not null)
+            {
+                tenantAccess.IsActive = true;
+                tenantAccess.ExpiresAt = expiresAt;
+                dbContext.TenantAccess.Update(tenantAccess);
             }
             else
             {
-                dbContext.Users.Add(targetUser);
-
-                // Copy roles from system user to target tenant user
-                foreach (var roleId in userRoleIds)
+                tenantAccess = new TenantAccess
                 {
-                    var userRole = new IdentityUserRole<Guid>
-                    {
-                        UserId = targetUser.Id,
-                        RoleId = roleId
-                    };
-                    dbContext.UserRoles.Add(userRole);
-                }
+                    UserId = userId,
+                    TenantId = tenantId,
+                    IsActive = true,
+                    ExpiresAt = expiresAt
+                };
+                dbContext.TenantAccess.Add(tenantAccess);
             }
 
-            await dbContext.SaveChangesAsync();
-        }
-        catch (Exception)
-        {
-            return false;
+            var currentTenant = tenantAccessor.MultiTenantContext;
+            
+            try
+            {
+                // Temporary set the tenant context to the target tenant
+                tenantContextSetter.MultiTenantContext = targetTenant;
+
+                var targetUser = await dbContext.Users
+                    .FirstOrDefaultAsync(u => u.Email == user.Email && u.UserName == user.UserName && u.TenantId == tenantId);
+
+                if (targetUser is null)
+                {
+                    // Create new user record for the target tenant
+                    targetUser = new IdmtUser
+                    {
+                        UserName = user.UserName,
+                        Email = user.Email,
+                        EmailConfirmed = user.EmailConfirmed,
+                        PasswordHash = user.PasswordHash,
+                        SecurityStamp = user.SecurityStamp,
+                        ConcurrencyStamp = user.ConcurrencyStamp,
+                        PhoneNumber = user.PhoneNumber,
+                        PhoneNumberConfirmed = user.PhoneNumberConfirmed,
+                        TwoFactorEnabled = user.TwoFactorEnabled,
+                        LockoutEnd = user.LockoutEnd,
+                        LockoutEnabled = user.LockoutEnabled,
+                        AccessFailedCount = user.AccessFailedCount,
+                        IsActive = true,
+                        TenantId = tenantId
+                    };
+                    
+                    dbContext.Users.Add(targetUser);
+
+                    // Copy roles from system user to target tenant user
+                    foreach (var roleId in userRoleIds)
+                    {
+                        var userRole = new IdentityUserRole<Guid>
+                        {
+                            UserId = targetUser.Id,
+                            RoleId = roleId
+                        };
+                        dbContext.UserRoles.Add(userRole);
+                    }
+                }
+                else
+                {
+                    targetUser.IsActive = true;
+                    dbContext.Users.Update(targetUser);
+                }
+
+                await dbContext.SaveChangesAsync();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+            finally
+            {
+                tenantContextSetter.MultiTenantContext = currentTenant;
+            }
+
+            return true;
         }
         finally
         {
-            tenantContextSetter.MultiTenantContext = currentTenant;
-            dbContext.TenantMismatchMode = TenantMismatchMode.Throw;
+            dbContext.TenantMismatchMode = previousMode;
         }
-
-        return true;
     }
 
     public async Task<bool> RevokeTenantAccessAsync(Guid userId, string tenantId)
     {
-        var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId);
-        if (user is null)
-        {
-            return false;
-        }
-
-        var targetTenant = await tenantResolver.ResolveAsync(tenantId);
-        if (targetTenant is null)
-        {
-            return false;
-        }
-
-        var tenantAccess = await dbContext.TenantAccess
-            .FirstOrDefaultAsync(ta => ta.UserId == userId && ta.TenantId == tenantId);
-
-        if (tenantAccess is null)
-        {
-            return true;
-        }
-
-        tenantAccess.IsActive = false;
-        dbContext.TenantAccess.Update(tenantAccess);
-
-        var currentTenant = tenantAccessor.MultiTenantContext;
+        var previousMode = dbContext.TenantMismatchMode;
         dbContext.TenantMismatchMode = TenantMismatchMode.Ignore;
+
         try
         {
-            tenantContextSetter.MultiTenantContext = targetTenant;
-
-            var targetUser = await dbContext.Users
-                .FirstOrDefaultAsync(u => u.Email == user.Email && u.UserName == user.UserName && u.TenantId == tenantId);
-
-            if (targetUser is not null)
+            var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            if (user is null)
             {
-                targetUser.IsActive = false;
-                dbContext.Users.Update(targetUser);
+                return false;
             }
 
-            await dbContext.SaveChangesAsync();
-        }
-        catch (Exception)
-        {
-            return false;
+            var targetTenant = await tenantResolver.ResolveAsync(tenantId);
+            if (targetTenant is null)
+            {
+                return false;
+            }
+
+            var tenantAccess = await dbContext.TenantAccess
+                .FirstOrDefaultAsync(ta => ta.UserId == userId && ta.TenantId == tenantId);
+
+            if (tenantAccess is null)
+            {
+                return true;
+            }
+
+            tenantAccess.IsActive = false;
+            dbContext.TenantAccess.Update(tenantAccess);
+
+            var currentTenant = tenantAccessor.MultiTenantContext;
+            
+            try
+            {
+                tenantContextSetter.MultiTenantContext = targetTenant;
+
+                var targetUser = await dbContext.Users
+                    .FirstOrDefaultAsync(u => u.Email == user.Email && u.UserName == user.UserName && u.TenantId == tenantId);
+
+                if (targetUser is not null)
+                {
+                    targetUser.IsActive = false;
+                    dbContext.Users.Update(targetUser);
+                }
+
+                await dbContext.SaveChangesAsync();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+            finally
+            {
+                tenantContextSetter.MultiTenantContext = currentTenant;
+            }
+
+            return true;
         }
         finally
         {
-            tenantContextSetter.MultiTenantContext = currentTenant;
-            dbContext.TenantMismatchMode = TenantMismatchMode.Throw;
+            dbContext.TenantMismatchMode = previousMode;
         }
-
-        return true;
     }
 
     public bool CanAssignRole(string role)

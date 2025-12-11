@@ -250,6 +250,18 @@ public static class ServiceCollectionExtensions
             // Add default policies
             options.AddPolicy("RequireAuthenticatedUser", policy =>
                 policy.RequireAuthenticatedUser());
+
+            // Add system admin policy
+            options.AddPolicy("RequireSysAdmin", policy =>
+                policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin));
+
+            // Add system user policy
+            options.AddPolicy("RequireSysUser", policy =>
+                policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin, IdmtDefaultRoleTypes.SysSupport));
+
+            // Add tenant admin policy
+            options.AddPolicy("RequireTenantManager", policy =>
+                policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin, IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.TenantAdmin));
         });
     }
 
