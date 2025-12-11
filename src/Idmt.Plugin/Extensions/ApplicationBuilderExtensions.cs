@@ -60,7 +60,7 @@ public static class ApplicationBuilderExtensions
     /// <param name="app">The application builder</param>
     /// <param name="autoMigrate">Whether to automatically run migrations</param>
     /// <returns>The application builder</returns>
-    public static IApplicationBuilder EnsureIdmtDatabase(this IApplicationBuilder app, bool autoMigrate = false)
+    public static async Task EnsureIdmtDatabaseAsync(this IApplicationBuilder app, bool autoMigrate = false)
     {
         using var scope = app.ApplicationServices.CreateScope();
         var services = scope.ServiceProvider;
@@ -77,17 +77,17 @@ public static class ApplicationBuilderExtensions
                 // Try to migrate, fall back to EnsureCreated if migrations not supported
                 try
                 {
-                    context.Database.Migrate();
+                    await context.Database.MigrateAsync();
                 }
                 catch (InvalidOperationException)
                 {
                     // Migrations not supported (e.g., in-memory database)
-                    context.Database.EnsureCreated();
+                    await context.Database.EnsureCreatedAsync();
                 }
             }
             else
             {
-                context.Database.EnsureCreated();
+                await context.Database.EnsureCreatedAsync();
             }
 
             // NOTE: IdmtTenantStoreDbContext shares the same database/connection
@@ -95,12 +95,9 @@ public static class ApplicationBuilderExtensions
         }
         catch (Exception ex)
         {
-            // Log the error - in a real implementation you'd use ILogger
-            Console.WriteLine($"Database initialization failed: {ex.Message}");
+            Console.Error.WriteLine($"Database initialization failed: {ex.Message}");
             throw;
         }
-
-        return app;
     }
 
     /// <summary>
@@ -126,8 +123,8 @@ public static class ApplicationBuilderExtensions
         }
         catch (Exception ex)
         {
-            // Log the error - in a real implementation you'd use ILogger
-            Console.WriteLine($"Data seeding failed: {ex.Message}");
+            Console.Error.WriteLine($"Data seeding failed: {ex.Message}");
+            throw;
         }
 
         return app;

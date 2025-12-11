@@ -20,7 +20,8 @@ app.UseIdmt();
 
 app.MapIdmtEndpoints();
 
-app.EnsureIdmtDatabase();
+await app.EnsureIdmtDatabaseAsync();
+
 await app.SeedIdmtDataAsync();
 
 app.Run();

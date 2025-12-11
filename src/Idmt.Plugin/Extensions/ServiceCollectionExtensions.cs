@@ -112,8 +112,13 @@ public static class ServiceCollectionExtensions
             services.AddDbContext<TDbContext>();
         }
 
-        // Register as IdmtDbContext for DI
-        services.AddScoped<IdmtDbContext>(provider => provider.GetRequiredService<TDbContext>());
+        // Register as IdmtDbContext for DI (only when using a derived context).
+        // NOTE: When TDbContext == IdmtDbContext, adding this would create a self-referential
+        // factory (IdmtDbContext -> GetRequiredService<IdmtDbContext> -> ...) and hang/overflow.
+        if (typeof(TDbContext) != typeof(IdmtDbContext))
+        {
+            services.AddScoped<IdmtDbContext>(provider => provider.GetRequiredService<TDbContext>());
+        }
 
         // Register Tenant Store DbContext
         // The Tenant Store typically shares the same database configuration as the main context
