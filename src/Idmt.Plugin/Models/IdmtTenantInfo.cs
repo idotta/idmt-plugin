@@ -5,6 +5,7 @@ namespace Idmt.Plugin.Models;
 /// <summary>
 /// Represents the information for a tenant in the multi-tenant application.
 /// Implements ITenantInfo interface from Finbuckle.MultiTenant.
+/// Identifier must be at least 3 characters long.
 /// </summary>
 public class IdmtTenantInfo : ITenantInfo, IAuditable
 {
@@ -39,27 +40,7 @@ public class IdmtTenantInfo : ITenantInfo, IAuditable
     public string? ConnectionString { get; set; }
 
     /// <summary>
-    /// When the tenant was created (UTC).
-    /// </summary>
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-    /// <summary>
-    /// When the tenant was last updated (UTC).
-    /// </summary>
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-
-    /// <summary>
-    /// ID of the user who created this tenant (system or admin user).
-    /// </summary>
-    public Guid CreatedBy { get; set; } = Guid.Empty;
-
-    /// <summary>
-    /// ID of the user who last updated this tenant (system or admin user).
-    /// </summary>
-    public Guid UpdatedBy { get; set; } = Guid.Empty;
-
-    /// <summary>
-    /// Soft delete flag—if false, this tenant is considered inactive.
+    /// Soft delete flag. If false, this tenant is considered inactive.
     /// </summary>
     public bool IsActive { get; set; } = true;
 

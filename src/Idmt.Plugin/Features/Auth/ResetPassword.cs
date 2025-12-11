@@ -1,6 +1,4 @@
-using System.ComponentModel.DataAnnotations;
 using Idmt.Plugin.Models;
-using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Identity;
 
@@ -10,7 +8,7 @@ public static class ResetPassword
 {
     public sealed record ResetPasswordRequest(string Email, string Token, string NewPassword);
 
-    public sealed record ResetPasswordResponse(bool Success, string? Message = null);
+    public sealed record ResetPasswordResponse(bool Success, string[]? Errors = null);
 
     public interface IResetPasswordHandler
     {
@@ -26,7 +24,7 @@ public static class ResetPassword
             var user = await userManager.FindByEmailAsync(request.Email);
             if (user == null)
             {
-                return new ResetPasswordResponse(false, "User not found");
+                return new ResetPasswordResponse(false, ["User not found"]);
             }
 
             // Reset password using the token
@@ -35,7 +33,7 @@ public static class ResetPassword
             if (!result.Succeeded)
             {
                 var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-                return new ResetPasswordResponse(false, errors);
+                return new ResetPasswordResponse(false, [errors]);
             }
 
             if (!user.EmailConfirmed)
@@ -44,7 +42,7 @@ public static class ResetPassword
                 await userManager.UpdateAsync(user);
             }
 
-            return new ResetPasswordResponse(true, "Password reset successfully");
+            return new ResetPasswordResponse(true, null);
         }
     }
 

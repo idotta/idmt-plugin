@@ -13,12 +13,13 @@ namespace Idmt.Plugin.Services;
 /// <summary>
 /// IDMT email service.
 /// </summary>
-public sealed class IdmtEmailService(IHttpContextAccessor httpContextAccessor,
+public sealed class IdmtEmailService(
+    IHttpContextAccessor httpContextAccessor,
     IEmailSender<IdmtUser> emailSender,
     LinkGenerator linkGenerator,
     IMultiTenantContextAccessor multiTenantContextAccessor)
 {
-    public async Task SendConfirmationEmailAsync(IdmtUser user, UserManager<IdmtUser> userManager, string email)
+    public async Task<(string token, string confirmationUrl)> SendConfirmationEmailAsync(IdmtUser user, UserManager<IdmtUser> userManager, string email)
     {
         if (httpContextAccessor.HttpContext is null)
         {
@@ -46,6 +47,8 @@ public sealed class IdmtEmailService(IHttpContextAccessor httpContextAccessor,
             ?? throw new NotSupportedException($"Could not find endpoint named '{ApplicationOptions.ConfirmEmailEndpointName}'.");
 
         await emailSender.SendConfirmationLinkAsync(user, email, HtmlEncoder.Default.Encode(confirmEmailUrl));
+
+        return (token, confirmEmailUrl);
     }
 
     public async Task SendConfirmationEmailChangeAsync(IdmtUser user, UserManager<IdmtUser> userManager, string email)

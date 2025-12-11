@@ -107,7 +107,7 @@ public static partial class Validators
     /// </summary>
     public static bool IsValidTenantId(string? tenantId)
     {
-        return !string.IsNullOrWhiteSpace(tenantId);
+        return !string.IsNullOrWhiteSpace(tenantId) && tenantId.Length >= 3;
     }
 
     /// <summary>
@@ -115,6 +115,6 @@ public static partial class Validators
     /// </summary>
     public static bool IsValidEmailOrUsername(string? emailOrUsername)
     {
-        return !string.IsNullOrWhiteSpace(emailOrUsername);
+        return !string.IsNullOrWhiteSpace(emailOrUsername) && emailOrUsername.Length >= 3;
     }
 }

@@ -19,7 +19,8 @@ public static class Logout
         Task HandleAsync(CancellationToken cancellationToken = default);
     }
 
-    internal sealed class LogoutHandler(ILogger<LogoutHandler> logger, SignInManager<IdmtUser> signInManager) : ILogoutHandler
+    internal sealed class LogoutHandler(ILogger<LogoutHandler> logger, SignInManager<IdmtUser> signInManager)
+    : ILogoutHandler
     {
         public async Task HandleAsync(CancellationToken cancellationToken = default)
         {

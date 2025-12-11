@@ -32,11 +32,6 @@ public class IdmtDbContext
     }
 
     /// <summary>
-    /// User permissions for fine-grained access control.
-    /// </summary>
-    public DbSet<UserPermission> UserPermissions { get; set; } = null!;
-
-    /// <summary>
     /// Audit logs for tracking user actions.
     /// </summary>
     public DbSet<IdmtAuditLog> AuditLogs { get; set; } = null!;
@@ -55,23 +50,6 @@ public class IdmtDbContext
         {
             entity.HasIndex(u => u.IsActive);
             entity.HasIndex(u => new { u.Email, u.UserName, u.TenantId }).IsUnique();
-            entity.IsMultiTenant();
-        });
-
-        // Configure user permissions
-        builder.Entity<UserPermission>(entity =>
-        {
-            entity.HasKey(p => p.Id);
-
-            entity.HasOne<IdmtUser>()
-                .WithMany()
-                .HasForeignKey(p => p.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasIndex(p => new { p.UserId, p.Permission });
-            entity.HasIndex(p => new { p.TenantId, p.Permission });
-            entity.HasIndex(p => p.IsActive);
-
             entity.IsMultiTenant();
         });
 
@@ -104,15 +82,11 @@ public class IdmtDbContext
 
             // Indexes for common queries on custom properties
             entity.HasIndex(ti => ti.IsActive);
-            entity.HasIndex(ti => ti.CreatedAt);
-            entity.HasIndex(ti => new { ti.IsActive, ti.CreatedAt });
 
             // Property configurations for custom properties
             entity.Property(ti => ti.Name).HasMaxLength(200);
             entity.Property(ti => ti.DisplayName).HasMaxLength(200);
             entity.Property(ti => ti.Plan).HasMaxLength(100);
-            entity.Property(ti => ti.CreatedAt).IsRequired();
-            entity.Property(ti => ti.UpdatedAt).IsRequired();
             entity.Property(ti => ti.IsActive).IsRequired().HasDefaultValue(true);
 
             // Authentication paths with defaults
@@ -138,7 +112,7 @@ public class IdmtDbContext
                     Resource = entry.Entity.GetName(),
                     ResourceId = entry.Entity.GetId(),
                     Success = true,
-                    Timestamp = DateTime.UtcNow,
+                    Timestamp = DT.UtcNow,
                     IpAddress = _currentUserService.IpAddress,
                     UserAgent = _currentUserService.UserAgent,
                 });
@@ -153,7 +127,7 @@ public class IdmtDbContext
                     Resource = entry.Entity.GetName(),
                     ResourceId = entry.Entity.GetId(),
                     Success = true,
-                    Timestamp = DateTime.UtcNow,
+                    Timestamp = DT.UtcNow,
                     IpAddress = _currentUserService.IpAddress,
                     UserAgent = _currentUserService.UserAgent,
                 });
@@ -172,7 +146,7 @@ public class IdmtDbContext
                     ResourceId = entry.Entity.GetId(),
                     Details = details,
                     Success = true,
-                    Timestamp = DateTime.UtcNow,
+                    Timestamp = DT.UtcNow,
                     IpAddress = _currentUserService.IpAddress,
                     UserAgent = _currentUserService.UserAgent,
                 });

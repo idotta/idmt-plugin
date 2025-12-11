@@ -18,16 +18,6 @@ public sealed class TenantAccess : IAuditable
     public string TenantId { get; set; } = null!;
 
     /// <summary>
-    /// When access was granted
-    /// </summary>
-    public DateTime GrantedAt { get; set; } = DateTime.UtcNow;
-
-    /// <summary>
-    /// Who granted the access
-    /// </summary>
-    public Guid? GrantedBy { get; set; }
-
-    /// <summary>
     /// Whether access is currently active
     /// </summary>
     public bool IsActive { get; set; } = true;

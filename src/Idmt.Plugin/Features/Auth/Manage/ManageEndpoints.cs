@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
-using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;

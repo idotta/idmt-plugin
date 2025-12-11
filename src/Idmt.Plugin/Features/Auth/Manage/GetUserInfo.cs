@@ -11,9 +11,8 @@ public static class GetUserInfo
         string Email,
         string UserName,
         bool EmailConfirmed,
-        Guid TenantId,
+        string TenantId,
         string Role,
-        DateTime CreatedAt,
         DateTime? LastLoginAt,
         bool IsActive
     );
@@ -46,9 +45,8 @@ public static class GetUserInfo
                 appUser.Email!,
                 appUser.UserName!,
                 appUser.EmailConfirmed,
-                Guid.Parse(appUser.TenantId),
+                appUser.TenantId,
                 role,
-                appUser.CreatedAt,
                 appUser.LastLoginAt,
                 appUser.IsActive
             );

@@ -9,17 +9,22 @@ namespace Idmt.Plugin.Services;
 
 internal sealed class TenantAccessService(
     IdmtDbContext dbContext,
-    ICurrentUserService currentUserService,
     IMultiTenantContextAccessor tenantAccessor,
     ITenantResolver<IdmtTenantInfo> tenantResolver,
-    IMultiTenantContextSetter tenantContextSetter) : ITenantAccessService
+    IMultiTenantContextSetter tenantContextSetter,
+    IMultiTenantStore<IdmtTenantInfo> tenantStore) : ITenantAccessService
 {
-    public async Task<string[]> GetUserAccessibleTenantsAsync(Guid userId)
+    public async Task<IdmtTenantInfo[]> GetUserAccessibleTenantsAsync(Guid userId)
     {
-        return await dbContext.TenantAccess
+        var tenantIds = await dbContext.TenantAccess
             .Where(ta => ta.UserId == userId && ta.IsActive)
             .Select(ta => ta.TenantId)
             .ToArrayAsync();
+
+        var tenantTasks = tenantIds.Select(tenantStore.TryGetAsync);
+        var tenants = await Task.WhenAll(tenantTasks);
+
+        return tenants.Where(t => t != null).ToArray()!;
     }
 
     public async Task<bool> CanAccessTenantAsync(Guid userId, string tenantId)
@@ -29,7 +34,7 @@ internal sealed class TenantAccessService(
                 ta.UserId == userId &&
                 ta.TenantId == tenantId &&
                 ta.IsActive &&
-                (ta.ExpiresAt == null || ta.ExpiresAt > DateTime.UtcNow));
+                (ta.ExpiresAt == null || ta.ExpiresAt > DT.UtcNow));
     }
 
     public async Task<bool> GrantTenantAccessAsync(Guid userId, string tenantId, DateTime? expiresAt = null)
@@ -57,8 +62,6 @@ internal sealed class TenantAccessService(
         if (tenantAccess is not null)
         {
             tenantAccess.IsActive = true;
-            tenantAccess.GrantedAt = DateTime.UtcNow;
-            tenantAccess.GrantedBy = currentUserService.UserId;
             tenantAccess.ExpiresAt = expiresAt;
             dbContext.TenantAccess.Update(tenantAccess);
         }
@@ -68,8 +71,6 @@ internal sealed class TenantAccessService(
             {
                 UserId = userId,
                 TenantId = tenantId,
-                GrantedAt = DateTime.UtcNow,
-                GrantedBy = currentUserService.UserId,
                 IsActive = true,
                 ExpiresAt = expiresAt
             };
@@ -91,8 +92,6 @@ internal sealed class TenantAccessService(
 
             targetUser.TenantId = tenantId;
             targetUser.IsActive = true;
-            targetUser.UpdatedAt = DateTime.UtcNow;
-            targetUser.UpdatedBy = currentUserService.UserId ?? Guid.Empty;
 
             if (userExists)
             {
@@ -166,8 +165,6 @@ internal sealed class TenantAccessService(
             if (targetUser is not null)
             {
                 targetUser.IsActive = false;
-                targetUser.UpdatedAt = DateTime.UtcNow;
-                targetUser.UpdatedBy = currentUserService.UserId ?? Guid.Empty;
                 dbContext.Users.Update(targetUser);
             }
 

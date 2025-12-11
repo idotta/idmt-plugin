@@ -22,7 +22,7 @@ public static class ConfirmEmail
             var user = await userManager.FindByEmailAsync(request.Email);
             if (user == null)
             {
-                return new ConfirmEmailResponse(false, "User not found");
+                return new ConfirmEmailResponse(false, "Confirmation failed");
             }
 
             if (user.EmailConfirmed)

@@ -24,8 +24,6 @@ public static class UpdateUser
             }
 
             appUser.IsActive = request.IsActive;
-            appUser.UpdatedAt = DateTime.UtcNow;
-            appUser.UpdatedBy = appUser.Id;
 
             var result = await userManager.UpdateAsync(appUser);
             return result.Succeeded;

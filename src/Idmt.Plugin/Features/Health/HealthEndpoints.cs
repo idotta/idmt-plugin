@@ -68,7 +68,7 @@ public static class HealthEndpoints
                 DatabaseConnected = canConnect,
                 CurrentTenant = currentTenant?.Id ?? "No tenant",
                 TenantUserCount = userCount,
-                Timestamp = DateTime.UtcNow
+                Timestamp = DT.UtcNow
             };
 
             return Results.Ok(healthResponse);
@@ -81,7 +81,7 @@ public static class HealthEndpoints
                 DatabaseConnected = false,
                 CurrentTenant = currentTenant?.Id ?? "No tenant",
                 TenantUserCount = 0,
-                Timestamp = DateTime.UtcNow,
+                Timestamp = DT.UtcNow,
                 Error = ex.Message
             };
 
@@ -110,7 +110,7 @@ public static class HealthEndpoints
                 Name = currentTenant.Name,
                 Identifier = currentTenant.Identifier
             } : null,
-            ServerTime = DateTime.UtcNow,
+            ServerTime = DT.UtcNow,
             Features =
             [
                 "Multi-Tenant Support",

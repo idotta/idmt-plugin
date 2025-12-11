@@ -107,7 +107,7 @@ public static class Login
                 }
 
                 // Update last login timestamp
-                user.LastLoginAt = DateTime.UtcNow;
+                user.LastLoginAt = DT.UtcNow;
                 await userManager.UpdateAsync(user);
 
                 logger.LogInformation("User {UserId} successfully logged in to tenant {TenantId}", user.Id, tenantInfo.Id);

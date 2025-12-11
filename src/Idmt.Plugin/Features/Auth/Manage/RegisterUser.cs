@@ -150,19 +150,9 @@ public static class RegisterUser
                 Email = request.Email,
                 EmailConfirmed = false, // Will be confirmed when password is set
                 IsActive = true,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedBy = currentUserService.UserId!.Value,
-                UpdatedBy = currentUserService.UserId!.Value,
                 TenantId = currentUserService.TenantId!,
-                LastLoginAt = null
+                LastLoginAt = null,
             };
-
-            // Set username and email using store-specific methods (ensures proper normalization)
-            await userStore.SetUserNameAsync(user, request.Username ?? request.Email, cancellationToken);
-            IUserEmailStore<IdmtUser> emailStore = userStore as IUserEmailStore<IdmtUser>
-                ?? throw new NotSupportedException("The user store does not support email functionality.");
-            await emailStore.SetEmailAsync(user, request.Email, cancellationToken);
 
             // Use a database transaction to ensure atomicity: all operations (role check, user creation, role assignment) 
             // happen atomically. If any step fails, everything is rolled back.
@@ -198,6 +188,12 @@ public static class RegisterUser
                         ErrorMessage = "Failed to create user"
                     };
                 }
+
+                // Set username and email using store-specific methods (ensures proper normalization)
+                await userStore.SetUserNameAsync(user, request.Username ?? request.Email, cancellationToken);
+                IUserEmailStore<IdmtUser> emailStore = userStore as IUserEmailStore<IdmtUser>
+                    ?? throw new NotSupportedException("The user store does not support email functionality.");
+                await emailStore.SetEmailAsync(user, request.Email, cancellationToken);
 
                 // Assign the specified role to the user
                 // If this fails, the transaction will rollback and the user will not be created

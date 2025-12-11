@@ -21,11 +21,8 @@ public static class ResendConfirmationEmail
 
     internal sealed class ResendConfirmationEmailHandler(
         UserManager<IdmtUser> userManager,
-        IdmtEmailService emailService,
-        LinkGenerator linkGenerator,
-        IHttpContextAccessor httpContextAccessor,
-        ICurrentUserService currentUserService)
-        : IResendConfirmationEmailHandler
+        IdmtEmailService emailService
+        ) : IResendConfirmationEmailHandler
     {
         public async Task<ResendConfirmationEmailResponse> HandleAsync(ResendConfirmationEmailRequest request, CancellationToken cancellationToken = default)
         {
@@ -42,20 +39,8 @@ public static class ResendConfirmationEmail
             }
 
             // Generate email confirmation token
-            var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
 
-            // Create confirmation URL if base URL is configured
-            var routeValues = new RouteValueDictionary()
-            {
-                ["tenantId"] = currentUserService.TenantId!,
-                ["email"] = user.Email,
-                ["token"] = token,
-            };
-
-            var confirmationUrl = linkGenerator.GetUriByName(httpContextAccessor.HttpContext!, ApplicationOptions.ConfirmEmailEndpointName, routeValues)
-                ?? throw new NotSupportedException($"Could not find endpoint named '{ApplicationOptions.ConfirmEmailEndpointName}'.");
-
-            await emailService.SendConfirmationEmailAsync(user, userManager, request.Email);
+            var (token, confirmationUrl) = await emailService.SendConfirmationEmailAsync(user, userManager, request.Email);
 
             return new ResendConfirmationEmailResponse(true, token, confirmationUrl, "If the email exists, a confirmation link has been sent.");
         }

@@ -53,7 +53,7 @@ public class IdmtAuditLog
     /// <summary>
     /// When this action occurred.
     /// </summary>
-    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public DateTime Timestamp { get; set; } = DT.UtcNow;
 
     /// <summary>
     /// Whether this was a successful action.

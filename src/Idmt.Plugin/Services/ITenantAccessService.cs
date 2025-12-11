@@ -12,7 +12,7 @@ public interface ITenantAccessService
     /// </summary>
     /// <param name="userId">The ID of the user.</param>
     /// <returns>A list of tenant IDs that the user can access.</returns>
-    Task<string[]> GetUserAccessibleTenantsAsync(Guid userId);
+    Task<IdmtTenantInfo[]> GetUserAccessibleTenantsAsync(Guid userId);
 
     /// <summary>
     /// Checks if the specified user currently has access to the given tenant.

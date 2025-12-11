@@ -87,9 +87,6 @@ public static class UpdateUserInfo
                     }
                 }
 
-                // Update timestamp
-                appUser.UpdatedAt = DateTime.UtcNow;
-                appUser.UpdatedBy = appUser.Id;
                 await userManager.UpdateAsync(appUser);
 
                 await transaction.CommitAsync(cancellationToken);

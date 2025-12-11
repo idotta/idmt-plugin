@@ -3,7 +3,8 @@ using Microsoft.AspNetCore.Identity;
 namespace Idmt.Plugin.Models;
 
 /// <summary>
-/// Multi-tenant application user that extends IdentityUser
+/// Multi-tenant application user that extends IdentityUser.
+/// Username must be at least 3 characters long.
 /// </summary>
 public class IdmtUser : IdentityUser<Guid>, IAuditable
 {
@@ -24,29 +25,9 @@ public class IdmtUser : IdentityUser<Guid>, IAuditable
     public bool IsActive { get; set; } = true;
 
     /// <summary>
-    /// When this user was created.
-    /// </summary>
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-    /// <summary>
-    /// When this user was last updated.
-    /// </summary>
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-
-    /// <summary>
     /// When this user last logged in.
     /// </summary>
     public DateTime? LastLoginAt { get; set; }
-
-    /// <summary>
-    /// ID of the user who created this user.
-    /// </summary>
-    public Guid CreatedBy { get; set; } = Guid.Empty;
-
-    /// <summary>
-    /// ID of the user who last updated this user.
-    /// </summary>
-    public Guid UpdatedBy { get; set; } = Guid.Empty;
 
     public string GetId() => Id.ToString();
 
