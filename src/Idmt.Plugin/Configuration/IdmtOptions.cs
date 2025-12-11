@@ -96,7 +96,7 @@ public class MultiTenantOptions
     /// <summary>
     /// Default tenant ID for fallback
     /// </summary>
-    public string DefaultTenantId { get; set; } = "default";
+    public const string DefaultTenantId = "default";
 
     /// <summary>
     /// Tenant resolution strategy (header, subdomain, etc.)

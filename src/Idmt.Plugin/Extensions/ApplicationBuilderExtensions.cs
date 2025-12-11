@@ -139,7 +139,7 @@ public static class ApplicationBuilderExtensions
 
         // Seed default tenant if using multi-tenant store
         var tenantStore = services.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
-        var defaultTenantId = options.Value.MultiTenant.DefaultTenantId;
+        var defaultTenantId = MultiTenantOptions.DefaultTenantId;
         var existingTenant = await tenantStore.TryGetAsync(defaultTenantId);
 
         if (existingTenant == null)
