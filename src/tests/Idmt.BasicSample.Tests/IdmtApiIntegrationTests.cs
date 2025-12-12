@@ -82,6 +82,20 @@ public class IdmtApiIntegrationTests : IClassFixture<IdmtApiFactory>
         Assert.False(string.IsNullOrWhiteSpace(refreshed!.AccessToken));
     }
 
+    [Fact(Skip = "Route-strategy URLs not exposed by sample endpoint templates yet")]
+    public async Task Auth_login_via_route_strategy()
+    {
+        var client = _factory.CreateClientWithTenant(useHeader: false, useRoute: true);
+
+        var loginResponse = await client.PostAsJsonAsync("auth/login?useCookies=true", new
+        {
+            EmailOrUsername = IdmtApiFactory.SysAdminEmail,
+            Password = IdmtApiFactory.SysAdminPassword
+        });
+
+        await AssertSuccess(loginResponse);
+    }
+
     [Fact]
     public async Task Register_reset_login_and_update_user_flow_works()
     {

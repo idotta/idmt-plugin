@@ -2,11 +2,12 @@ using Finbuckle.MultiTenant;
 using Finbuckle.MultiTenant.Abstractions;
 using Finbuckle.MultiTenant.EntityFrameworkCore;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Extensions;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,29 +36,29 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
                 .ConfigureWarnings(builder => builder.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
             services.AddDbContext<IdmtTenantStoreDbContext>(options => options.UseInMemoryDatabase(databaseName));
 
-            services.AddTransient<TestDataSeeder>();
-
-            using var provider = services.BuildServiceProvider();
-            using var scope = provider.CreateScope();
-            var seeder = scope.ServiceProvider.GetRequiredService<TestDataSeeder>();
-            seeder.EnsureSeedAsync().GetAwaiter().GetResult();
+            services.AddSingleton<SeedDataAsync>(SeedAsync);
         });
     }
 
-    public HttpClient CreateClientWithTenant(bool allowAutoRedirect = false)
+    public HttpClient CreateClientWithTenant(string? tenantId = null, bool allowAutoRedirect = false, bool useHeader = true, bool useRoute = false)
     {
+        tenantId ??= DefaultTenantId;
         var client = CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = allowAutoRedirect
         });
-        client.DefaultRequestHeaders.TryAddWithoutValidation("__tenant__", DefaultTenantId);
+        if (useRoute)
+        {
+            client.BaseAddress = new Uri($"http://localhost/{tenantId}/");
+        }
+        if (useHeader)
+        {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("__tenant__", tenantId);
+        }
         return client;
     }
-}
 
-internal sealed class TestDataSeeder(IServiceProvider services)
-{
-    public async Task EnsureSeedAsync()
+    private static async Task SeedAsync(IServiceProvider services)
     {
         using var scope = services.CreateScope();
         var provider = scope.ServiceProvider;
@@ -65,18 +66,16 @@ internal sealed class TestDataSeeder(IServiceProvider services)
         var tenantStore = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
         var tenantContextSetter = provider.GetRequiredService<IMultiTenantContextSetter>();
         var tenantContextAccessor = provider.GetRequiredService<IMultiTenantContextAccessor>();
-        var tenant = await EnsureDefaultTenantAsync(tenantStore);
+        var tenant = await tenantStore.TryGetAsync(DefaultTenantId)
+            ?? throw new InvalidOperationException("Default tenant was not seeded by SeedIdmtDataAsync.");
 
         var previousContext = tenantContextAccessor.MultiTenantContext;
-        tenantContextSetter.MultiTenantContext = new MultiTenantContext<IdmtTenantInfo> { TenantInfo = tenant };
+        var tenantContext = new MultiTenantContext<IdmtTenantInfo> { TenantInfo = tenant };
+        tenantContextSetter.MultiTenantContext = tenantContext;
 
         var dbContext = provider.GetRequiredService<IdmtDbContext>();
-        var tenantStoreDbContext = provider.GetRequiredService<IdmtTenantStoreDbContext>();
         var roleManager = provider.GetRequiredService<RoleManager<IdmtRole>>();
         var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
-
-        await dbContext.Database.EnsureCreatedAsync();
-        await tenantStoreDbContext.Database.EnsureCreatedAsync();
 
         var previousMode = dbContext.TenantMismatchMode;
         dbContext.TenantMismatchMode = TenantMismatchMode.Ignore;
@@ -115,12 +114,14 @@ internal sealed class TestDataSeeder(IServiceProvider services)
     private static async Task EnsureSysAdminAsync(IdmtDbContext dbContext, UserManager<IdmtUser> userManager, string tenantId)
     {
         var existing = await dbContext.Users.IgnoreQueryFilters()
-            .SingleOrDefaultAsync(u => u.Email == IdmtApiFactory.SysAdminEmail);
+            .SingleOrDefaultAsync(u => u.Email == SysAdminEmail && u.TenantId == tenantId);
 
         var user = existing ?? new IdmtUser
         {
-            Email = IdmtApiFactory.SysAdminEmail,
+            Email = SysAdminEmail,
+            NormalizedEmail = SysAdminEmail.ToUpperInvariant(),
             UserName = "sysadmin",
+            NormalizedUserName = "SYSADMIN",
             EmailConfirmed = true,
             IsActive = true,
             TenantId = tenantId
@@ -128,7 +129,7 @@ internal sealed class TestDataSeeder(IServiceProvider services)
 
         if (existing is null)
         {
-            var createResult = await userManager.CreateAsync(user, IdmtApiFactory.SysAdminPassword);
+            var createResult = await userManager.CreateAsync(user, SysAdminPassword);
             if (!createResult.Succeeded)
             {
                 var errors = string.Join(", ", createResult.Errors.Select(e => e.Description));
@@ -136,7 +137,10 @@ internal sealed class TestDataSeeder(IServiceProvider services)
             }
         }
 
-        await userManager.AddToRoleAsync(user, IdmtDefaultRoleTypes.SysAdmin);
+        if (!await userManager.IsInRoleAsync(user, IdmtDefaultRoleTypes.SysAdmin))
+        {
+            await userManager.AddToRoleAsync(user, IdmtDefaultRoleTypes.SysAdmin);
+        }
 
         var hasAccess = await dbContext.TenantAccess.AnyAsync(ta => ta.UserId == user.Id && ta.TenantId == tenantId);
         if (!hasAccess)
@@ -150,26 +154,5 @@ internal sealed class TestDataSeeder(IServiceProvider services)
             });
             await dbContext.SaveChangesAsync();
         }
-    }
-
-    private static async Task<IdmtTenantInfo> EnsureDefaultTenantAsync(IMultiTenantStore<IdmtTenantInfo> tenantStore)
-    {
-        var tenant = await tenantStore.TryGetAsync(MultiTenantOptions.DefaultTenantId);
-        if (tenant != null)
-        {
-            return tenant;
-        }
-
-        tenant = new IdmtTenantInfo
-        {
-            Id = MultiTenantOptions.DefaultTenantId,
-            Identifier = MultiTenantOptions.DefaultTenantId,
-            Name = "System Tenant",
-            DisplayName = "System",
-            IsActive = true
-        };
-
-        await tenantStore.TryAddAsync(tenant);
-        return tenant;
     }
 }
