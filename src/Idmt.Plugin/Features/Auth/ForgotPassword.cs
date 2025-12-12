@@ -23,9 +23,7 @@ public static class ForgotPassword
     internal sealed class ForgotPasswordHandler(
         UserManager<IdmtUser> userManager,
         IEmailSender<IdmtUser> emailSender,
-        LinkGenerator linkGenerator,
-        IHttpContextAccessor httpContextAccessor,
-        ICurrentUserService currentUserService) : IForgotPasswordHandler
+        IdmtLinkGenerator linkGenerator) : IForgotPasswordHandler
     {
         public async Task<ForgotPasswordResponse> HandleAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default)
         {
@@ -39,16 +37,8 @@ public static class ForgotPassword
             // Generate password reset token
             var token = await userManager.GeneratePasswordResetTokenAsync(user);
 
-            // Create reset URL if base URL is configured
-            var routeValues = new RouteValueDictionary()
-            {
-                ["tenantId"] = currentUserService.TenantId!,
-                ["email"] = user.Email,
-                ["token"] = token,
-            };
-
-            var resetUrl = linkGenerator.GetUriByName(httpContextAccessor.HttpContext!, ApplicationOptions.PasswordResetEndpointName, routeValues)
-                ?? throw new NotSupportedException($"Could not find endpoint named '{ApplicationOptions.PasswordResetEndpointName}'.");
+            // Generate password reset link
+            var resetUrl = linkGenerator.GeneratePasswordResetLink(user.Email!, token);
 
             // Send email with reset code
             await emailSender.SendPasswordResetCodeAsync(user, request.Email, HtmlEncoder.Default.Encode(resetUrl));

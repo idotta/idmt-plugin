@@ -82,7 +82,7 @@ public class IdmtApiIntegrationTests : IClassFixture<IdmtApiFactory>
         Assert.False(string.IsNullOrWhiteSpace(refreshed!.AccessToken));
     }
 
-    [Fact(Skip = "Route-strategy URLs not exposed by sample endpoint templates yet")]
+    [Fact]
     public async Task Auth_login_via_route_strategy()
     {
         var client = _factory.CreateClientWithTenant(useHeader: false, useRoute: true);
@@ -117,10 +117,9 @@ public class IdmtApiIntegrationTests : IClassFixture<IdmtApiFactory>
         Assert.False(string.IsNullOrWhiteSpace(register.UserId));
         Assert.False(string.IsNullOrWhiteSpace(register.PasswordSetupToken));
 
-        var resetResponse = await sysClient.PostAsJsonAsync("/auth/resetPassword", new
+        string resetPasswordUrl = $"/auth/resetPassword?tenantId={IdmtApiFactory.DefaultTenantId}&email={newEmail}&token={register.PasswordSetupToken}";
+        var resetResponse = await sysClient.PostAsJsonAsync(resetPasswordUrl, new
         {
-            Email = newEmail,
-            Token = register.PasswordSetupToken,
             NewPassword = "UserPassword1!"
         });
         await AssertSuccess(resetResponse);

@@ -60,8 +60,8 @@ public static class RegisterUser
         public string? PasswordSetupToken { get; init; }
 
         /// <summary>
-        /// Fully constructed URL for password setup if Application.BaseUrl is configured.
-        /// Contains the email and token as query parameters. Only populated when Success is true and BaseUrl is configured.
+        /// Fully constructed URL for password setup.
+        /// Contains the email and token as query parameters. Only populated when Success is true.
         /// </summary>
         public string? PasswordSetupUrl { get; init; }
 
@@ -113,8 +113,7 @@ public static class RegisterUser
         ICurrentUserService currentUserService,
         ITenantAccessService tenantAccessService,
         IdmtDbContext dbContext,
-        LinkGenerator linkGenerator,
-        IHttpContextAccessor httpContextAccessor,
+        IdmtLinkGenerator linkGenerator,
         IEmailSender<IdmtUser> emailSender) : IRegisterUserHandler
     {
         /// <summary>
@@ -137,11 +136,6 @@ public static class RegisterUser
             RegisterUserRequest request,
             CancellationToken cancellationToken = default)
         {
-            if (httpContextAccessor.HttpContext is null)
-            {
-                throw new InvalidOperationException("No HTTP context was found.");
-            }
-
             // Security check: Validate role assignment permissions based on current user's role
             if (!tenantAccessService.CanAssignRole(request.Role))
             {
@@ -237,15 +231,7 @@ public static class RegisterUser
             var token = await userManager.GeneratePasswordResetTokenAsync(user);
 
             // Generate password setup URL
-            var routeValues = new RouteValueDictionary()
-            {
-                ["tenantId"] = currentUserService.TenantId!,
-                ["email"] = user.Email,
-                ["token"] = token,
-            };
-
-            var passwordSetupUrl = linkGenerator.GetUriByName(httpContextAccessor.HttpContext, ApplicationOptions.PasswordResetEndpointName, routeValues)
-                ?? throw new NotSupportedException($"Could not find endpoint named '{ApplicationOptions.PasswordResetEndpointName}'.");
+            var passwordSetupUrl = linkGenerator.GeneratePasswordResetLink(user.Email, token);
 
             logger.LogInformation("User created: {Email}. Request by {RequestingUserId}. Tenant: {TenantId}.", user.Email, currentUserService.UserId, currentUserService.TenantId);
 

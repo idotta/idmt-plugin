@@ -46,6 +46,14 @@ public static class ApplicationBuilderExtensions
         return app;
     }
 
+    /// <summary>
+    /// Maps the IDMT endpoints. In case of route or basepath strategy, it's up
+    /// to the caller to pass an adequate endpoint route builder.
+    /// For example, if using the route strategy, the caller should pass the
+    /// endpoint route builder for the tenant, e.g. `/{__tenant__?}`.
+    /// </summary>
+    /// <param name="endpoints">The endpoint route builder</param>
+    /// <returns>The endpoint route builder</returns>
     public static IEndpointRouteBuilder MapIdmtEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapAuthEndpoints();

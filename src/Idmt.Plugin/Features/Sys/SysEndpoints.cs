@@ -1,5 +1,4 @@
 using Finbuckle.MultiTenant.Abstractions;
-using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -19,19 +18,15 @@ public static class SysEndpoints
             .WithOpenApi();
 
         sys.MapGet("/users/{userId:guid}/tenants", GetUserTenantsAsync)
-            .WithName("GetUserTenants")
             .WithSummary("Get tenants accessible by user");
 
         sys.MapPost("/users/{userId:guid}/tenants/{tenantId}", GrantTenantAccessAsync)
-            .WithName("GrantTenantAccess")
             .WithSummary("Grant user access to a tenant");
 
         sys.MapDelete("/users/{userId:guid}/tenants/{tenantId}", RevokeTenantAccessAsync)
-            .WithName("RevokeTenantAccess")
             .WithSummary("Revoke user access from a tenant");
 
         sys.MapGet("/info", GetSystemInfoAsync)
-            .WithName("GetSystemInfo")
             .WithSummary("Detailed system information");
     }
 

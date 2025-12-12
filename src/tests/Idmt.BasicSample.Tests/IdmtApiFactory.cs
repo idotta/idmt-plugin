@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -24,17 +25,34 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddEnvironmentVariables()
+            .Build();
+        builder.UseConfiguration(configuration);
 
         builder.ConfigureServices(services =>
         {
-            services.RemoveAll(typeof(DbContextOptions<IdmtDbContext>));
-            services.RemoveAll(typeof(DbContextOptions<IdmtTenantStoreDbContext>));
+            // services.RemoveAll(typeof(DbContextOptions<IdmtDbContext>));
+            // services.RemoveAll(typeof(DbContextOptions<IdmtTenantStoreDbContext>));
 
-            var databaseName = $"IdmtTests-{Guid.NewGuid()}";
-            services.AddDbContext<IdmtDbContext>(options => options
-                .UseInMemoryDatabase(databaseName)
-                .ConfigureWarnings(builder => builder.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
-            services.AddDbContext<IdmtTenantStoreDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            // var databaseName = $"IdmtTests-{Guid.NewGuid()}";
+            // services.AddDbContext<IdmtDbContext>(options => options
+            //     .UseInMemoryDatabase(databaseName)
+            //     .ConfigureWarnings(builder => builder.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+            // services.AddDbContext<IdmtTenantStoreDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            services.AddIdmt(configuration, builder =>
+            {
+                builder.UseInMemoryDatabase("IdmtTests")
+                    .ConfigureWarnings(builder => builder.Ignore(InMemoryEventId.TransactionIgnoredWarning));
+            }, options =>
+            {
+                options.MultiTenant.Strategies =
+                [
+                    IdmtMultiTenantStrategy.Header,
+                    IdmtMultiTenantStrategy.Claim,
+                    IdmtMultiTenantStrategy.Route
+                ];
+            });
 
             services.AddSingleton<SeedDataAsync>(SeedAsync);
         });

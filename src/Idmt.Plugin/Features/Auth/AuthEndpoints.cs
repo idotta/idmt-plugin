@@ -49,6 +49,11 @@ public static class AuthEndpoints
             .WithSummary("Reset password")
             .WithDescription("Reset password using reset token");
 
+        auth.MapGet("/resetPassword", RedirectToResetPasswordFormAsync)
+            .WithName(ApplicationOptions.PasswordResetEndpointName + "-form")
+            .WithSummary("Redirect to reset password form")
+            .WithDescription("Redirect to reset password form");
+
         auth.MapAuthManage();
     }
 
@@ -101,12 +106,13 @@ public static class AuthEndpoints
     }
 
     private static async Task<Results<Ok<ConfirmEmail.ConfirmEmailResponse>, ValidationProblem>> ConfirmEmailAsync(
+        [FromQuery] string tenantId,
         [FromQuery] string email,
         [FromQuery] string token,
         [FromServices] ConfirmEmail.IConfirmEmailHandler handler,
         HttpContext context)
     {
-        var request = new ConfirmEmail.ConfirmEmailRequest(email, token);
+        var request = new ConfirmEmail.ConfirmEmailRequest(tenantId, email, token);
         if (request.Validate() is { } validationErrors)
         {
             return TypedResults.ValidationProblem(validationErrors);
@@ -145,17 +151,29 @@ public static class AuthEndpoints
     }
 
     private static async Task<Results<Ok<ResetPassword.ResetPasswordResponse>, ValidationProblem>> ResetPasswordAsync(
+        [FromQuery] string tenantId,
+        [FromQuery] string email,
+        [FromQuery] string token,
         [FromBody] ResetPassword.ResetPasswordRequest request,
         [FromServices] ResetPassword.IResetPasswordHandler handler,
         [FromServices] IOptions<IdmtOptions> options,
         HttpContext context)
     {
-        if (request.Validate(options.Value.Identity.Password) is { } validationErrors)
+        if (request.Validate(tenantId, email, token, options.Value.Identity.Password) is { } validationErrors)
         {
             return TypedResults.ValidationProblem(validationErrors);
         }
 
-        var result = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
+        var result = await handler.HandleAsync(tenantId, email, token, request, cancellationToken: context.RequestAborted);
         return TypedResults.Ok(result);
+    }
+
+    private static async Task<Results<Ok, ProblemHttpResult, ValidationProblem>> RedirectToResetPasswordFormAsync(
+        [FromQuery] string tenantId,
+        [FromQuery] string email,
+        [FromQuery] string token,
+        HttpContext context)
+    {
+        return TypedResults.Ok();
     }
 }

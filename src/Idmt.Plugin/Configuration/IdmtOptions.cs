@@ -31,7 +31,6 @@ public class IdmtOptions
 /// </summary>
 public class ApplicationOptions
 {
-    public string BaseUrl { get; set; } = string.Empty;
     public const string PasswordResetEndpointName = "ResetPassword";
     public const string ConfirmEmailEndpointName = "ConfirmEmail";
 }
@@ -88,6 +87,14 @@ public class SignInOptions
     public bool RequireConfirmedPhoneNumber { get; set; } = false;
 }
 
+public static class IdmtMultiTenantStrategy
+{
+    public const string Header = "header";
+    public const string Subdomain = "subdomain";
+    public const string Route = "route";
+    public const string Claim = "claim";
+}
+
 /// <summary>
 /// Multi-tenant configuration options
 /// </summary>
@@ -101,12 +108,12 @@ public class MultiTenantOptions
     /// <summary>
     /// Tenant resolution strategy (header, subdomain, etc.)
     /// </summary>
-    public string[] Strategies { get; set; } = ["header", "claim", "route"];
+    public string[] Strategies { get; set; } = [IdmtMultiTenantStrategy.Header, IdmtMultiTenantStrategy.Claim, IdmtMultiTenantStrategy.Route];
 
     /// <summary>
     /// Strategy-specific configuration
     /// </summary>
-    public Dictionary<string, string> StrategyOptions { get; set; } = new();
+    public Dictionary<string, string> StrategyOptions { get; set; } = [];
 }
 
 /// <summary>
@@ -114,11 +121,6 @@ public class MultiTenantOptions
 /// </summary>
 public class DatabaseOptions
 {
-    /// <summary>
-    /// Use in-memory database. Use this when you want to use a in-memory database for testing purposes.
-    /// </summary>
-    public bool UseInMemory { get; set; } = false;
-
     /// <summary>
     /// Connection string template with placeholder for tenant's properties
     /// </summary>

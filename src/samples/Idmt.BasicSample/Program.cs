@@ -1,5 +1,7 @@
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Extensions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,7 +20,17 @@ if (app.Environment.IsDevelopment())
 
 app.UseIdmt();
 
-app.MapIdmtEndpoints();
+var options = app.Services.GetRequiredService<IOptions<IdmtOptions>>().Value;
+
+if (options.MultiTenant.Strategies.Contains(IdmtMultiTenantStrategy.Route))
+{
+    app.MapGroup("/{__tenant__}")
+        .MapIdmtEndpoints();
+}
+else
+{
+    app.MapIdmtEndpoints();
+}
 
 await app.EnsureIdmtDatabaseAsync();
 

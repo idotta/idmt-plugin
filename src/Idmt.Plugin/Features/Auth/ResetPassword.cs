@@ -1,3 +1,4 @@
+using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Identity;
@@ -6,29 +7,50 @@ namespace Idmt.Plugin.Features.Auth;
 
 public static class ResetPassword
 {
-    public sealed record ResetPasswordRequest(string Email, string Token, string NewPassword);
+    public sealed record ResetPasswordRequest(string NewPassword);
 
     public sealed record ResetPasswordResponse(bool Success, string[]? Errors = null);
 
     public interface IResetPasswordHandler
     {
-        Task<ResetPasswordResponse> HandleAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default);
+        Task<ResetPasswordResponse> HandleAsync(string tenantId, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default);
     }
 
     internal sealed class ResetPasswordHandler(
-        UserManager<IdmtUser> userManager
+        UserManager<IdmtUser> userManager,
+        ITenantResolver<IdmtTenantInfo> tenantResolver,
+        IMultiTenantContextAccessor tenantContextAccessor,
+        IMultiTenantContextSetter tenantContextSetter
         ) : IResetPasswordHandler
     {
-        public async Task<ResetPasswordResponse> HandleAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
+        public async Task<ResetPasswordResponse> HandleAsync(string tenantId, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default)
         {
-            var user = await userManager.FindByEmailAsync(request.Email);
+            if (string.IsNullOrEmpty(tenantId))
+            {
+                return new ResetPasswordResponse(false, ["Tenant ID is required"]);
+            }
+            var targetTenant = await tenantResolver.ResolveAsync(tenantId);
+            if (targetTenant is null || !targetTenant.IsResolved)
+            {
+                return new ResetPasswordResponse(false, ["Invalid tenant ID"]);
+            }
+            var currentTenant = tenantContextAccessor.MultiTenantContext;
+            // In this case, the current tenant is not the target tenant, so we deny the request
+            if (currentTenant is { } ct && ct.IsResolved && ct.TenantInfo?.Id != targetTenant.TenantInfo?.Id)
+            {
+                return new ResetPasswordResponse(false, ["Invalid tenant context"]);
+            }
+            // Set the tenant context to the target tenant
+            tenantContextSetter.MultiTenantContext = targetTenant;
+            
+            var user = await userManager.FindByEmailAsync(email);
             if (user == null)
             {
                 return new ResetPasswordResponse(false, ["User not found"]);
             }
 
             // Reset password using the token
-            var result = await userManager.ResetPasswordAsync(user, request.Token, request.NewPassword);
+            var result = await userManager.ResetPasswordAsync(user, token, request.NewPassword);
 
             if (!result.Succeeded)
             {
@@ -46,14 +68,18 @@ public static class ResetPassword
         }
     }
 
-    public static Dictionary<string, string[]>? Validate(this ResetPasswordRequest request, Configuration.PasswordOptions options)
+    public static Dictionary<string, string[]>? Validate(this ResetPasswordRequest request, string tenantId, string email, string token, Configuration.PasswordOptions options)
     {
         var errors = new Dictionary<string, string[]>();
-        if (!Validators.IsValidEmail(request.Email))
+        if (string.IsNullOrEmpty(tenantId))
+        {
+            errors["TenantId"] = ["Tenant ID is required"];
+        }
+        if (!Validators.IsValidEmail(email))
         {
             errors["Email"] = ["Invalid email address."];
         }
-        if (string.IsNullOrEmpty(request.Token))
+        if (string.IsNullOrEmpty(token))
         {
             errors["Token"] = ["Token is required"];
         }

@@ -275,6 +275,7 @@ public static class ServiceCollectionExtensions
         // Register scoped services for per-request context
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ITenantAccessService, TenantAccessService>();
+        services.AddTransient<IdmtLinkGenerator>();
         services.AddScoped<IdmtEmailService>();
         services.AddTransient<IEmailSender<IdmtUser>, IdmtEmailSender>();
 
