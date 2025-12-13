@@ -8,6 +8,7 @@ using Idmt.Plugin.Features.Sys;
 using Idmt.Plugin.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Authentication.BearerToken;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Idmt.BasicSample.Tests;
 
@@ -112,10 +113,14 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>
         {
             using var userClient = _factory.CreateClient();
 
-            string resetPasswordUrl = 
-                $"/auth/resetPassword?tenantId={Uri.EscapeDataString(IdmtApiFactory.DefaultTenantId)}" +
-                $"&email={Uri.EscapeDataString(newEmail)}" +
-                $"&token={Uri.EscapeDataString(register.PasswordSetupToken)}";
+            var resetPasswordUrl = QueryHelpers.AddQueryString(
+                "/auth/resetPassword",
+                new Dictionary<string, string?>
+                {
+                    ["tenantId"] = IdmtApiFactory.DefaultTenantId,
+                    ["email"] = newEmail,
+                    ["token"] = register.PasswordSetupToken,
+                });
             var resetResponse = await userClient.PostAsJsonAsync(resetPasswordUrl, new
             {
                 NewPassword = "UserPassword1!"
