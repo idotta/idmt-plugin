@@ -50,7 +50,7 @@ public static class AuthEndpoints
             .WithSummary("Reset password")
             .WithDescription("Reset password using reset token");
 
-        auth.MapGet("/resetPassword", RedirectToResetPasswordFormAsync)
+        auth.MapGet("/resetPassword", RedirectToResetPasswordForm)
             .WithName(ApplicationOptions.PasswordResetEndpointName + "-form")
             .WithSummary("Redirect to reset password form")
             .WithDescription("Redirect to reset password form");
@@ -131,6 +131,7 @@ public static class AuthEndpoints
     }
 
     private static async Task<Results<Ok<ResendConfirmationEmail.ResendConfirmationEmailResponse>, ValidationProblem>> ResendConfirmationEmailAsync(
+        [FromQuery] bool useApiLinks,
         [FromBody] ResendConfirmationEmail.ResendConfirmationEmailRequest request,
         [FromServices] ResendConfirmationEmail.IResendConfirmationEmailHandler handler,
         HttpContext context)
@@ -140,11 +141,12 @@ public static class AuthEndpoints
             return TypedResults.ValidationProblem(validationErrors);
         }
 
-        var result = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
+        var result = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
         return TypedResults.Ok(result);
     }
 
     private static async Task<Results<Ok<ForgotPassword.ForgotPasswordResponse>, ValidationProblem>> ForgotPasswordAsync(
+        [FromQuery] bool useApiLinks,
         [FromBody] ForgotPassword.ForgotPasswordRequest request,
         [FromServices] ForgotPassword.IForgotPasswordHandler handler,
         HttpContext context)
@@ -154,7 +156,7 @@ public static class AuthEndpoints
             return TypedResults.ValidationProblem(validationErrors);
         }
 
-        var result = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
+        var result = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
         return TypedResults.Ok(result);
     }
 
@@ -187,12 +189,32 @@ public static class AuthEndpoints
         }
     }
 
-    private static async Task<Results<Ok, ProblemHttpResult, ValidationProblem>> RedirectToResetPasswordFormAsync(
+    private static Results<RedirectHttpResult, ProblemHttpResult> RedirectToResetPasswordForm(
         [FromQuery] string tenantId,
         [FromQuery] string email,
         [FromQuery] string token,
+        [FromServices] IOptions<IdmtOptions> options,
         HttpContext context)
     {
-        return TypedResults.Ok();
+        var clientUrl = options.Value.Application.ClientUrl;
+        var resetPasswordPath = options.Value.Application.ResetPasswordFormPath;
+
+        if (string.IsNullOrEmpty(clientUrl))
+        {
+            return TypedResults.Problem("Client URL is not configured.");
+        }
+
+        var queryParams = new Dictionary<string, string?>
+        {
+            ["tenantId"] = tenantId,
+            ["email"] = email,
+            ["token"] = token
+        };
+
+        var uri = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
+            $"{clientUrl.TrimEnd('/')}/{resetPasswordPath.TrimStart('/')}",
+            queryParams);
+
+        return TypedResults.Redirect(uri);
     }
 }

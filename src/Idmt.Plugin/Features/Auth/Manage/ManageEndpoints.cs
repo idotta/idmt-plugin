@@ -43,6 +43,7 @@ public static class ManageEndpoints
     }
 
     private static async Task<Results<Ok<RegisterUser.RegisterUserResponse>, ProblemHttpResult, ValidationProblem>> RegisterUserAsync(
+        [FromQuery] bool useApiLinks,
         [FromBody] RegisterUser.RegisterUserRequest request,
         [FromServices] RegisterUser.IRegisterUserHandler handler,
         HttpContext context)
@@ -53,7 +54,7 @@ public static class ManageEndpoints
             return TypedResults.ValidationProblem(validationErrors);
         }
 
-        var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
+        var response = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
         if (!response.Success)
         {
             return TypedResults.Problem(response.ErrorMessage, statusCode: response.StatusCode);

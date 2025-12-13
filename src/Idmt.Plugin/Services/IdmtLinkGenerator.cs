@@ -3,16 +3,79 @@ using Idmt.Plugin.Configuration;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Idmt.Plugin.Services;
+
+public interface IIdmtLinkGenerator
+{
+    string GenerateConfirmEmailApiLink(string email, string token);
+    string GenerateConfirmEmailFormLink(string email, string token);
+    string GeneratePasswordResetApiLink(string email, string token);
+    string GeneratePasswordResetFormLink(string email, string token);
+}
 
 public sealed class IdmtLinkGenerator(
     LinkGenerator linkGenerator,
     IMultiTenantContextAccessor multiTenantContextAccessor,
     IHttpContextAccessor httpContextAccessor,
-    ILogger<IdmtLinkGenerator> logger)
+    IOptions<IdmtOptions> options,
+    ILogger<IdmtLinkGenerator> logger) : IIdmtLinkGenerator
 {
-    public string GeneratePasswordResetLink(string email, string token)
+    public string GenerateConfirmEmailApiLink(string email, string token)
+    {
+        if (httpContextAccessor.HttpContext is null)
+        {
+            throw new InvalidOperationException("No HTTP context was found.");
+        }
+
+        var routeValues = new RouteValueDictionary()
+        {
+            ["tenantId"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty,
+            ["email"] = email,
+            ["token"] = token,
+        };
+
+        var confirmEmailUrl = linkGenerator.GetUriByName(httpContextAccessor.HttpContext, ApplicationOptions.ConfirmEmailEndpointName, routeValues)
+            ?? throw new NotSupportedException($"Could not find endpoint named '{ApplicationOptions.ConfirmEmailEndpointName}'.");
+
+        logger.LogInformation("Confirm email link generated for {Email}. Tenant: {TenantId}.", email, multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty);
+
+        return confirmEmailUrl;
+    }
+
+    public string GenerateConfirmEmailFormLink(string email, string token)
+    {
+        if (httpContextAccessor.HttpContext is null)
+        {
+            throw new InvalidOperationException("No HTTP context was found.");
+        }
+
+        var clientUrl = options.Value.Application.ClientUrl;
+        var confirmEmailFormPath = options.Value.Application.ConfirmEmailFormPath;
+
+        if (string.IsNullOrEmpty(clientUrl))
+        {
+            throw new InvalidOperationException("Client URL is not configured.");
+        }
+
+        var queryParams = new Dictionary<string, string?>
+        {
+            ["tenantId"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty,
+            ["email"] = email,
+            ["token"] = token,
+        };
+
+        var uri = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
+            $"{clientUrl.TrimEnd('/')}/{confirmEmailFormPath.TrimStart('/')}",
+            queryParams);
+
+        logger.LogInformation("Confirm email link generated for {Email}. Tenant: {TenantId}.", email, multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty);
+
+        return uri;
+    }
+
+    public string GeneratePasswordResetApiLink(string email, string token)
     {
         if (httpContextAccessor.HttpContext is null)
         {
@@ -38,23 +101,34 @@ public sealed class IdmtLinkGenerator(
         return passwordSetupUrl;
     }
 
-    public string GenerateConfirmEmailLink(string email, string token)
+    public string GeneratePasswordResetFormLink(string email, string token)
     {
         if (httpContextAccessor.HttpContext is null)
         {
             throw new InvalidOperationException("No HTTP context was found.");
         }
 
-        var routeValues = new RouteValueDictionary()
+        var clientUrl = options.Value.Application.ClientUrl;
+        var resetPasswordFormPath = options.Value.Application.ResetPasswordFormPath;
+
+        if (string.IsNullOrEmpty(clientUrl))
+        {
+            throw new InvalidOperationException("Client URL is not configured.");
+        }
+
+        var queryParams = new Dictionary<string, string?>
         {
             ["tenantId"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty,
             ["email"] = email,
             ["token"] = token,
         };
 
-        var confirmEmailUrl = linkGenerator.GetUriByName(httpContextAccessor.HttpContext, ApplicationOptions.ConfirmEmailEndpointName, routeValues)
-            ?? throw new NotSupportedException($"Could not find endpoint named '{ApplicationOptions.ConfirmEmailEndpointName}'.");
+        var uri = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
+            $"{clientUrl.TrimEnd('/')}/{resetPasswordFormPath.TrimStart('/')}",
+            queryParams);
 
-        return confirmEmailUrl;
+        logger.LogInformation("Password reset link generated for {Email}. Tenant: {TenantId}.", email, multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty);
+
+        return uri;
     }
 }

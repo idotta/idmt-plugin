@@ -33,6 +33,14 @@ public class ApplicationOptions
 {
     public const string PasswordResetEndpointName = "ResetPassword";
     public const string ConfirmEmailEndpointName = "ConfirmEmail";
+    
+    /// <summary>
+    /// Base URL of the client application, if any (e.g. "https://myapp.com")
+    /// </summary>
+    public string? ClientUrl { get; set; }
+    
+    public string ResetPasswordFormPath { get; set; } = "/reset-password";
+    public string ConfirmEmailFormPath { get; set; } = "/confirm-email";
 }
 
 /// <summary>
@@ -54,6 +62,11 @@ public class IdentityOptions
     /// Sign-in requirements
     /// </summary>
     public SignInOptions SignIn { get; set; } = new();
+
+    /// <summary>
+    /// Cookie configuration options
+    /// </summary>
+    public CookieOptions Cookie { get; set; } = new();
 }
 
 /// <summary>
@@ -87,12 +100,32 @@ public class SignInOptions
     public bool RequireConfirmedPhoneNumber { get; set; } = false;
 }
 
+/// <summary>
+/// Cookie configuration options
+/// </summary>
+public class CookieOptions
+{
+    public string Name { get; set; } = ".Idmt.Application";
+    public bool HttpOnly { get; set; } = true;
+    public Microsoft.AspNetCore.Http.CookieSecurePolicy SecurePolicy { get; set; } = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
+    public Microsoft.AspNetCore.Http.SameSiteMode SameSite { get; set; } = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
+    public TimeSpan ExpireTimeSpan { get; set; } = TimeSpan.FromDays(14);
+    public bool SlidingExpiration { get; set; } = true;
+    public string LoginPath { get; set; } = "/login";
+    public string LogoutPath { get; set; } = "/logout";
+    public string AccessDeniedPath { get; set; } = "/access-denied";
+}
+
 public static class IdmtMultiTenantStrategy
 {
     public const string Header = "header";
-    public const string Subdomain = "subdomain";
-    public const string Route = "route";
     public const string Claim = "claim";
+    public const string Route = "route";
+    public const string BasePath = "basepath";
+
+    public const string DefaultHeaderName = "__tenant__";
+    public const string DefaultClaimType = "tenant";
+    public const string DefaultRouteParameter = "__tenant__";
 }
 
 /// <summary>

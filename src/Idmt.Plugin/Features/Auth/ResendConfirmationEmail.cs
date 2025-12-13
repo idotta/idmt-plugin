@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
@@ -16,15 +17,22 @@ public static class ResendConfirmationEmail
 
     public interface IResendConfirmationEmailHandler
     {
-        Task<ResendConfirmationEmailResponse> HandleAsync(ResendConfirmationEmailRequest request, CancellationToken cancellationToken = default);
+        Task<ResendConfirmationEmailResponse> HandleAsync(
+            bool useApiLinks,
+            ResendConfirmationEmailRequest request, 
+            CancellationToken cancellationToken = default);
     }
 
     internal sealed class ResendConfirmationEmailHandler(
         UserManager<IdmtUser> userManager,
-        IdmtEmailService emailService
+        IIdmtLinkGenerator linkGenerator,
+        IEmailSender<IdmtUser> emailSender
         ) : IResendConfirmationEmailHandler
     {
-        public async Task<ResendConfirmationEmailResponse> HandleAsync(ResendConfirmationEmailRequest request, CancellationToken cancellationToken = default)
+        public async Task<ResendConfirmationEmailResponse> HandleAsync(
+            bool useApiLinks,
+            ResendConfirmationEmailRequest request, 
+            CancellationToken cancellationToken = default)
         {
             var user = await userManager.FindByEmailAsync(request.Email);
             if (user == null || !user.IsActive)
@@ -39,10 +47,15 @@ public static class ResendConfirmationEmail
             }
 
             // Generate email confirmation token
+            string token = await userManager.GenerateEmailConfirmationTokenAsync(user);
 
-            var (token, confirmationUrl) = await emailService.SendConfirmationEmailAsync(user, userManager, request.Email);
+            string confirmEmailUrl = useApiLinks 
+                ? linkGenerator.GenerateConfirmEmailApiLink(request.Email, token) 
+                : linkGenerator.GenerateConfirmEmailFormLink(request.Email, token);
 
-            return new ResendConfirmationEmailResponse(true, token, confirmationUrl, "If the email exists, a confirmation link has been sent.");
+            await emailSender.SendConfirmationLinkAsync(user, request.Email, HtmlEncoder.Default.Encode(confirmEmailUrl));
+
+            return new ResendConfirmationEmailResponse(true, token, confirmEmailUrl, "If the email exists, a confirmation link has been sent.");
         }
     }
 

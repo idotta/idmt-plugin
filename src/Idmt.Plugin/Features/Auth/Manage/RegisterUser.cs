@@ -91,7 +91,10 @@ public static class RegisterUser
         /// <param name="request">The registration request containing email, optional username, and role</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation</param>
         /// <returns>Registration response containing success status, user ID, password setup token, and any errors</returns>
-        Task<RegisterUserResponse> HandleAsync(RegisterUserRequest request, CancellationToken cancellationToken = default);
+        Task<RegisterUserResponse> HandleAsync(
+            bool useApiLinks,
+            RegisterUserRequest request, 
+            CancellationToken cancellationToken = default);
     }
 
 
@@ -113,7 +116,7 @@ public static class RegisterUser
         ICurrentUserService currentUserService,
         ITenantAccessService tenantAccessService,
         IdmtDbContext dbContext,
-        IdmtLinkGenerator linkGenerator,
+        IIdmtLinkGenerator linkGenerator,
         IEmailSender<IdmtUser> emailSender) : IRegisterUserHandler
     {
         /// <summary>
@@ -133,6 +136,7 @@ public static class RegisterUser
         /// <returns>Registration response with success status, user ID, password setup token, and any errors</returns>
         /// <exception cref="NotSupportedException">Thrown when the user store does not support email functionality</exception>
         public async Task<RegisterUserResponse> HandleAsync(
+            bool useApiLinks,
             RegisterUserRequest request,
             CancellationToken cancellationToken = default)
         {
@@ -231,7 +235,9 @@ public static class RegisterUser
             var token = await userManager.GeneratePasswordResetTokenAsync(user);
 
             // Generate password setup URL
-            var passwordSetupUrl = linkGenerator.GeneratePasswordResetLink(user.Email, token);
+            var passwordSetupUrl = useApiLinks 
+                ? linkGenerator.GeneratePasswordResetApiLink(user.Email, token) 
+                : linkGenerator.GeneratePasswordResetFormLink(user.Email, token);
 
             logger.LogInformation("User created: {Email}. Request by {RequestingUserId}. Tenant: {TenantId}.", user.Email, currentUserService.UserId, currentUserService.TenantId);
 

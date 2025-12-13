@@ -143,32 +143,27 @@ public static class ServiceCollectionExtensions
         {
             switch (strategy.ToLowerInvariant())
             {
-                case "header":
+                case IdmtMultiTenantStrategy.Header:
                     builder.WithHeaderStrategy(
-                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("HeaderName", "__tenant__"));
+                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("HeaderName", IdmtMultiTenantStrategy.DefaultHeaderName));
                     break;
 
-                case "route":
+                case IdmtMultiTenantStrategy.Route:
                     builder.WithRouteStrategy(
-                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("RouteParameter", "__tenant__"));
+                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("RouteParameter", IdmtMultiTenantStrategy.DefaultRouteParameter));
                     break;
 
-                case "claim":
+                case IdmtMultiTenantStrategy.Claim:
                     builder.WithClaimStrategy(
-                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("ClaimType", "tenant"));
+                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("ClaimType", IdmtMultiTenantStrategy.DefaultClaimType));
                     break;
 
-                case "host":
-                    builder.WithHostStrategy(
-                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("HostTemplate", "__tenant__.*"));
-                    break;
-
-                case "basepath":
+                case IdmtMultiTenantStrategy.BasePath:
                     builder.WithBasePathStrategy();
                     break;
 
                 default:
-                    throw new InvalidOperationException($"Unknown tenant resolution strategy: {strategy}");
+                    throw new InvalidOperationException($"Unsupported tenant resolution strategy: {strategy}");
             }
         }
 
@@ -211,17 +206,17 @@ public static class ServiceCollectionExtensions
         // Configure application cookie for per-tenant authentication
         services.ConfigureApplicationCookie(options =>
         {
-            options.Cookie.Name = ".Idmt.Application";
-            options.Cookie.HttpOnly = true;
-            options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
-            options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
-            options.ExpireTimeSpan = TimeSpan.FromDays(14);
-            options.SlidingExpiration = true;
+            options.Cookie.Name = idmtOptions.Identity.Cookie.Name;
+            options.Cookie.HttpOnly = idmtOptions.Identity.Cookie.HttpOnly;
+            options.Cookie.SecurePolicy = idmtOptions.Identity.Cookie.SecurePolicy;
+            options.Cookie.SameSite = idmtOptions.Identity.Cookie.SameSite;
+            options.ExpireTimeSpan = idmtOptions.Identity.Cookie.ExpireTimeSpan;
+            options.SlidingExpiration = idmtOptions.Identity.Cookie.SlidingExpiration;
 
             // Use tenant-specific paths if available (set by middleware)
-            options.LoginPath = "/login";
-            options.LogoutPath = "/logout";
-            options.AccessDeniedPath = "/access-denied";
+            options.LoginPath = idmtOptions.Identity.Cookie.LoginPath;
+            options.LogoutPath = idmtOptions.Identity.Cookie.LogoutPath;
+            options.AccessDeniedPath = idmtOptions.Identity.Cookie.AccessDeniedPath;
         });
     }
 
@@ -250,7 +245,7 @@ public static class ServiceCollectionExtensions
         .AddIdentityCookies();
 
         // Add authorization policies
-        services.AddAuthorization(options =>
+        _ = services.AddAuthorization(options =>
         {
             // Add default policies
             options.AddPolicy("RequireAuthenticatedUser", policy =>
@@ -275,8 +270,7 @@ public static class ServiceCollectionExtensions
         // Register scoped services for per-request context
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ITenantAccessService, TenantAccessService>();
-        services.AddTransient<IdmtLinkGenerator>();
-        services.AddScoped<IdmtEmailService>();
+        services.AddScoped<IIdmtLinkGenerator, IdmtLinkGenerator>();
         services.AddTransient<IEmailSender<IdmtUser>, IdmtEmailSender>();
 
         // Register HTTP context accessor for service access to HTTP context
