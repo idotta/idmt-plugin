@@ -35,7 +35,7 @@ else
 
 await app.EnsureIdmtDatabaseAsync();
 
-var seedAction = app.Services.GetRequiredService<SeedDataAsync>();
+var seedAction = app.Services.GetService<SeedDataAsync>();
 await app.SeedIdmtDataAsync(seedAction);
 
 app.Run();
