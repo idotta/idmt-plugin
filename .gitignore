@@ -52,3 +52,5 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+/src/.vs/Idmt/FileContentIndex/6bfdc6f1-9219-4591-a3da-c0c02f8dd633.vsidx
+/src/samples/Idmt.BasicSample/Idmt.BasicSample.csproj.user
