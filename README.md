@@ -1,15 +1,15 @@
 # IDMT Plugin
 
-Identity MultiTenant plugin library for ASP.NET Core that provides automatic identity management (authentication and authorization) and multi-tenancy support using Finbuckle.MultiTenant.
+Identity MultiTenant plugin library for ASP.NET Core that provides automatic identity management (authentication and authorization) and multi-tenancy support using Finbuckle.MultiTenant and Microsoft.AspNetCore.Identity.
 
 ## Features
 
-- **Multi-Tenant Support**: Built-in multi-tenancy using Finbuckle.MultiTenant
-- **Identity Management**: ASP.NET Core Identity integration with JWT and cookie authentication
-- **Vertical Slice Architecture**: Each identity endpoint has its own handler interface and implementation
-- **Minimal APIs**: Modern endpoint routing with clean, composable APIs
-- **Configurable**: Extensive configuration options for identity, JWT, and multi-tenancy
-- **Database Agnostic**: Works with any Entity Framework Core provider
+- **Multi-Tenant Support**: Built-in multi-tenancy using Finbuckle.MultiTenant.
+- **Identity Management**: ASP.NET Core Identity integration with support for both **Bearer Token** (JWT) and **Cookie** authentication.
+- **Vertical Slice Architecture**: Each identity endpoint has its own handler interface and implementation.
+- **Minimal APIs**: Modern endpoint routing with clean, composable APIs.
+- **Configurable**: Extensive configuration options for identity, cookies, and multi-tenancy strategies.
+- **Database Agnostic**: Works with any Entity Framework Core provider.
 
 ## Quick Start
 
@@ -21,189 +21,145 @@ dotnet add package Idmt.Plugin
 
 ### 2. Configure Services
 
+In your `Program.cs`, add the IDMT services. You generally need to provide your own DbContext that inherits from `IdmtDbContext`.
+
 ```csharp
 using Idmt.Plugin.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add IDMT services
-builder.Services.AddIdmt(builder.Configuration);
+// Add IDMT services with your custom DbContext
+builder.Services.AddIdmt<MyDbContext>(
+    builder.Configuration,
+    // Configure your database provider (e.g., SQL Server, PostgreSQL, SQLite)
+    options => options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
+);
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
 app.UseIdmt();
 
-// Ensure database is created and seeded
+// Ensure database is created and seeded (optional helper)
 app.EnsureIdmtDatabase();
 app.SeedIdmtData();
 
 app.Run();
 ```
 
-### 3. Configuration
+### 3. Application Configuration
 
-Add configuration to your `appsettings.json`:
+Add the `Idmt` section to your `appsettings.json`. Below is a comprehensive example with default or common values:
 
 ```json
 {
   "Idmt": {
-    "Jwt": {
-      "SecretKey": "YourSecretKeyMustBeAtLeast256BitsLong",
-      "Issuer": "YourIssuer",
-      "Audience": "YourAudience",
-      "ExpirationMinutes": 60
+    "Application": {
+      "ClientUrl": "https://myapp.com",
+      "ResetPasswordFormPath": "/reset-password",
+      "ConfirmEmailFormPath": "/confirm-email"
     },
     "Identity": {
       "Password": {
         "RequireDigit": true,
         "RequireLowercase": true,
-        "RequireUppercase": false,
+        "RequireUppercase": true,
+        "RequireNonAlphanumeric": false,
         "RequiredLength": 6
+      },
+      "User": {
+        "RequireUniqueEmail": true
       },
       "SignIn": {
         "RequireConfirmedEmail": false
+      },
+      "Cookie": {
+        "Name": ".Idmt.Application",
+        "HttpOnly": true,
+        "SameSite": "Lax",
+        "ExpireTimeSpan": "14.00:00:00",
+        "SlidingExpiration": true
       }
     },
     "MultiTenant": {
-      "DefaultTenantId": "default",
-      "Strategy": "header",
+      "DefaultTenantId": "system-tenant",
+      "Strategies": ["header", "route", "claim"],
       "StrategyOptions": {
-        "HeaderName": "X-Tenant-ID"
+        "HeaderName": "__tenant__",
+        "RouteParameter": "__tenant__",
+        "ClaimType": "tenant"
       }
+    },
+    "Database": {
+      "AutoMigrate": false
     }
   }
 }
 ```
 
+## API Reference
+
+The plugin exposes several groups of endpoints.
+
+### Authentication (`/auth`)
+
+Public endpoints for user authentication and account recovery.
+
+| Method | Endpoint | Description | Query/Body Parameters |
+|--------|----------|-------------|-----------------------|
+| `POST` | `/auth/login` | Authenticate user | Body: `email`, `password`<br>Query: `useCookies`, `useSessionCookies` |
+| `POST` | `/auth/logout` | Logout user | - |
+| `POST` | `/auth/refresh` | Refresh JWT token | Body: `refreshToken` |
+| `POST` | `/auth/forgotPassword` | Request password reset | Body: `email`<br>Query: `useApiLinks` (true/false) |
+| `POST` | `/auth/resetPassword` | Reset password with token | Query: `tenantId`, `email`, `token`<br>Body: `newPassword` |
+| `GET` | `/auth/confirmEmail` | Confirm email address | Query: `tenantId`, `email`, `token` |
+| `POST` | `/auth/resendConfirmationEmail` | Resend confirmation | Body: `email`<br>Query: `useApiLinks` |
+
+### User Management (`/auth/manage`)
+
+Endpoints for managing user profiles and accounts.
+*   **Authorization**: Some endpoints require specific roles (`SysAdmin`, `TenantAdmin`).
+
+| Method | Endpoint | Policy | Description |
+|--------|----------|--------|-------------|
+| `GET` | `/auth/manage/info` | Authenticated | Get current user's info |
+| `PUT` | `/auth/manage/info` | Authenticated | Update current user's info |
+| `POST` | `/auth/manage/users` | `RequireSysUser` | Register a new user (Admin only) |
+| `PUT` | `/auth/manage/users/{id}` | `RequireTenantManager` | Activate/Deactivate user |
+| `DELETE` | `/auth/manage/users/{id}` | `RequireTenantManager` | Delete a user |
+
+### System & Tenant Access (`/sys`)
+
+System-level endpoints for managing tenant access.
+*   **Authorization**: `RequireSysUser` (SysAdmin or SysSupport roles).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/sys/info` | Get system version and environment info |
+| `GET` | `/sys/users/{id}/tenants` | List tenants accessible by a user |
+| `POST` | `/sys/users/{id}/tenants/{tenantId}` | Grant user access to a tenant |
+| `DELETE` | `/sys/users/{id}/tenants/{tenantId}` | Revoke user access to a tenant |
+
+## Authorization Policies
+
+The plugin comes with pre-configured authorization policies based on roles:
+
+- **`RequireAuthenticatedUser`**: Any authenticated user.
+- **`RequireSysAdmin`**: Users with `SysAdmin` role.
+- **`RequireSysUser`**: Users with `SysAdmin` or `SysSupport` roles.
+- **`RequireTenantManager`**: Users with `SysAdmin`, `SysSupport`, or `TenantAdmin` roles.
+
 ## Architecture
 
-### Vertical Slice Pattern
-
-The library implements a vertical slice architecture where each feature is self-contained:
-
-- **Login Feature**: `LoginHandler`, `LoginRequest`, `LoginResponse`
-- **Register Feature**: `RegisterHandler`, `RegisterRequest`, `RegisterResponse`
-- **Logout Feature**: `LogoutHandler`, `LogoutRequest`, `LogoutResponse`
-
 ### Multi-Tenancy
+The library supports multiple tenant resolution strategies out of the box:
+- **Header**: Reads tenant ID from a request header (default `__tenant__`).
+- **Route**: Reads from a route parameter (default `__tenant__`).
+- **Claim**: Reads from the user's claims (useful for JWTs).
 
-Multi-tenancy is achieved through:
-- Tenant-aware user and role models (`IdmtUser`, `IdmtRole`)
-- Automatic tenant filtering in Entity Framework queries
-- Tenant resolution strategies (header, subdomain, path, query)
+### Authentication Strategies
+The plugin uses a hybrid approach:
+- **Cookie**: Standard ASP.NET Core Identity cookies (great for browser apps).
+- **Bearer Token**: Custom implementation compatible with ASP.NET Core Identity's bearer tokens (great for SPAs and Mobile apps).
 
-### Database Context
-
-The `IdmtDbContext` extends `IdentityDbContext` and integrates with Finbuckle.MultiTenant:
-
-```csharp
-public class IdmtDbContext : IdentityDbContext<IdmtUser, IdmtRole, string>, IMultiTenantDbContext
-{
-    public ITenantInfo TenantInfo { get; set; } = null!;
-    // Multi-tenant configuration
-}
-```
-
-## API Usage
-
-### Authentication Endpoints
-
-#### Register User
-```http
-POST /api/auth/register
-Content-Type: application/json
-X-Tenant-ID: your-tenant
-
-{
-  "email": "user@example.com",
-  "password": "SecurePassword123",
-  "confirmPassword": "SecurePassword123",
-  "firstName": "John",
-  "lastName": "Doe"
-}
-```
-
-#### Login
-```http
-POST /api/auth/login
-Content-Type: application/json
-X-Tenant-ID: your-tenant
-
-{
-  "email": "user@example.com",
-  "password": "SecurePassword123"
-}
-```
-
-#### Logout
-```http
-POST /api/auth/logout
-Content-Type: application/json
-Authorization: Bearer <your-jwt-token>
-
-{
-  "signOutEverywhere": false
-}
-```
-
-### Protected Endpoints
-
-Use the JWT token returned from login in the Authorization header:
-
-```http
-GET /api/users/me
-Authorization: Bearer <your-jwt-token>
-X-Tenant-ID: your-tenant
-```
-
-## Sample Application
-
-See the `samples/Idmt.Sample` project for a complete working example that demonstrates:
-
-- Service configuration
-- API controllers using the vertical slice handlers
-- Multi-tenant user management
-- Swagger/OpenAPI documentation
-
-### Running the Sample
-
-```bash
-cd samples/Idmt.Sample
-dotnet run
-```
-
-The sample will be available at `http://localhost:5290` with Swagger UI at `http://localhost:5290/swagger`.
-
-## Advanced Configuration
-
-### Custom Database Provider
-
-```csharp
-builder.Services.AddIdmtWithEntityFramework<MyCustomDbContext>(
-    builder.Configuration,
-    options => options.UseSqlServer(connectionString)
-);
-```
-
-### Custom Tenant Resolution
-
-```csharp
-builder.Services.AddIdmt(builder.Configuration, options =>
-{
-    options.MultiTenant.Strategy = "subdomain";
-    options.MultiTenant.StrategyOptions["Domain"] = "example.com";
-});
-```
-
-## Contributing
-
-This library is designed to be extensible. You can:
-- Add custom identity features using the vertical slice pattern
-- Implement custom tenant resolution strategies
-- Extend the user and role models
-- Add custom authentication providers
-
-## License
-
-MIT License - see LICENSE file for details.
+The `CookieOrBearer` policy automatically selects the scheme based on the `Authorization` header.
