@@ -54,4 +54,4 @@ TestResult.xml
 nunit-*.xml
 
 /src/.vs/
-/src/samples/Idmt.BasicSample/Idmt.BasicSample.csproj.user
+*.csproj.user
