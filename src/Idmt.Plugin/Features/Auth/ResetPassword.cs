@@ -1,7 +1,7 @@
-using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Idmt.Plugin.Features.Auth;
 
@@ -16,12 +16,7 @@ public static class ResetPassword
         Task<ResetPasswordResponse> HandleAsync(string tenantId, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default);
     }
 
-    internal sealed class ResetPasswordHandler(
-        UserManager<IdmtUser> userManager,
-        ITenantResolver<IdmtTenantInfo> tenantResolver,
-        IMultiTenantContextAccessor tenantContextAccessor,
-        IMultiTenantContextSetter tenantContextSetter
-        ) : IResetPasswordHandler
+    internal sealed class ResetPasswordHandler(IServiceProvider sp) : IResetPasswordHandler
     {
         public async Task<ResetPasswordResponse> HandleAsync(string tenantId, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default)
         {
@@ -29,42 +24,36 @@ public static class ResetPassword
             {
                 return new ResetPasswordResponse(false, ["Tenant ID is required"]);
             }
-            var targetTenant = await tenantResolver.ResolveAsync(tenantId);
-            if (targetTenant is null || !targetTenant.IsResolved)
+            try
             {
-                return new ResetPasswordResponse(false, ["Invalid tenant ID"]);
-            }
-            var currentTenant = tenantContextAccessor.MultiTenantContext;
-            // In this case, the current tenant is not the target tenant, so we deny the request
-            if (currentTenant is { } ct && ct.IsResolved && ct.TenantInfo?.Id != targetTenant.TenantInfo?.Id)
-            {
-                return new ResetPasswordResponse(false, ["Invalid tenant context"]);
-            }
-            // Set the tenant context to the target tenant
-            tenantContextSetter.MultiTenantContext = targetTenant;
-            
-            var user = await userManager.FindByEmailAsync(email);
-            if (user == null)
-            {
-                return new ResetPasswordResponse(false, ["User not found"]);
-            }
+                var userManager = sp.GetRequiredService<UserManager<IdmtUser>>();
+                var user = await userManager.FindByEmailAsync(email);
+                if (user == null)
+                {
+                    return new ResetPasswordResponse(false, ["User not found"]);
+                }
 
-            // Reset password using the token
-            var result = await userManager.ResetPasswordAsync(user, token, request.NewPassword);
+                // Reset password using the token
+                var result = await userManager.ResetPasswordAsync(user, token, request.NewPassword);
 
-            if (!result.Succeeded)
-            {
-                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-                return new ResetPasswordResponse(false, [errors]);
+                if (!result.Succeeded)
+                {
+                    var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                    return new ResetPasswordResponse(false, [errors]);
+                }
+
+                if (!user.EmailConfirmed)
+                {
+                    user.EmailConfirmed = true;
+                    await userManager.UpdateAsync(user);
+                }
+
+                return new ResetPasswordResponse(true, null);
             }
-
-            if (!user.EmailConfirmed)
+            catch (Exception ex)
             {
-                user.EmailConfirmed = true;
-                await userManager.UpdateAsync(user);
+                return new ResetPasswordResponse(false, [ex.Message]);
             }
-
-            return new ResetPasswordResponse(true, null);
         }
     }
 

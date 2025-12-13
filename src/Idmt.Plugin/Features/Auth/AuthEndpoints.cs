@@ -1,3 +1,4 @@
+using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Features.Auth.Manage;
 using Microsoft.AspNetCore.Authentication.BearerToken;
@@ -117,9 +118,16 @@ public static class AuthEndpoints
         {
             return TypedResults.ValidationProblem(validationErrors);
         }
-
-        var result = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
-        return TypedResults.Ok(result);
+        try
+        {
+            using var _ = new ManualTenantResolver(context, tenantId);
+            var result = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
+            return TypedResults.Ok(result);
+        }
+        catch (InvalidOperationException)
+        {
+            return TypedResults.Ok(new ConfirmEmail.ConfirmEmailResponse(false, "Invalid tenant context"));
+        }
     }
 
     private static async Task<Results<Ok<ResendConfirmationEmail.ResendConfirmationEmailResponse>, ValidationProblem>> ResendConfirmationEmailAsync(
@@ -150,7 +158,7 @@ public static class AuthEndpoints
         return TypedResults.Ok(result);
     }
 
-    private static async Task<Results<Ok<ResetPassword.ResetPasswordResponse>, ValidationProblem>> ResetPasswordAsync(
+    private static async Task<Results<Ok<ResetPassword.ResetPasswordResponse>, ValidationProblem, ForbidHttpResult>> ResetPasswordAsync(
         [FromQuery] string tenantId,
         [FromQuery] string email,
         [FromQuery] string token,
@@ -163,9 +171,20 @@ public static class AuthEndpoints
         {
             return TypedResults.ValidationProblem(validationErrors);
         }
-
-        var result = await handler.HandleAsync(tenantId, email, token, request, cancellationToken: context.RequestAborted);
-        return TypedResults.Ok(result);
+        try
+        {
+            using var _ = new ManualTenantResolver(context, tenantId);
+            var result = await handler.HandleAsync(tenantId, email, token, request, cancellationToken: context.RequestAborted);
+            if (!result.Success)
+            {
+                return TypedResults.Forbid();
+            }
+            return TypedResults.Ok(result);
+        }
+        catch (InvalidOperationException)
+        {
+            return TypedResults.Forbid();
+        }
     }
 
     private static async Task<Results<Ok, ProblemHttpResult, ValidationProblem>> RedirectToResetPasswordFormAsync(

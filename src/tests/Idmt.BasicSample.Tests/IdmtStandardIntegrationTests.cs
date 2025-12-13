@@ -11,11 +11,11 @@ using Microsoft.AspNetCore.Authentication.BearerToken;
 
 namespace Idmt.BasicSample.Tests;
 
-public class IdmtApiIntegrationTests : IClassFixture<IdmtApiFactory>
+public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>
 {
     private readonly IdmtApiFactory _factory;
 
-    public IdmtApiIntegrationTests(IdmtApiFactory factory)
+    public IdmtStandardIntegrationTests(IdmtApiFactory factory)
     {
         _factory = factory;
     }
@@ -37,7 +37,7 @@ public class IdmtApiIntegrationTests : IClassFixture<IdmtApiFactory>
 
         var response = await client.GetAsync("/healthz");
 
-        await AssertSuccess(response);
+        await response.AssertSuccess();
     }
 
     [Fact]
@@ -62,8 +62,7 @@ public class IdmtApiIntegrationTests : IClassFixture<IdmtApiFactory>
             EmailOrUsername = IdmtApiFactory.SysAdminEmail,
             Password = IdmtApiFactory.SysAdminPassword
         });
-
-        await AssertSuccess(loginResponse);
+        await loginResponse.AssertSuccess();
 
         var tokens = await loginResponse.Content.ReadFromJsonAsync<AccessTokenResponse>();
         Assert.NotNull(tokens);
@@ -72,87 +71,88 @@ public class IdmtApiIntegrationTests : IClassFixture<IdmtApiFactory>
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
         var selfInfo = await client.GetAsync("/auth/manage/info");
-        await AssertSuccess(selfInfo);
+        await selfInfo.AssertSuccess();
 
         var refreshResponse = await client.PostAsJsonAsync("/auth/refresh", new RefreshToken.RefreshTokenRequest(tokens.RefreshToken!));
-        await AssertSuccess(refreshResponse);
+        await refreshResponse.AssertSuccess();
 
         var refreshed = await refreshResponse.Content.ReadFromJsonAsync<AccessTokenResponse>();
         Assert.NotNull(refreshed);
         Assert.False(string.IsNullOrWhiteSpace(refreshed!.AccessToken));
-    }
 
-    [Fact]
-    public async Task Auth_login_via_route_strategy()
-    {
-        var client = _factory.CreateClientWithTenant(useHeader: false, useRoute: true);
-
-        var loginResponse = await client.PostAsJsonAsync("auth/login?useCookies=true", new
-        {
-            EmailOrUsername = IdmtApiFactory.SysAdminEmail,
-            Password = IdmtApiFactory.SysAdminPassword
-        });
-
-        await AssertSuccess(loginResponse);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", refreshed.AccessToken);
+        var refreshedSelfInfo = await client.GetAsync("/auth/manage/info");
+        await refreshedSelfInfo.AssertSuccess();
     }
 
     [Fact]
     public async Task Register_reset_login_and_update_user_flow_works()
     {
-        var sysClient = await CreateAuthenticatedClientAsync();
         var newEmail = $"user-{Guid.NewGuid():N}@example.com";
         var newUsername = $"user{Guid.NewGuid():N}";
-
-        var registerResponse = await sysClient.PostAsJsonAsync("/auth/manage/users", new
+        RegisterUser.RegisterUserResponse? register = null;
         {
-            Email = newEmail,
-            Username = newUsername,
-            Role = Idmt.Plugin.Models.IdmtDefaultRoleTypes.TenantUser
-        });
-        await AssertSuccess(registerResponse);
+            using var sysClient = await CreateAuthenticatedClientAsync();
 
-        var register = await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>();
+            var registerResponse = await sysClient.PostAsJsonAsync("/auth/manage/users", new
+            {
+                Email = newEmail,
+                Username = newUsername,
+                Role = IdmtDefaultRoleTypes.TenantAdmin
+            });
+            await registerResponse.AssertSuccess();
+
+            register = await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>();
+            Assert.NotNull(register);
+            Assert.True(register!.Success);
+            Assert.False(string.IsNullOrWhiteSpace(register.UserId));
+            Assert.False(string.IsNullOrWhiteSpace(register.PasswordSetupToken));
+        }
         Assert.NotNull(register);
-        Assert.True(register!.Success);
-        Assert.False(string.IsNullOrWhiteSpace(register.UserId));
-        Assert.False(string.IsNullOrWhiteSpace(register.PasswordSetupToken));
-
-        string resetPasswordUrl = $"/auth/resetPassword?tenantId={IdmtApiFactory.DefaultTenantId}&email={newEmail}&token={register.PasswordSetupToken}";
-        var resetResponse = await sysClient.PostAsJsonAsync(resetPasswordUrl, new
         {
-            NewPassword = "UserPassword1!"
-        });
-        await AssertSuccess(resetResponse);
+            using var userClient = _factory.CreateClient();
 
-        var userClient = _factory.CreateClientWithTenant();
-        var userLogin = await userClient.PostAsJsonAsync("/auth/login?useCookies=true", new
+            string resetPasswordUrl = 
+                $"/auth/resetPassword?tenantId={Uri.EscapeDataString(IdmtApiFactory.DefaultTenantId)}" +
+                $"&email={Uri.EscapeDataString(newEmail)}" +
+                $"&token={Uri.EscapeDataString(register.PasswordSetupToken)}";
+            var resetResponse = await userClient.PostAsJsonAsync(resetPasswordUrl, new
+            {
+                NewPassword = "UserPassword1!"
+            });
+            await resetResponse.AssertSuccess();
+        }
         {
-            EmailOrUsername = newEmail,
-            Password = "UserPassword1!"
-        });
-        await AssertSuccess(userLogin);
+            using var userClient = _factory.CreateClientWithTenant();
+            var userLogin = await userClient.PostAsJsonAsync("/auth/login?useCookies=true", new
+            {
+                EmailOrUsername = newEmail,
+                Password = "UserPassword1!"
+            });
+            await userLogin.AssertSuccess();
 
-        var userInfo = await userClient.GetFromJsonAsync<GetUserInfo.GetUserInfoResponse>("/auth/manage/info");
-        Assert.NotNull(userInfo);
-        Assert.Equal(newEmail, userInfo!.Email);
-        Assert.Equal(Idmt.Plugin.Models.IdmtDefaultRoleTypes.TenantUser, userInfo.Role);
+            var userInfo = await userClient.GetFromJsonAsync<GetUserInfo.GetUserInfoResponse>("/auth/manage/info");
+            Assert.NotNull(userInfo);
+            Assert.Equal(newEmail, userInfo!.Email);
+            Assert.Equal(IdmtDefaultRoleTypes.TenantAdmin, userInfo.Role);
 
-        var updateResponse = await userClient.PutAsJsonAsync("/auth/manage/info", new
-        {
-            OldPassword = "UserPassword1!",
-            NewPassword = "UserPassword2!"
-        });
-        await AssertSuccess(updateResponse);
+            var updateResponse = await userClient.PutAsJsonAsync("/auth/manage/info", new
+            {
+                OldPassword = "UserPassword1!",
+                NewPassword = "UserPassword2!"
+            });
+            await updateResponse.AssertSuccess();
 
-        var reLogin = await userClient.PostAsJsonAsync("/auth/login?useCookies=true", new
-        {
-            EmailOrUsername = newEmail,
-            Password = "UserPassword2!"
-        });
-        await AssertSuccess(reLogin);
+            var reLogin = await userClient.PostAsJsonAsync("/auth/login?useCookies=true", new
+            {
+                EmailOrUsername = newEmail,
+                Password = "UserPassword2!"
+            });
+            await reLogin.AssertSuccess();
 
-        var unregisterResponse = await sysClient.DeleteAsync($"/auth/manage/users/{register.UserId}");
-        await AssertSuccess(unregisterResponse);
+            var unregisterResponse = await userClient.DeleteAsync($"/auth/manage/users/{Uri.EscapeDataString(register.UserId)}");
+            await unregisterResponse.AssertSuccess();
+        }
     }
 
     [Fact]
@@ -165,9 +165,9 @@ public class IdmtApiIntegrationTests : IClassFixture<IdmtApiFactory>
         {
             Email = targetEmail,
             Username = $"tenant{Guid.NewGuid():N}",
-            Role = Idmt.Plugin.Models.IdmtDefaultRoleTypes.TenantUser
+            Role = IdmtDefaultRoleTypes.SysSupport
         });
-        await AssertSuccess(registerResponse);
+        await registerResponse.AssertSuccess();
 
         var register = await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>();
         Assert.NotNull(register);
@@ -176,14 +176,18 @@ public class IdmtApiIntegrationTests : IClassFixture<IdmtApiFactory>
         var grantResponse = await sysClient.PostAsJsonAsync(
             $"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantId}",
             new { ExpiresAt = (DateTime?)null });
-        await AssertSuccess(grantResponse);
+        await grantResponse.AssertSuccess();
 
         var tenants = await sysClient.GetFromJsonAsync<SysEndpoints.TenantInfoResponse[]>($"/sys/users/{userId}/tenants");
         Assert.NotNull(tenants);
         Assert.Contains(tenants!, t => t.Identifier == IdmtApiFactory.DefaultTenantId);
 
         var revokeResponse = await sysClient.DeleteAsync($"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantId}");
-        await AssertSuccess(revokeResponse);
+        await revokeResponse.AssertSuccess();
+
+        tenants = await sysClient.GetFromJsonAsync<SysEndpoints.TenantInfoResponse[]>($"/sys/users/{userId}/tenants");
+        Assert.NotNull(tenants);
+        Assert.DoesNotContain(tenants!, t => t.Identifier == IdmtApiFactory.DefaultTenantId);
     }
 
     [Fact]
@@ -193,6 +197,10 @@ public class IdmtApiIntegrationTests : IClassFixture<IdmtApiFactory>
 
         var logoutResponse = await client.PostAsync("/auth/logout", content: null);
         Assert.Equal(HttpStatusCode.NoContent, logoutResponse.StatusCode);
+
+        // Verify that the user is logged out, selfInfo should return a 401
+        var selfInfo = await client.GetAsync("/auth/manage/info");
+        Assert.False(selfInfo.IsSuccessStatusCode);
     }
 
     private async Task<HttpClient> CreateAuthenticatedClientAsync()
@@ -205,7 +213,7 @@ public class IdmtApiIntegrationTests : IClassFixture<IdmtApiFactory>
             EmailOrUsername = IdmtApiFactory.SysAdminEmail,
             Password = IdmtApiFactory.SysAdminPassword
         });
-        await AssertSuccess(loginResponse);
+        await loginResponse.AssertSuccess();
         return client;
     }
 
@@ -215,14 +223,5 @@ public class IdmtApiIntegrationTests : IClassFixture<IdmtApiFactory>
         var tenantStore = scope.ServiceProvider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
         var tenant = await tenantStore.TryGetAsync(IdmtApiFactory.DefaultTenantId);
         Assert.NotNull(tenant);
-    }
-
-    private static async Task AssertSuccess(HttpResponseMessage response)
-    {
-        if (!response.IsSuccessStatusCode)
-        {
-            var body = await response.Content.ReadAsStringAsync();
-            throw new Xunit.Sdk.XunitException($"Expected success for {response.RequestMessage?.Method} {response.RequestMessage?.RequestUri} but got {(int)response.StatusCode} {response.StatusCode}. Body: {body}");
-        }
     }
 }

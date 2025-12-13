@@ -2,6 +2,7 @@ using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Idmt.Plugin.Features.Auth;
 
@@ -16,11 +17,7 @@ public static class ConfirmEmail
         Task<ConfirmEmailResponse> HandleAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default);
     }
 
-    internal sealed class ConfirmEmailHandler(
-        UserManager<IdmtUser> userManager,
-        ITenantResolver<IdmtTenantInfo> tenantResolver,
-        IMultiTenantContextAccessor tenantContextAccessor,
-        IMultiTenantContextSetter tenantContextSetter) : IConfirmEmailHandler
+    internal sealed class ConfirmEmailHandler(IServiceProvider sp) : IConfirmEmailHandler
     {
         public async Task<ConfirmEmailResponse> HandleAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default)
         {
@@ -28,35 +25,29 @@ public static class ConfirmEmail
             {
                 return new ConfirmEmailResponse(false, "Tenant ID is required");
             }
-            var targetTenant = await tenantResolver.ResolveAsync(request.TenantId);
-            if (targetTenant is null || !targetTenant.IsResolved)
+            try
             {
-                return new ConfirmEmailResponse(false, "Invalid tenant ID");
+                var userManager = sp.GetRequiredService<UserManager<IdmtUser>>();
+                var user = await userManager.FindByEmailAsync(request.Email!);
+                if (user == null)
+                {
+                    return new ConfirmEmailResponse(false, "Confirmation failed");
+                }
+
+                var result = await userManager.ConfirmEmailAsync(user, request.Token!);
+
+                if (!result.Succeeded)
+                {
+                    var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                    return new ConfirmEmailResponse(false, errors);
+                }
+
+                return new ConfirmEmailResponse(true, "Email confirmed successfully");
             }
-            var currentTenant = tenantContextAccessor.MultiTenantContext;
-            // In this case, the current tenant is not the target tenant, so we deny the request
-            if (currentTenant is { } ct && ct.IsResolved && ct.TenantInfo?.Id != targetTenant.TenantInfo?.Id)
+            catch (Exception ex)
             {
-                return new ConfirmEmailResponse(false, "Invalid tenant context");
+                return new ConfirmEmailResponse(false, ex.Message);
             }
-            // Set the tenant context to the target tenant
-            tenantContextSetter.MultiTenantContext = targetTenant;
-
-            var user = await userManager.FindByEmailAsync(request.Email!);
-            if (user == null)
-            {
-                return new ConfirmEmailResponse(false, "Confirmation failed");
-            }
-
-            var result = await userManager.ConfirmEmailAsync(user, request.Token!);
-
-            if (!result.Succeeded)
-            {
-                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-                return new ConfirmEmailResponse(false, errors);
-            }
-
-            return new ConfirmEmailResponse(true, "Email confirmed successfully");
         }
     }
 

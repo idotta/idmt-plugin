@@ -12,7 +12,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Idmt.BasicSample.Tests;
 
@@ -21,6 +20,18 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
     public const string DefaultTenantId = MultiTenantOptions.DefaultTenantId;
     public const string SysAdminEmail = "sysadmin@example.com";
     public const string SysAdminPassword = "SysAdmin1!";
+    private readonly string _databaseName = $"IdmtTests-{Guid.NewGuid()}";
+    private readonly string[] _strategies;
+
+    public IdmtApiFactory()
+    {
+        _strategies = [IdmtMultiTenantStrategy.Header, IdmtMultiTenantStrategy.Claim];
+    }
+
+    internal IdmtApiFactory(string[] strategies)
+    {
+        _strategies = strategies;
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -40,36 +51,43 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
             //     .UseInMemoryDatabase(databaseName)
             //     .ConfigureWarnings(builder => builder.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
             // services.AddDbContext<IdmtTenantStoreDbContext>(options => options.UseInMemoryDatabase(databaseName));
-            services.AddIdmt(configuration, builder =>
+            // Remove existing DbContext options
+            var dbContextDescriptor = services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions<IdmtDbContext>));
+            if (dbContextDescriptor != null) services.Remove(dbContextDescriptor);
+
+            var tenantStoreDescriptor = services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions<IdmtTenantStoreDbContext>));
+            if (tenantStoreDescriptor != null) services.Remove(tenantStoreDescriptor);
+
+            // Add InMemory DbContexts
+            services.AddDbContext<IdmtDbContext>(options => options
+                .UseInMemoryDatabase(_databaseName)
+                .ConfigureWarnings(builder => builder.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+
+            services.AddDbContext<IdmtTenantStoreDbContext>(options => options.UseInMemoryDatabase(_databaseName));
+
+            // Configure Strategies
+            services.PostConfigure<IdmtOptions>(options =>
             {
-                builder.UseInMemoryDatabase("IdmtTests")
-                    .ConfigureWarnings(builder => builder.Ignore(InMemoryEventId.TransactionIgnoredWarning));
-            }, options =>
-            {
-                options.MultiTenant.Strategies =
-                [
-                    IdmtMultiTenantStrategy.Header,
-                    IdmtMultiTenantStrategy.Claim,
-                    IdmtMultiTenantStrategy.Route
-                ];
+                options.MultiTenant.Strategies = _strategies;
             });
 
             services.AddSingleton<SeedDataAsync>(SeedAsync);
         });
     }
 
-    public HttpClient CreateClientWithTenant(string? tenantId = null, bool allowAutoRedirect = false, bool useHeader = true, bool useRoute = false)
+    public HttpClient CreateClientWithTenant(string? tenantId = null, bool allowAutoRedirect = false)
     {
         tenantId ??= DefaultTenantId;
         var client = CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = allowAutoRedirect
         });
-        if (useRoute)
+
+        if (_strategies.Contains(IdmtMultiTenantStrategy.Route))
         {
             client.BaseAddress = new Uri($"http://localhost/{tenantId}/");
         }
-        if (useHeader)
+        if (_strategies.Contains(IdmtMultiTenantStrategy.Header))
         {
             client.DefaultRequestHeaders.TryAddWithoutValidation("__tenant__", tenantId);
         }
