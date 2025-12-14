@@ -1,0 +1,35 @@
+name: Publish to NuGet
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore src/Idmt.sln
+
+      - name: Build
+        run: dotnet build src/Idmt.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test src/Idmt.sln --no-build --configuration Release
+
+      - name: Set Version
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+
+      - name: Pack
+        run: dotnet pack src/Idmt.Plugin/Idmt.Plugin.csproj --no-build --configuration Release --output . -p:PackageVersion=${{ env.VERSION }}
+
+      - name: Push to NuGet
+        run: dotnet nuget push *.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }}
