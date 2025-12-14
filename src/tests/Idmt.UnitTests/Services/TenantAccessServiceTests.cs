@@ -1,16 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using Finbuckle.MultiTenant;
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
 using Idmt.Plugin.Services;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Moq;
-using Xunit;
 
 namespace Idmt.UnitTests.Services;
 
@@ -33,8 +27,10 @@ public class TenantAccessServiceTests
         _currentUserServiceMock = new Mock<ICurrentUserService>();
 
         // Setup mock to return a context, even if empty, to avoid NRE in base constructor if it accesses it
-        var dummyContext = new MultiTenantContext<IdmtTenantInfo>();
-        dummyContext.TenantInfo = new IdmtTenantInfo { Id = "system-test-tenant" };
+        var dummyContext = new MultiTenantContext<IdmtTenantInfo>
+        {
+            TenantInfo = new IdmtTenantInfo { Id = "system-test-tenant" }
+        };
         _tenantAccessorMock.SetupGet(x => x.MultiTenantContext).Returns(dummyContext);
 
         var options = new DbContextOptionsBuilder<IdmtDbContext>()
@@ -244,12 +240,12 @@ public class TenantAccessServiceTests
     }
 
     [Theory]
-    [InlineData("SysSupport", "SysAdmin", false)]
-    [InlineData("SysSupport", "TenantAdmin", true)]
-    [InlineData("TenantAdmin", "SysAdmin", false)]
-    [InlineData("TenantAdmin", "SysSupport", false)]
-    [InlineData("TenantAdmin", "User", true)]
-    [InlineData("User", "SysAdmin", true)] // Logic allows others to assign by default if not restricted
+    [InlineData(IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.SysAdmin, false)]
+    [InlineData(IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.TenantAdmin, true)]
+    [InlineData(IdmtDefaultRoleTypes.TenantAdmin, IdmtDefaultRoleTypes.SysAdmin, false)]
+    [InlineData(IdmtDefaultRoleTypes.TenantAdmin, IdmtDefaultRoleTypes.SysSupport, false)]
+    [InlineData(IdmtDefaultRoleTypes.TenantAdmin, IdmtDefaultRoleTypes.TenantUser, true)]
+    [InlineData(IdmtDefaultRoleTypes.TenantUser, IdmtDefaultRoleTypes.SysAdmin, false)]
     public void CanAssignRole_ValidatesRoleHierarchy(string currentUserRole, string targetRole, bool expected)
     {
         // Reset mocks
@@ -257,13 +253,6 @@ public class TenantAccessServiceTests
         
         // Setup initial assumption: user is in the role we're testing
         _currentUserServiceMock.Setup(x => x.IsInRole(currentUserRole)).Returns(true);
-        
-        // Ensure other administrative roles are false unless they are the same as currentUserRole
-        if (currentUserRole != IdmtDefaultRoleTypes.SysSupport) 
-            _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.SysSupport)).Returns(false);
-            
-        if (currentUserRole != IdmtDefaultRoleTypes.TenantAdmin) 
-            _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.TenantAdmin)).Returns(false);
 
         var result = _service.CanAssignRole(targetRole);
 

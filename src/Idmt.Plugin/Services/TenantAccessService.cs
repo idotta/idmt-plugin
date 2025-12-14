@@ -218,6 +218,11 @@ internal sealed class TenantAccessService(
 
     public bool CanAssignRole(string role)
     {
+        if (currentUserService.IsInRole(IdmtDefaultRoleTypes.TenantUser))
+        {
+            return false;
+        }
+
         if (currentUserService.IsInRole(IdmtDefaultRoleTypes.SysSupport) && role == IdmtDefaultRoleTypes.SysAdmin)
         {
             return false;
@@ -234,6 +239,11 @@ internal sealed class TenantAccessService(
 
     public bool CanManageUser(IEnumerable<string> targetUserRoles)
     {
+        if (currentUserService.IsInRole(IdmtDefaultRoleTypes.TenantUser))
+        {
+            return false;
+        }
+
         if (currentUserService.IsInRole(IdmtDefaultRoleTypes.SysSupport) &&
             targetUserRoles.Contains(IdmtDefaultRoleTypes.SysAdmin))
         {
