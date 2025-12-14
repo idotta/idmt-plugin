@@ -8,8 +8,19 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 
-builder.Services.AddIdmt(builder.Configuration,
-    options => options.UseInMemoryDatabase("IdmtDatabase"));
+// Check if running in test mode
+var isTest = builder.Configuration.GetValue<bool>("IsTest");
+
+if (!isTest)
+{
+    builder.Services.AddIdmt(builder.Configuration,
+        options => options.UseInMemoryDatabase("IdmtDatabase"));
+}
+else
+{
+    // In test mode, DbContext is configured by the test factory
+    builder.Services.AddIdmt(builder.Configuration);
+}
 
 var app = builder.Build();
 
