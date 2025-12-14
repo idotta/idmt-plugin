@@ -1,26 +1,13 @@
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Extensions;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 
-// Check if running in test mode
-var isTest = builder.Configuration.GetValue<bool>("IsTest");
-
-if (!isTest)
-{
-    builder.Services.AddIdmt(builder.Configuration,
-        options => options.UseInMemoryDatabase("IdmtDatabase"));
-}
-else
-{
-    // In test mode, DbContext is configured by the test factory
-    builder.Services.AddIdmt(builder.Configuration);
-}
+builder.Services.AddIdmt(builder.Configuration);
 
 var app = builder.Build();
 

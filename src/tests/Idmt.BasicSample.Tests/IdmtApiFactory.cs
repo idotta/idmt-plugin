@@ -40,7 +40,7 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
-        builder.UseSetting("IsTest", "true");
+        builder.UseSetting("SkipDbConfig", "true");
         builder.UseSetting("Idmt:Application:ClientUrl", "http://localhost");
 
         IConfiguration configuration = new ConfigurationBuilder()
