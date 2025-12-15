@@ -1,3 +1,5 @@
+using Idmt.Plugin.Models;
+
 namespace Idmt.Plugin.Configuration;
 
 /// <summary>
@@ -67,6 +69,11 @@ public class IdentityOptions
     /// Cookie configuration options
     /// </summary>
     public CookieOptions Cookie { get; set; } = new();
+
+    /// <summary>
+    /// Role configuration options
+    /// </summary>
+    public string[] ExtraRoles { get; set; } = [];
 }
 
 /// <summary>
