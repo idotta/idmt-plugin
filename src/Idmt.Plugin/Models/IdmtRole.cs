@@ -13,13 +13,6 @@ public class IdmtRole : IdentityRole<Guid>
 
     public override Guid Id { get; set; } = Guid.CreateVersion7();
     public override string? ConcurrencyStamp { get; set; } = Guid.NewGuid().ToString();
-
-    public virtual string[] RoleTypes => [
-        IdmtDefaultRoleTypes.SysAdmin,
-        IdmtDefaultRoleTypes.SysSupport,
-        IdmtDefaultRoleTypes.TenantAdmin,
-        IdmtDefaultRoleTypes.TenantUser
-    ];
 }
 
 /// <summary>
@@ -31,4 +24,11 @@ public static class IdmtDefaultRoleTypes
     public const string SysSupport = "SysSupport";
     public const string TenantAdmin = "TenantAdmin";
     public const string TenantUser = "TenantUser";
+
+    public static string[] DefaultRoles => [
+        SysAdmin,
+        SysSupport,
+        TenantAdmin,
+        TenantUser
+    ];
 }

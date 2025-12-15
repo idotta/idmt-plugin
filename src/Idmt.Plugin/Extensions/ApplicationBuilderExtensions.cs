@@ -143,6 +143,11 @@ public static class ApplicationBuilderExtensions
     private static async Task SeedDefaultDataAsync(IServiceProvider services)
     {
         var options = services.GetRequiredService<IOptions<IdmtOptions>>();
+        var roles = IdmtDefaultRoleTypes.DefaultRoles;
+        if (options.Value.Identity.ExtraRoles.Length > 0)
+        {
+            roles = roles.Concat(options.Value.Identity.ExtraRoles).ToArray();
+        }
 
         // Seed default tenant if using multi-tenant store
         var tenantStore = services.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
@@ -161,6 +166,16 @@ public static class ApplicationBuilderExtensions
             };
 
             await tenantStore.TryAddAsync(defaultTenant);
+        }
+
+        // Seed default roles
+        var roleStore = services.GetRequiredService<RoleManager<IdmtRole>>();
+        foreach (var role in roles)
+        {
+            if (!await roleStore.RoleExistsAsync(role))
+            {
+                await roleStore.CreateAsync(new IdmtRole(role));
+            }
         }
     }
 

@@ -10,8 +10,13 @@ using Finbuckle.MultiTenant;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Features.Auth.Manage;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Idmt.Plugin.Extensions;
+
+public delegate void CustomizeAuthentication(AuthenticationBuilder authenticationBuilder);
+public delegate void CustomizeAuthorizationOptions(AuthorizationOptions authorizationOptions);
 
 /// <summary>
 /// Extension methods for configuring IDMT services
@@ -32,7 +37,9 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration,
         Action<DbContextOptionsBuilder>? configureDb = null,
-        Action<IdmtOptions>? configureOptions = null) where TDbContext : IdmtDbContext
+        Action<IdmtOptions>? configureOptions = null,
+        CustomizeAuthentication? customizeAuthentication = null,
+        CustomizeAuthorizationOptions? customizeAuthorizationOptions = null) where TDbContext : IdmtDbContext
     {
         // 1. Configure and register IDMT Options
         var idmtOptions = ConfigureIdmtOptions(services, configuration, configureOptions);
@@ -47,7 +54,7 @@ public static class ServiceCollectionExtensions
         ConfigureIdentity(services, idmtOptions);
 
         // 5. Configure Authentication
-        ConfigureAuthentication(services, idmtOptions);
+        ConfigureAuthentication(services, idmtOptions, customizeAuthentication, customizeAuthorizationOptions);
 
         ConfigureMultiTenant(services, idmtOptions);
 
@@ -220,18 +227,23 @@ public static class ServiceCollectionExtensions
         });
     }
 
-    private static void ConfigureAuthentication(IServiceCollection services, IdmtOptions idmtOptions)
+    private static void ConfigureAuthentication(
+        IServiceCollection services, 
+        IdmtOptions idmtOptions, 
+        CustomizeAuthentication? customizeAuthentication, 
+        CustomizeAuthorizationOptions? customizeAuthorizationOptions)
     {
         // Configure authentication with both cookie and bearer token support
-        services.AddAuthentication(options =>
+        var authenticationBuilder = services.AddAuthentication(options =>
         {
             // Default scheme for web applications
             options.DefaultScheme = "CookieOrBearer";
             options.DefaultSignInScheme = IdentityConstants.ApplicationScheme;
             options.DefaultAuthenticateScheme = "CookieOrBearer";
             options.DefaultChallengeScheme = "CookieOrBearer";
-        })
-        .AddPolicyScheme("CookieOrBearer", "CookieOrBearer", options =>
+        });
+        
+        authenticationBuilder.AddPolicyScheme("CookieOrBearer", "CookieOrBearer", options =>
         {
             options.ForwardDefaultSelector = context =>
             {
@@ -240,9 +252,10 @@ public static class ServiceCollectionExtensions
                     ? IdentityConstants.BearerScheme
                     : IdentityConstants.ApplicationScheme;
             };
-        })
-        .AddBearerToken(IdentityConstants.BearerScheme)
-        .AddIdentityCookies();
+        });
+        customizeAuthentication?.Invoke(authenticationBuilder);
+        authenticationBuilder.AddBearerToken(IdentityConstants.BearerScheme);
+        authenticationBuilder.AddIdentityCookies();
 
         // Add authorization policies
         _ = services.AddAuthorization(options =>
@@ -262,6 +275,8 @@ public static class ServiceCollectionExtensions
             // Add tenant admin policy
             options.AddPolicy("RequireTenantManager", policy =>
                 policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin, IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.TenantAdmin));
+
+            customizeAuthorizationOptions?.Invoke(options);
         });
     }
 
