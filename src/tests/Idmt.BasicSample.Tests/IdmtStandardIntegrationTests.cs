@@ -115,7 +115,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         {
             Email = newEmail,
             Username = newUsername,
-            Role = IdmtDefaultRoleTypes.TenantUser
+            Role = IdmtDefaultRoleTypes.TenantAdmin
         });
         await registerResponse.AssertSuccess();
         
@@ -188,7 +188,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         {
             Email = email,
             Username = $"forgot{Guid.NewGuid():N}",
-            Role = IdmtDefaultRoleTypes.TenantUser
+            Role = IdmtDefaultRoleTypes.TenantAdmin
         });
         await registerResponse.AssertSuccess();
         var reg = await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>();

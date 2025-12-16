@@ -146,7 +146,7 @@ public static class ApplicationBuilderExtensions
         var roles = IdmtDefaultRoleTypes.DefaultRoles;
         if (options.Value.Identity.ExtraRoles.Length > 0)
         {
-            roles = roles.Concat(options.Value.Identity.ExtraRoles).ToArray();
+            roles = [.. roles, .. options.Value.Identity.ExtraRoles];
         }
 
         // Seed default tenant if using multi-tenant store
@@ -230,7 +230,7 @@ public static class ApplicationBuilderExtensions
 
         if (callSiteFactory == null)
         {
-            return Enumerable.Empty<ServiceDescriptor>();
+            return [];
         }
 
         // Access the descriptors from the call site factory
@@ -248,6 +248,6 @@ public static class ApplicationBuilderExtensions
             return descriptors ?? Enumerable.Empty<ServiceDescriptor>();
         }
 
-        return Enumerable.Empty<ServiceDescriptor>();
+        return [];
     }
 }

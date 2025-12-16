@@ -164,7 +164,6 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
             IdmtDefaultRoleTypes.SysAdmin,
             IdmtDefaultRoleTypes.SysSupport,
             IdmtDefaultRoleTypes.TenantAdmin,
-            IdmtDefaultRoleTypes.TenantUser
         };
 
         foreach (var role in roles)

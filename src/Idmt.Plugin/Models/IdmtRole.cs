@@ -22,13 +22,11 @@ public static class IdmtDefaultRoleTypes
 {
     public const string SysAdmin = "SysAdmin";
     public const string SysSupport = "SysSupport";
-    public const string TenantAdmin = "TenantAdmin";
-    public const string TenantUser = "TenantUser";
+    public const string TenantAdmin = "TenantAdmin"; // The only non sys role that can create users
 
     public static string[] DefaultRoles => [
         SysAdmin,
         SysSupport,
-        TenantAdmin,
-        TenantUser
+        TenantAdmin
     ];
 }
