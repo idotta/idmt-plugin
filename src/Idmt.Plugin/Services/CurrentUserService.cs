@@ -11,7 +11,7 @@ internal sealed class CurrentUserService(IMultiTenantContextAccessor multiTenant
 
     public string? UserAgent { get; private set; }
 
-    public Guid? UserId => 
+    public Guid? UserId =>
         Guid.TryParse(User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString(), out var userId) ? userId : null;
 
     public string? UserIdAsString => User?.FindFirstValue(ClaimTypes.NameIdentifier);

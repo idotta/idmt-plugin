@@ -42,12 +42,12 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
 
         using var scope = _factory.Services.CreateScope();
         var provider = scope.ServiceProvider;
-        
+
         // Set context so UserManager/DbContext works correctly with MultiTenant filters
         var store = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
         var tenant = await store.TryGetAsync(tenantId);
         Assert.NotNull(tenant);
-        
+
         var setter = provider.GetRequiredService<IMultiTenantContextSetter>();
         setter.MultiTenantContext = new MultiTenantContext<IdmtTenantInfo> { TenantInfo = tenant };
 
@@ -65,7 +65,7 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
         // 1. Create user in Tenant A
         var email = $"user-{Guid.NewGuid():N}@example.com";
         var password = "UserPassword1!";
-        
+
         await CreateUserInTenantAsync(TenantA, email, password);
 
         // 2. Try login to Tenant A (Success)
@@ -76,7 +76,7 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
         // 3. Try login to Tenant B (Fail)
         var clientB = _factory.CreateClientWithTenant(TenantB);
         var loginB = await clientB.PostAsJsonAsync("/auth/login", new { EmailOrUsername = email, Password = password });
-        
+
         Assert.Equal(HttpStatusCode.Unauthorized, loginB.StatusCode);
     }
 
@@ -88,7 +88,7 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
         // 1. Create user in Tenant A
         var email = $"user-{Guid.NewGuid():N}@example.com";
         var password = "UserPassword1!";
-        
+
         await CreateUserInTenantAsync(TenantA, email, password);
 
         // 2. Login to Tenant A to get token
@@ -105,9 +105,9 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
         // 4. Access Tenant B protected resource with Tenant A token (Fail)
         var clientB = _factory.CreateClientWithTenant(TenantB);
         clientB.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
-        
+
         var infoB = await clientB.GetAsync("/auth/manage/info");
-        
+
         Assert.Contains(infoB.StatusCode, new[] { HttpStatusCode.NotFound, HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
     }
 }

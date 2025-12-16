@@ -35,12 +35,12 @@ public class ApplicationOptions
 {
     public const string PasswordResetEndpointName = "ResetPassword";
     public const string ConfirmEmailEndpointName = "ConfirmEmail";
-    
+
     /// <summary>
     /// Base URL of the client application, if any (e.g. "https://myapp.com")
     /// </summary>
     public string? ClientUrl { get; set; }
-    
+
     public string ResetPasswordFormPath { get; set; } = "/reset-password";
     public string ConfirmEmailFormPath { get; set; } = "/confirm-email";
 }

@@ -7,7 +7,7 @@ public interface ICurrentUserService
     ClaimsPrincipal? User { get; }
     string? IpAddress { get; }
     string? UserAgent { get; }
-    
+
     Guid? UserId { get; }
     string? UserIdAsString { get; }
     string? Email { get; }

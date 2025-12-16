@@ -39,7 +39,7 @@ public static class UpdateUser
             var result = await userManager.UpdateAsync(appUser);
             if (!result.Succeeded)
             {
-                 return new UpdateUserResponse(false, "Failed to update user");
+                return new UpdateUserResponse(false, "Failed to update user");
             }
             return new UpdateUserResponse(true);
         }

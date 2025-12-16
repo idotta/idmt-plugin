@@ -154,7 +154,7 @@ public class TenantAccessServiceTests
         // Setup tenant resolver
         var context = new MultiTenantContext<IdmtTenantInfo>();
         context.TenantInfo = new IdmtTenantInfo { Id = tenantId };
-        
+
         _tenantResolverMock.Setup(x => x.ResolveAsync(tenantId))
             .ReturnsAsync(context);
 
@@ -187,7 +187,7 @@ public class TenantAccessServiceTests
 
         _tenantResolverMock.Setup(x => x.ResolveAsync(tenantId))
             .ReturnsAsync(context);
-        
+
         var currentTenantContext = new MultiTenantContext<IdmtTenantInfo>();
         _tenantAccessorMock.SetupGet(x => x.MultiTenantContext).Returns(currentTenantContext);
 
@@ -198,13 +198,13 @@ public class TenantAccessServiceTests
         Assert.NotNull(access);
         Assert.True(access.IsActive);
     }
-    
+
     [Fact]
     public async Task GrantTenantAccessAsync_ReturnsFalse_WhenUserNotFound()
     {
         var userId = Guid.NewGuid();
         var tenantId = "tenant1";
-        
+
         var result = await _service.GrantTenantAccessAsync(userId, tenantId);
 
         Assert.False(result);
@@ -227,7 +227,7 @@ public class TenantAccessServiceTests
 
         _tenantResolverMock.Setup(x => x.ResolveAsync(tenantId))
             .ReturnsAsync(context);
-        
+
         var currentTenantContext = new MultiTenantContext<IdmtTenantInfo>();
         _tenantAccessorMock.SetupGet(x => x.MultiTenantContext).Returns(currentTenantContext);
 
@@ -250,7 +250,7 @@ public class TenantAccessServiceTests
     {
         // Reset mocks
         _currentUserServiceMock.Reset();
-        
+
         // Setup initial assumption: user is in the role we're testing
         _currentUserServiceMock.Setup(x => x.IsInRole(currentUserRole)).Returns(true);
 
@@ -258,24 +258,24 @@ public class TenantAccessServiceTests
 
         Assert.Equal(expected, result);
     }
-    
+
     [Fact]
     public void CanManageUser_ReturnsFalse_WhenSysSupportManagesSysAdmin()
     {
         _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.SysSupport)).Returns(true);
-        
+
         var result = _service.CanManageUser([IdmtDefaultRoleTypes.SysAdmin]);
-        
+
         Assert.False(result);
     }
-    
+
     [Fact]
     public void CanManageUser_ReturnsFalse_WhenTenantAdminManagesSysAdmin()
     {
         _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.TenantAdmin)).Returns(true);
-        
+
         var result = _service.CanManageUser([IdmtDefaultRoleTypes.SysAdmin]);
-        
+
         Assert.False(result);
     }
 
@@ -283,9 +283,9 @@ public class TenantAccessServiceTests
     public void CanManageUser_ReturnsTrue_WhenSysSupportManagesTenantAdmin()
     {
         _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.SysSupport)).Returns(true);
-        
+
         var result = _service.CanManageUser([IdmtDefaultRoleTypes.TenantAdmin]);
-        
+
         Assert.True(result);
     }
 }
