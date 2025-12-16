@@ -19,7 +19,7 @@ public static class ResendConfirmationEmail
     {
         Task<ResendConfirmationEmailResponse> HandleAsync(
             bool useApiLinks,
-            ResendConfirmationEmailRequest request, 
+            ResendConfirmationEmailRequest request,
             CancellationToken cancellationToken = default);
     }
 
@@ -31,7 +31,7 @@ public static class ResendConfirmationEmail
     {
         public async Task<ResendConfirmationEmailResponse> HandleAsync(
             bool useApiLinks,
-            ResendConfirmationEmailRequest request, 
+            ResendConfirmationEmailRequest request,
             CancellationToken cancellationToken = default)
         {
             var user = await userManager.FindByEmailAsync(request.Email);
@@ -49,8 +49,8 @@ public static class ResendConfirmationEmail
             // Generate email confirmation token
             string token = await userManager.GenerateEmailConfirmationTokenAsync(user);
 
-            string confirmEmailUrl = useApiLinks 
-                ? linkGenerator.GenerateConfirmEmailApiLink(request.Email, token) 
+            string confirmEmailUrl = useApiLinks
+                ? linkGenerator.GenerateConfirmEmailApiLink(request.Email, token)
                 : linkGenerator.GenerateConfirmEmailFormLink(request.Email, token);
 
             await emailSender.SendConfirmationLinkAsync(user, request.Email, HtmlEncoder.Default.Encode(confirmEmailUrl));

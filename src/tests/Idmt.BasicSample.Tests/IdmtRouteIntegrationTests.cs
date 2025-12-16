@@ -49,10 +49,10 @@ public sealed class IdmtRouteIntegrationTests : IDisposable
     public async Task Healthz_accessible_via_route()
     {
         var client = _factory.CreateClientWithTenant();
-        
+
         // We need to authenticate first for healthz usually, but let's check if it's found at least
         // The original test says Healthz_requires_authentication returns Unauthorized/Forbidden/Found
-        
+
         var response = await client.GetAsync("healthz");
         Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.Found, HttpStatusCode.OK });
         Assert.NotEqual(HttpStatusCode.NotFound, response.StatusCode);

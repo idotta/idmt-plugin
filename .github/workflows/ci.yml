@@ -22,8 +22,14 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore src/Idmt.sln
 
+    - name: Format check
+      run: dotnet format src/Idmt.sln --verify-no-changes --verbosity diagnostic
+
     - name: Build
-      run: dotnet build src/Idmt.sln --no-restore --configuration Release
+      run: dotnet build src/Idmt.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=true
+    
+    - name: Run analyzers
+      run: dotnet build src/Idmt.sln --no-restore --configuration Release /p:RunAnalyzers=true /p:EnforceCodeStyleInBuild=true
 
     - name: Test
       run: dotnet test src/Idmt.sln --no-build --configuration Release --verbosity normal

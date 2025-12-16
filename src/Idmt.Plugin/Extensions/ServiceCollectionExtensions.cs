@@ -228,9 +228,9 @@ public static class ServiceCollectionExtensions
     }
 
     private static void ConfigureAuthentication(
-        IServiceCollection services, 
-        IdmtOptions idmtOptions, 
-        CustomizeAuthentication? customizeAuthentication, 
+        IServiceCollection services,
+        IdmtOptions idmtOptions,
+        CustomizeAuthentication? customizeAuthentication,
         CustomizeAuthorizationOptions? customizeAuthorizationOptions)
     {
         // Configure authentication with both cookie and bearer token support
@@ -242,7 +242,7 @@ public static class ServiceCollectionExtensions
             options.DefaultAuthenticateScheme = "CookieOrBearer";
             options.DefaultChallengeScheme = "CookieOrBearer";
         });
-        
+
         authenticationBuilder.AddPolicyScheme("CookieOrBearer", "CookieOrBearer", options =>
         {
             options.ForwardDefaultSelector = context =>

@@ -15,8 +15,8 @@ public static class ForgotPassword
     public interface IForgotPasswordHandler
     {
         Task<ForgotPasswordResponse> HandleAsync(
-            bool useApiLinks, 
-            ForgotPasswordRequest request, 
+            bool useApiLinks,
+            ForgotPasswordRequest request,
             CancellationToken cancellationToken = default);
     }
 
@@ -27,7 +27,7 @@ public static class ForgotPassword
     {
         public async Task<ForgotPasswordResponse> HandleAsync(
             bool useApiLinks,
-            ForgotPasswordRequest request, 
+            ForgotPasswordRequest request,
             CancellationToken cancellationToken = default)
         {
             var user = await userManager.FindByEmailAsync(request.Email);
@@ -41,8 +41,8 @@ public static class ForgotPassword
             var token = await userManager.GeneratePasswordResetTokenAsync(user);
 
             // Generate password reset link
-            var resetUrl = useApiLinks 
-                ? linkGenerator.GeneratePasswordResetApiLink(user.Email!, token) 
+            var resetUrl = useApiLinks
+                ? linkGenerator.GeneratePasswordResetApiLink(user.Email!, token)
                 : linkGenerator.GeneratePasswordResetFormLink(user.Email!, token);
 
             // Send email with reset code

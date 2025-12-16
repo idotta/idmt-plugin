@@ -93,7 +93,7 @@ public static class RegisterUser
         /// <returns>Registration response containing success status, user ID, password setup token, and any errors</returns>
         Task<RegisterUserResponse> HandleAsync(
             bool useApiLinks,
-            RegisterUserRequest request, 
+            RegisterUserRequest request,
             CancellationToken cancellationToken = default);
     }
 
@@ -235,8 +235,8 @@ public static class RegisterUser
             var token = await userManager.GeneratePasswordResetTokenAsync(user);
 
             // Generate password setup URL
-            var passwordSetupUrl = useApiLinks 
-                ? linkGenerator.GeneratePasswordResetApiLink(user.Email, token) 
+            var passwordSetupUrl = useApiLinks
+                ? linkGenerator.GeneratePasswordResetApiLink(user.Email, token)
                 : linkGenerator.GeneratePasswordResetFormLink(user.Email, token);
 
             logger.LogInformation("User created: {Email}. Request by {RequestingUserId}. Tenant: {TenantId}.", user.Email, currentUserService.UserId, currentUserService.TenantId);

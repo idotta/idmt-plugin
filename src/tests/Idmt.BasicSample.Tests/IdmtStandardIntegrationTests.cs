@@ -109,7 +109,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         // 1. Register User (as Admin)
         var newEmail = $"user-{Guid.NewGuid():N}@example.com";
         var newUsername = $"user{Guid.NewGuid():N}";
-        
+
         using var sysClient = await CreateAuthenticatedClientAsync();
         var registerResponse = await sysClient.PostAsJsonAsync("/auth/manage/users?useApiLinks=false", new
         {
@@ -118,10 +118,10 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
             Role = IdmtDefaultRoleTypes.TenantAdmin
         });
         await registerResponse.AssertSuccess();
-        
+
         var registerResult = await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>();
         Assert.NotNull(registerResult);
-        
+
         // 2. Verify Email (Capture token from Mock)
         var setupToken = registerResult!.PasswordSetupToken;
         Assert.NotNull(setupToken);
@@ -201,7 +201,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
                 ["tenantId"] = IdmtApiFactory.DefaultTenantId,
                 ["email"] = email,
                 ["token"] = reg!.PasswordSetupToken
-            }), 
+            }),
             new { NewPassword = "InitialPassword1!" });
 
         // 2. Request Forgot Password
@@ -212,8 +212,8 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
 
         // 3. Verify Email Sent and Capture Token
         _factory.EmailSenderMock.Verify(x => x.SendPasswordResetCodeAsync(
-            It.Is<IdmtUser>(u => u.Email == email), 
-            It.IsAny<string>(), 
+            It.Is<IdmtUser>(u => u.Email == email),
+            It.IsAny<string>(),
             It.IsAny<string>())
         , Times.Once);
 
@@ -221,7 +221,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         var resetLinkEncoded = invocation.Arguments[2] as string; // The generated link (passed as code)
         var resetLink = WebUtility.HtmlDecode(resetLinkEncoded);
         Assert.NotNull(resetLink);
-        
+
         // Extract token and params from link
         var uri = new Uri(resetLink!);
         var query = QueryHelpers.ParseQuery(uri.Query);
@@ -235,7 +235,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
                  ["tenantId"] = tenantId,
                  ["email"] = email,
                  ["token"] = token
-             }), 
+             }),
              new { NewPassword = "ResetPassword1!" });
         await resetResponse.AssertSuccess();
 

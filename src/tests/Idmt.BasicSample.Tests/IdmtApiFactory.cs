@@ -21,7 +21,7 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
     public const string DefaultTenantId = MultiTenantOptions.DefaultTenantId;
     public const string SysAdminEmail = "sysadmin@example.com";
     public const string SysAdminPassword = "SysAdmin1!";
-    
+
     private readonly string[] _strategies;
     private SqliteConnection? _connection;
 
@@ -68,7 +68,7 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
             // Replace EmailSender with Mock
             var emailSenderDescriptor = services.SingleOrDefault(d => d.ServiceType == typeof(IEmailSender<IdmtUser>));
             if (emailSenderDescriptor != null) services.Remove(emailSenderDescriptor);
-            
+
             services.AddSingleton(EmailSenderMock.Object);
 
             // Configure Strategies
@@ -108,19 +108,19 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
             var provider = scope.ServiceProvider;
             var dbContext = provider.GetRequiredService<IdmtDbContext>();
             var tenantStoreContext = provider.GetRequiredService<IdmtTenantStoreDbContext>();
-            
+
             await tenantStoreContext.Database.EnsureCreatedAsync();
             await dbContext.Database.EnsureCreatedAsync();
 
             var tenantStore = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
             if (await tenantStore.TryGetAsync(DefaultTenantId) == null)
             {
-                await tenantStore.TryAddAsync(new IdmtTenantInfo 
-                { 
-                    Id = DefaultTenantId, 
-                    Identifier = DefaultTenantId, 
+                await tenantStore.TryAddAsync(new IdmtTenantInfo
+                {
+                    Id = DefaultTenantId,
+                    Identifier = DefaultTenantId,
                     Name = "System Tenant",
-                    IsActive = true 
+                    IsActive = true
                 });
             }
         }
