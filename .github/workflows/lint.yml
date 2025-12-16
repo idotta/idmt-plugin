@@ -19,13 +19,13 @@ jobs:
         dotnet-version: 9.0.x
 
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore src/Idmt.sln
     
     - name: Format check
-      run: dotnet format --verify-no-changes --verbosity diagnostic
+      run: dotnet format src/Idmt.sln --verify-no-changes --verbosity diagnostic
     
     - name: Build
-      run: dotnet build --no-restore --configuration Release /p:TreatWarningsAsErrors=true
+      run: dotnet build src/Idmt.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=true
     
     - name: Run analyzers
-      run: dotnet build --no-restore --configuration Release /p:RunAnalyzers=true /p:EnforceCodeStyleInBuild=true
+      run: dotnet build src/Idmt.sln --no-restore --configuration Release /p:RunAnalyzers=true /p:EnforceCodeStyleInBuild=true
