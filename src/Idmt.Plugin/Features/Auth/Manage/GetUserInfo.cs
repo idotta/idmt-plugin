@@ -38,7 +38,8 @@ public static class GetUserInfo
                 return null;
             }
 
-            var role = (await userManager.GetRolesAsync(appUser)).FirstOrDefault() ?? IdmtDefaultRoleTypes.TenantUser;
+            // Fail fast if no role is assigned
+            var role = (await userManager.GetRolesAsync(appUser)).FirstOrDefault() ?? throw new InvalidOperationException("User has no role assigned");
 
             return new GetUserInfoResponse(
                 appUser.Id.ToString(),

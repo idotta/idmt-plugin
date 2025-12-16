@@ -244,8 +244,8 @@ public class TenantAccessServiceTests
     [InlineData(IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.TenantAdmin, true)]
     [InlineData(IdmtDefaultRoleTypes.TenantAdmin, IdmtDefaultRoleTypes.SysAdmin, false)]
     [InlineData(IdmtDefaultRoleTypes.TenantAdmin, IdmtDefaultRoleTypes.SysSupport, false)]
-    [InlineData(IdmtDefaultRoleTypes.TenantAdmin, IdmtDefaultRoleTypes.TenantUser, true)]
-    [InlineData(IdmtDefaultRoleTypes.TenantUser, IdmtDefaultRoleTypes.SysAdmin, false)]
+    [InlineData(IdmtDefaultRoleTypes.TenantAdmin, "TenantUser", true)]
+    [InlineData("TenantUser", IdmtDefaultRoleTypes.SysAdmin, false)]
     public void CanAssignRole_ValidatesRoleHierarchy(string currentUserRole, string targetRole, bool expected)
     {
         // Reset mocks

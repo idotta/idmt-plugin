@@ -3,8 +3,6 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Finbuckle.MultiTenant;
 using Finbuckle.MultiTenant.Abstractions;
-using Idmt.Plugin.Configuration;
-using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,8 +36,10 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
         }
     }
 
-    private async Task CreateUserInTenantAsync(string tenantId, string email, string password)
+    private async Task CreateUserInTenantAsync(string tenantId, string email, string password, string role = IdmtDefaultRoleTypes.TenantAdmin)
     {
+        Assert.NotEmpty(role);
+
         using var scope = _factory.Services.CreateScope();
         var provider = scope.ServiceProvider;
         
@@ -54,6 +54,7 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
         var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
         var user = new IdmtUser { UserName = email, Email = email, TenantId = tenantId, EmailConfirmed = true };
         await userManager.CreateAsync(user, password);
+        await userManager.AddToRoleAsync(user, role);
     }
 
     [Fact]

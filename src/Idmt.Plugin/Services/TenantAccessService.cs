@@ -84,7 +84,7 @@ internal sealed class TenantAccessService(
             }
 
             var currentTenant = tenantAccessor.MultiTenantContext;
-            
+
             try
             {
                 // Temporary set the tenant context to the target tenant
@@ -113,7 +113,7 @@ internal sealed class TenantAccessService(
                         IsActive = true,
                         TenantId = tenantId
                     };
-                    
+
                     dbContext.Users.Add(targetUser);
 
                     // Copy roles from system user to target tenant user
@@ -183,7 +183,7 @@ internal sealed class TenantAccessService(
             dbContext.TenantAccess.Update(tenantAccess);
 
             var currentTenant = tenantAccessor.MultiTenantContext;
-            
+
             try
             {
                 tenantContextSetter.MultiTenantContext = targetTenant;
@@ -218,44 +218,40 @@ internal sealed class TenantAccessService(
 
     public bool CanAssignRole(string role)
     {
-        if (currentUserService.IsInRole(IdmtDefaultRoleTypes.TenantUser))
+        if (currentUserService.IsInRole(IdmtDefaultRoleTypes.SysAdmin))
         {
-            return false;
+            return true;
         }
-
-        if (currentUserService.IsInRole(IdmtDefaultRoleTypes.SysSupport) && role == IdmtDefaultRoleTypes.SysAdmin)
+        if (currentUserService.IsInRole(IdmtDefaultRoleTypes.SysSupport) && role != IdmtDefaultRoleTypes.SysAdmin)
         {
-            return false;
+            return true;
         }
-
         if (currentUserService.IsInRole(IdmtDefaultRoleTypes.TenantAdmin) &&
-           (role == IdmtDefaultRoleTypes.SysAdmin || role == IdmtDefaultRoleTypes.SysSupport))
+            role != IdmtDefaultRoleTypes.SysAdmin &&
+            role != IdmtDefaultRoleTypes.SysSupport)
         {
-            return false;
+            return true;
         }
-
-        return true;
+        return false;
     }
 
     public bool CanManageUser(IEnumerable<string> targetUserRoles)
     {
-        if (currentUserService.IsInRole(IdmtDefaultRoleTypes.TenantUser))
+        if (currentUserService.IsInRole(IdmtDefaultRoleTypes.SysAdmin))
         {
-            return false;
+            return true;
         }
-
         if (currentUserService.IsInRole(IdmtDefaultRoleTypes.SysSupport) &&
-            targetUserRoles.Contains(IdmtDefaultRoleTypes.SysAdmin))
+            !targetUserRoles.Contains(IdmtDefaultRoleTypes.SysAdmin))
         {
-            return false;
+            return true;
         }
-
         if (currentUserService.IsInRole(IdmtDefaultRoleTypes.TenantAdmin) &&
-            (targetUserRoles.Contains(IdmtDefaultRoleTypes.SysAdmin) || targetUserRoles.Contains(IdmtDefaultRoleTypes.SysSupport)))
+            !targetUserRoles.Contains(IdmtDefaultRoleTypes.SysAdmin) &&
+            !targetUserRoles.Contains(IdmtDefaultRoleTypes.SysSupport))
         {
-            return false;
+            return true;
         }
-
-        return true;
+        return false;
     }
 }
