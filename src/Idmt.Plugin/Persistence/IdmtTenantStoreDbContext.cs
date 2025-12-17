@@ -16,6 +16,10 @@ public class IdmtTenantStoreDbContext : EFCoreStoreDbContext<IdmtTenantInfo>
     {
     }
 
+    protected IdmtTenantStoreDbContext(DbContextOptions options) : base(options)
+    {
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // IdmtDbContext owns all table configurations

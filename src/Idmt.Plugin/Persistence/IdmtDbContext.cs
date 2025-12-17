@@ -31,6 +31,15 @@ public class IdmtDbContext
         _currentUserService = currentUserService;
     }
 
+    protected IdmtDbContext(
+        IMultiTenantContextAccessor multiTenantContextAccessor,
+        DbContextOptions options,
+        ICurrentUserService currentUserService)
+        : base(multiTenantContextAccessor, options)
+    {
+        _currentUserService = currentUserService;
+    }
+
     /// <summary>
     /// Audit logs for tracking user actions.
     /// </summary>
