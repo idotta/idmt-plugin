@@ -3,10 +3,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Finbuckle.MultiTenant;
 using Finbuckle.MultiTenant.Abstractions;
+using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.AspNetCore.Authentication.BearerToken;
 
 namespace Idmt.BasicSample.Tests;
 
@@ -70,12 +70,12 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
 
         // 2. Try login to Tenant A (Success)
         var clientA = _factory.CreateClientWithTenant(TenantA);
-        var loginA = await clientA.PostAsJsonAsync("/auth/login", new { EmailOrUsername = email, Password = password });
+        var loginA = await clientA.PostAsJsonAsync("/auth/login", new { Email = email, Password = password });
         await loginA.AssertSuccess();
 
         // 3. Try login to Tenant B (Fail)
         var clientB = _factory.CreateClientWithTenant(TenantB);
-        var loginB = await clientB.PostAsJsonAsync("/auth/login", new { EmailOrUsername = email, Password = password });
+        var loginB = await clientB.PostAsJsonAsync("/auth/login", new { Email = email, Password = password });
 
         Assert.Equal(HttpStatusCode.Unauthorized, loginB.StatusCode);
     }
@@ -93,8 +93,8 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
 
         // 2. Login to Tenant A to get token
         var clientA = _factory.CreateClientWithTenant(TenantA);
-        var loginA = await clientA.PostAsJsonAsync("/auth/login", new { EmailOrUsername = email, Password = password });
-        var tokens = await loginA.Content.ReadFromJsonAsync<AccessTokenResponse>();
+        var loginA = await clientA.PostAsJsonAsync("/auth/token", new { Email = email, Password = password });
+        var tokens = await loginA.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
         Assert.NotNull(tokens);
 
         // 3. Access Tenant A protected resource (Success)

@@ -9,7 +9,6 @@ using Idmt.Plugin.Features.Sys;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.AspNetCore.Authentication.BearerToken;
 using Moq;
 
 namespace Idmt.BasicSample.Tests;
@@ -60,9 +59,9 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
     public async Task Auth_login_with_invalid_credentials_returns_unauthorized()
     {
         var client = _factory.CreateClientWithTenant();
-        var response = await client.PostAsJsonAsync("/auth/login", new
+        var response = await client.PostAsJsonAsync("/auth/token", new
         {
-            EmailOrUsername = IdmtApiFactory.SysAdminEmail,
+            Email = IdmtApiFactory.SysAdminEmail,
             Password = "WrongPassword1!"
         });
 
@@ -74,14 +73,14 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
     {
         var client = _factory.CreateClientWithTenant();
 
-        var loginResponse = await client.PostAsJsonAsync("/auth/login", new
+        var loginResponse = await client.PostAsJsonAsync("/auth/token", new
         {
-            EmailOrUsername = IdmtApiFactory.SysAdminEmail,
+            Email = IdmtApiFactory.SysAdminEmail,
             Password = IdmtApiFactory.SysAdminPassword
         });
         await loginResponse.AssertSuccess();
 
-        var tokens = await loginResponse.Content.ReadFromJsonAsync<AccessTokenResponse>();
+        var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
         Assert.NotNull(tokens);
         Assert.False(string.IsNullOrWhiteSpace(tokens!.AccessToken));
         Assert.False(string.IsNullOrWhiteSpace(tokens.RefreshToken));
@@ -93,7 +92,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         var refreshResponse = await client.PostAsJsonAsync("/auth/refresh", new RefreshToken.RefreshTokenRequest(tokens.RefreshToken!));
         await refreshResponse.AssertSuccess();
 
-        var refreshed = await refreshResponse.Content.ReadFromJsonAsync<AccessTokenResponse>();
+        var refreshed = await refreshResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
         Assert.NotNull(refreshed);
         Assert.False(string.IsNullOrWhiteSpace(refreshed!.AccessToken));
         Assert.NotEqual(tokens.AccessToken, refreshed.AccessToken);
@@ -140,13 +139,13 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
 
         // 4. Login with new password
         using var userClientWithTenant = _factory.CreateClientWithTenant();
-        var loginResponse = await userClientWithTenant.PostAsJsonAsync("/auth/login", new
+        var loginResponse = await userClientWithTenant.PostAsJsonAsync("/auth/token", new
         {
-            EmailOrUsername = newEmail,
+            Email = newEmail,
             Password = "NewUserPassword1!"
         });
         await loginResponse.AssertSuccess();
-        var tokens = await loginResponse.Content.ReadFromJsonAsync<AccessTokenResponse>();
+        var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
         userClientWithTenant.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
 
         // 5. Update Info
@@ -158,9 +157,9 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         await updateResponse.AssertSuccess();
 
         // 6. Verify new password
-        var reLoginResponse = await userClientWithTenant.PostAsJsonAsync("/auth/login", new
+        var reLoginResponse = await userClientWithTenant.PostAsJsonAsync("/auth/token", new
         {
-            EmailOrUsername = newEmail,
+            Email = newEmail,
             Password = "NewUserPassword2!"
         });
         await reLoginResponse.AssertSuccess();
@@ -170,9 +169,9 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         await deleteResponse.AssertSuccess();
 
         // 8. Verify deletion
-        var failLogin = await userClientWithTenant.PostAsJsonAsync("/auth/login", new
+        var failLogin = await userClientWithTenant.PostAsJsonAsync("/auth/token", new
         {
-            EmailOrUsername = newEmail,
+            Email = newEmail,
             Password = "NewUserPassword2!"
         });
         Assert.Equal(HttpStatusCode.Unauthorized, failLogin.StatusCode);
@@ -240,9 +239,9 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         await resetResponse.AssertSuccess();
 
         // 5. Login with new password
-        var loginResponse = await tenantClient.PostAsJsonAsync("/auth/login", new
+        var loginResponse = await tenantClient.PostAsJsonAsync("/auth/token", new
         {
-            EmailOrUsername = email,
+            Email = email,
             Password = "ResetPassword1!"
         });
         await loginResponse.AssertSuccess();
@@ -300,9 +299,9 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
     private async Task<HttpClient> CreateAuthenticatedClientAsync()
     {
         var client = _factory.CreateClientWithTenant();
-        var loginResponse = await client.PostAsJsonAsync("/auth/login?useCookies=true", new
+        var loginResponse = await client.PostAsJsonAsync("/auth/login", new
         {
-            EmailOrUsername = IdmtApiFactory.SysAdminEmail,
+            Email = IdmtApiFactory.SysAdminEmail,
             Password = IdmtApiFactory.SysAdminPassword
         });
         await loginResponse.AssertSuccess();

@@ -25,9 +25,9 @@ public sealed class IdmtRouteIntegrationTests : IDisposable
     {
         var client = _factory.CreateClientWithTenant();
 
-        var loginResponse = await client.PostAsJsonAsync("auth/login?useCookies=true", new
+        var loginResponse = await client.PostAsJsonAsync("auth/login", new
         {
-            EmailOrUsername = IdmtApiFactory.SysAdminEmail,
+            Email = IdmtApiFactory.SysAdminEmail,
             Password = IdmtApiFactory.SysAdminPassword
         });
 
