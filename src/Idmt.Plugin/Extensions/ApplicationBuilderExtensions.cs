@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Routing;
 using Idmt.Plugin.Features.Auth;
 using System.Reflection;
 using Idmt.Plugin.Features.Sys;
+using Microsoft.Extensions.Hosting;
 
 namespace Idmt.Plugin.Extensions;
 
@@ -23,6 +24,25 @@ public delegate Task SeedDataAsync(IServiceProvider services);
 /// </summary>
 public static class ApplicationBuilderExtensions
 {
+    /// <summary>
+    /// Middleware pipeline for security before calling UseIdmt()
+    /// </summary>
+    /// <param name="app">The web application</param>
+    /// <returns>The web application</returns>
+    public static IApplicationBuilder UseIdmtSecurity(this WebApplication app)
+    {
+        app.Use(async (context, next) =>
+        {
+            context.Response.Headers.XContentTypeOptions = "nosniff";
+            context.Response.Headers.XFrameOptions = "DENY";
+            context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+            context.Response.Headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()";
+            await next();
+        });
+
+        return app;
+    }
+
     /// <summary>
     /// Adds IDMT middleware to the application pipeline
     /// </summary>
@@ -58,7 +78,7 @@ public static class ApplicationBuilderExtensions
     {
         endpoints.MapAuthEndpoints();
         endpoints.MapSysEndpoints();
-        endpoints.MapHealthChecks("/healthz").RequireAuthorization("RequireSysUser");
+        endpoints.MapHealthChecks("/healthz").RequireAuthorization(AuthOptions.RequireSysUserPolicy);
         return endpoints;
     }
 

@@ -19,17 +19,17 @@ public static class ManageEndpoints
             .WithOpenApi();
 
         manage.MapPost("/users", RegisterUserAsync)
-            .RequireAuthorization("RequireSysUser")
+            .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
             .WithSummary("Register user")
             .WithDescription("Register a new user for a tenant (Admin/System only)");
 
         manage.MapDelete("/users/{userId:guid}", UnregisterUserAsync)
-            .RequireAuthorization("RequireTenantManager")
+            .RequireAuthorization(AuthOptions.RequireTenantManagerPolicy)
             .WithSummary("Delete user")
             .WithDescription("Delete a user within the same tenant (Admin/System only)");
 
         manage.MapPut("/users/{userId:guid}", UpdateUserAsync)
-            .RequireAuthorization("RequireTenantManager")
+            .RequireAuthorization(AuthOptions.RequireTenantManagerPolicy)
             .WithSummary("Activate/Deactivate user")
             .WithDescription("Activate/Deactivate a user within the same tenant (Admin/System only)");
 

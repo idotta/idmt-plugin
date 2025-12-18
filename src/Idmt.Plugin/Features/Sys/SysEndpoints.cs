@@ -1,4 +1,5 @@
 using Finbuckle.MultiTenant.Abstractions;
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -13,7 +14,7 @@ public static class SysEndpoints
     public static void MapSysEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var sys = endpoints.MapGroup("/sys")
-            .RequireAuthorization("RequireSysUser")
+            .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
             .WithTags("System")
             .WithOpenApi();
 

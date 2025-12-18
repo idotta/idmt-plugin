@@ -15,7 +15,7 @@ public class IdmtOptions
     /// <summary>
     /// Identity configuration options
     /// </summary>
-    public IdentityOptions Identity { get; set; } = new();
+    public AuthOptions Identity { get; set; } = new();
 
     /// <summary>
     /// Multi-tenant configuration options
@@ -41,6 +41,11 @@ public class ApplicationOptions
     /// </summary>
     public string? ClientUrl { get; set; }
 
+    /// <summary>
+    /// Prefix for WebSocket/SignalR connections
+    /// </summary>
+    public string WebSocketPrefix { get; set; } = "/hubs";
+
     public string ResetPasswordFormPath { get; set; } = "/reset-password";
     public string ConfirmEmailFormPath { get; set; } = "/confirm-email";
 }
@@ -48,8 +53,16 @@ public class ApplicationOptions
 /// <summary>
 /// ASP.NET Core Identity configuration
 /// </summary>
-public class IdentityOptions
+public class AuthOptions
 {
+    public const string CookieOrBearerScheme = "CookieOrBearer";
+
+    public const string CookieOnlyPolicy = "CookieOnly";
+    public const string BearerOnlyPolicy = "BearerOnly";
+    public const string RequireSysAdminPolicy = "RequireSysAdmin";
+    public const string RequireSysUserPolicy = "RequireSysUser";
+    public const string RequireTenantManagerPolicy = "RequireTenantManager";
+
     /// <summary>
     /// Password requirements
     /// </summary>
@@ -69,6 +82,11 @@ public class IdentityOptions
     /// Cookie configuration options
     /// </summary>
     public CookieOptions Cookie { get; set; } = new();
+
+    /// <summary>
+    /// Bearer token configuration options
+    /// </summary>
+    public BearerOptions Bearer { get; set; } = new();
 
     /// <summary>
     /// Role configuration options
@@ -118,10 +136,25 @@ public class CookieOptions
     public Microsoft.AspNetCore.Http.SameSiteMode SameSite { get; set; } = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
     public TimeSpan ExpireTimeSpan { get; set; } = TimeSpan.FromDays(14);
     public bool SlidingExpiration { get; set; } = true;
+    public bool IsRedirectEnabled { get; set; } = false;
     public string LoginPath { get; set; } = "/login";
     public string LogoutPath { get; set; } = "/logout";
     public string AccessDeniedPath { get; set; } = "/access-denied";
 }
+
+public class BearerOptions
+{
+    public const string HeaderTokenPrefix = "Bearer";
+    
+    /// <summary>
+    /// For SignalR/WebSocket connections, the token is passed as a query parameter
+    /// </summary>
+    public const string QueryTokenPrefix = "access_token";
+
+    public TimeSpan BearerTokenExpiration { get; set; } = TimeSpan.FromMinutes(60);
+    public TimeSpan RefreshTokenExpiration { get; set; } = TimeSpan.FromDays(30);
+}
+
 
 public static class IdmtMultiTenantStrategy
 {

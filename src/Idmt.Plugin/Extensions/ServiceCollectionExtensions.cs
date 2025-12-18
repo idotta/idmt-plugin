@@ -12,11 +12,14 @@ using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Features.Auth.Manage;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.BearerToken;
 
 namespace Idmt.Plugin.Extensions;
 
 public delegate void CustomizeAuthentication(AuthenticationBuilder authenticationBuilder);
-public delegate void CustomizeAuthorizationOptions(AuthorizationOptions authorizationOptions);
+public delegate void CustomizeAuthorization(AuthorizationBuilder authorizationBuilder);
 
 /// <summary>
 /// Extension methods for configuring IDMT services
@@ -39,7 +42,7 @@ public static class ServiceCollectionExtensions
         Action<DbContextOptionsBuilder>? configureDb = null,
         Action<IdmtOptions>? configureOptions = null,
         CustomizeAuthentication? customizeAuthentication = null,
-        CustomizeAuthorizationOptions? customizeAuthorizationOptions = null) where TDbContext : IdmtDbContext
+        CustomizeAuthorization? customizeAuthorization = null) where TDbContext : IdmtDbContext
     {
         // 1. Configure and register IDMT Options
         var idmtOptions = ConfigureIdmtOptions(services, configuration, configureOptions);
@@ -54,7 +57,10 @@ public static class ServiceCollectionExtensions
         ConfigureIdentity(services, idmtOptions);
 
         // 5. Configure Authentication
-        ConfigureAuthentication(services, idmtOptions, customizeAuthentication, customizeAuthorizationOptions);
+        ConfigureAuthentication(services, idmtOptions, customizeAuthentication);
+
+        // 6. Configure Authorization
+        ConfigureAuthorization(services, customizeAuthorization);
 
         ConfigureMultiTenant(services, idmtOptions);
 
@@ -209,8 +215,22 @@ public static class ServiceCollectionExtensions
         .AddSignInManager<BetterSignInManager>()
         .AddClaimsPrincipalFactory<IdmtUserClaimsPrincipalFactory>()
         .AddDefaultTokenProviders();
+    }
 
-        // Configure application cookie for per-tenant authentication
+    private static void ConfigureAuthentication(
+        IServiceCollection services,
+        IdmtOptions idmtOptions,
+        CustomizeAuthentication? customizeAuthentication)
+    {
+        // Configure authentication with both cookie and bearer token support
+        var authenticationBuilder = services.AddAuthentication(options =>
+        {
+            options.DefaultScheme = AuthOptions.CookieOrBearerScheme;
+            options.DefaultChallengeScheme = AuthOptions.CookieOrBearerScheme;
+        });
+
+        // Cookie authentication
+        authenticationBuilder.AddIdentityCookies();
         services.ConfigureApplicationCookie(options =>
         {
             options.Cookie.Name = idmtOptions.Identity.Cookie.Name;
@@ -224,60 +244,102 @@ public static class ServiceCollectionExtensions
             options.LoginPath = idmtOptions.Identity.Cookie.LoginPath;
             options.LogoutPath = idmtOptions.Identity.Cookie.LogoutPath;
             options.AccessDeniedPath = idmtOptions.Identity.Cookie.AccessDeniedPath;
-        });
-    }
 
-    private static void ConfigureAuthentication(
-        IServiceCollection services,
-        IdmtOptions idmtOptions,
-        CustomizeAuthentication? customizeAuthentication,
-        CustomizeAuthorizationOptions? customizeAuthorizationOptions)
-    {
-        // Configure authentication with both cookie and bearer token support
-        var authenticationBuilder = services.AddAuthentication(options =>
+            // API-friendly responses (no redirects)
+            if (!idmtOptions.Identity.Cookie.IsRedirectEnabled)
+            {
+                options.Events = new CookieAuthenticationEvents
+                {
+                    OnRedirectToLogin = context =>
+                    {
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        return Task.CompletedTask;
+                    },
+                    OnRedirectToAccessDenied = context =>
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        return Task.CompletedTask;
+                    }
+                };
+            }
+        });
+
+        // Bearer token authentication
+        authenticationBuilder.AddBearerToken(IdentityConstants.BearerScheme, options =>
         {
-            // Default scheme for web applications
-            options.DefaultScheme = "CookieOrBearer";
-            options.DefaultSignInScheme = IdentityConstants.ApplicationScheme;
-            options.DefaultAuthenticateScheme = "CookieOrBearer";
-            options.DefaultChallengeScheme = "CookieOrBearer";
+            options.BearerTokenExpiration = idmtOptions.Identity.Bearer.BearerTokenExpiration;
+            options.RefreshTokenExpiration = idmtOptions.Identity.Bearer.RefreshTokenExpiration;
+
+            options.Events = new BearerTokenEvents
+            {
+                OnMessageReceived = context =>
+                {
+                    // Support token from query string for SignalR/WebSocket
+                    var accessToken = context.Request.Query[BearerOptions.QueryTokenPrefix];
+                    var path = context.HttpContext.Request.Path;
+
+                    if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments(idmtOptions.Application.WebSocketPrefix))
+                    {
+                        context.Token = accessToken;
+                    }
+                    return Task.CompletedTask;
+                }
+            };
         });
 
-        authenticationBuilder.AddPolicyScheme("CookieOrBearer", "CookieOrBearer", options =>
+        // PolicyScheme - automatically routes based on request
+        authenticationBuilder.AddPolicyScheme(AuthOptions.CookieOrBearerScheme, "Cookie or Bearer", options =>
         {
             options.ForwardDefaultSelector = context =>
             {
-                var auth = context.Request.Headers.Authorization.ToString();
-                return !string.IsNullOrEmpty(auth) && auth.StartsWith("Bearer ")
-                    ? IdentityConstants.BearerScheme
-                    : IdentityConstants.ApplicationScheme;
+                // If Authorization header with Bearer token exists, use bearer scheme
+                var authHeader = context.Request.Headers.Authorization.ToString();
+                if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                {
+                    return IdentityConstants.BearerScheme;
+                }
+
+                // Otherwise use cookie scheme (will check for cookie)
+                return IdentityConstants.ApplicationScheme;
             };
         });
         customizeAuthentication?.Invoke(authenticationBuilder);
-        authenticationBuilder.AddBearerToken(IdentityConstants.BearerScheme);
-        authenticationBuilder.AddIdentityCookies();
+    }
 
-        // Add authorization policies
-        _ = services.AddAuthorization(options =>
-        {
-            // Add default policies
-            options.AddPolicy("RequireAuthenticatedUser", policy =>
-                policy.RequireAuthenticatedUser());
+    private static void ConfigureAuthorization(IServiceCollection services, CustomizeAuthorization? customizeAuthorization)
+    {
+        // Configure authorization
+        var authorizationBuilder = services.AddAuthorizationBuilder()
+            .SetDefaultPolicy(new AuthorizationPolicyBuilder(AuthOptions.CookieOrBearerScheme)
+            .RequireAuthenticatedUser()
+            .Build())
+
+            // Cookie-only policy (rare - for web-specific features)
+            .AddPolicy(AuthOptions.CookieOnlyPolicy, policy => policy
+                .RequireAuthenticatedUser()
+                .AddAuthenticationSchemes(IdentityConstants.ApplicationScheme))
+
+            // Bearer-only policy (rare - for strict API endpoints)
+            .AddPolicy(AuthOptions.BearerOnlyPolicy, policy => policy
+                .RequireAuthenticatedUser()
+                .AddAuthenticationSchemes(IdentityConstants.BearerScheme))
 
             // Add system admin policy
-            options.AddPolicy("RequireSysAdmin", policy =>
-                policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin));
+            .AddPolicy(AuthOptions.RequireSysAdminPolicy, policy =>
+                policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin)
+                    .AddAuthenticationSchemes(AuthOptions.CookieOrBearerScheme))
 
             // Add system user policy
-            options.AddPolicy("RequireSysUser", policy =>
-                policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin, IdmtDefaultRoleTypes.SysSupport));
+            .AddPolicy(AuthOptions.RequireSysUserPolicy, policy =>
+                policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin, IdmtDefaultRoleTypes.SysSupport)
+                    .AddAuthenticationSchemes(AuthOptions.CookieOrBearerScheme))
 
             // Add tenant admin policy
-            options.AddPolicy("RequireTenantManager", policy =>
-                policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin, IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.TenantAdmin));
+            .AddPolicy(AuthOptions.RequireTenantManagerPolicy, policy =>
+                policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin, IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.TenantAdmin)
+                    .AddAuthenticationSchemes(AuthOptions.CookieOrBearerScheme));
 
-            customizeAuthorizationOptions?.Invoke(options);
-        });
+        customizeAuthorization?.Invoke(authorizationBuilder);
     }
 
     private static void RegisterApplicationServices(IServiceCollection services)
