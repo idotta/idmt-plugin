@@ -1,7 +1,5 @@
-using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Features.Auth.Manage;
-using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -62,24 +60,26 @@ public static class AuthEndpoints
         auth.MapAuthManage();
     }
 
-    private static async Task<Results<Ok<Login.AccessTokenResponse>, ValidationProblem, EmptyHttpResult, ProblemHttpResult>> CookieLoginAsync(
+    private static async Task<Results<Ok<Login.LoginResponse>, UnauthorizedHttpResult, ForbidHttpResult, ValidationProblem, ProblemHttpResult>> CookieLoginAsync(
         [FromBody] Login.LoginRequest request,
-        [FromServices] Login.ILoginHandler loginHandler,
+        [FromServices] Login.ILoginHandler handler,
         HttpContext context)
     {
         if (request.Validate() is { } validationErrors)
         {
             return TypedResults.ValidationProblem(validationErrors);
         }
-
-        var response = await loginHandler.HandleAsync(request, cancellationToken: context.RequestAborted);
-
+        var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
         if (!response.IsSuccess)
         {
-            return TypedResults.Problem(response.ErrorMessage, statusCode: response.StatusCode);
+            return response.StatusCode switch
+            {
+                StatusCodes.Status401Unauthorized => TypedResults.Unauthorized(),
+                StatusCodes.Status403Forbidden => TypedResults.Forbid(),
+                _ => TypedResults.Problem(response.ErrorMessage, statusCode: response.StatusCode),
+            };
         }
-
-        return TypedResults.Empty;
+        return TypedResults.Ok(response.Value!);
     }
 
     private static async Task<NoContent> CookieLogoutAsync(
@@ -90,7 +90,7 @@ public static class AuthEndpoints
         return TypedResults.NoContent();
     }
 
-    private static async Task<Results<Ok<Login.AccessTokenResponse>, ValidationProblem, ProblemHttpResult>> TokenLoginAsync(
+    private static async Task<Results<Ok<Login.AccessTokenResponse>, UnauthorizedHttpResult, ForbidHttpResult, ValidationProblem, ProblemHttpResult>> TokenLoginAsync(
         [FromBody] Login.LoginRequest request,
         [FromServices] Login.ITokenLoginHandler handler,
         HttpContext context)
@@ -99,13 +99,16 @@ public static class AuthEndpoints
         {
             return TypedResults.ValidationProblem(validationErrors);
         }
-
         var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
         if (!response.IsSuccess)
         {
-            return TypedResults.Problem(response.ErrorMessage, statusCode: response.StatusCode);
+            return response.StatusCode switch
+            {
+                StatusCodes.Status401Unauthorized => TypedResults.Unauthorized(),
+                StatusCodes.Status403Forbidden => TypedResults.Forbid(),
+                _ => TypedResults.Problem(response.ErrorMessage, statusCode: response.StatusCode),
+            };
         }
-
         return TypedResults.Ok(response.Value!);
     }
 
