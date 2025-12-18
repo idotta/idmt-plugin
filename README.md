@@ -78,7 +78,12 @@ Add the `Idmt` section to your `appsettings.json`. Below is a comprehensive exam
         "HttpOnly": true,
         "SameSite": "Lax",
         "ExpireTimeSpan": "14.00:00:00",
-        "SlidingExpiration": true
+        "SlidingExpiration": true,
+        "IsRedirectEnabled": false
+      },
+      "Bearer": {
+        "BearerTokenExpiration": "01:00:00",
+        "RefreshTokenExpiration": "30.00:00:00"
       }
     },
     "MultiTenant": {
@@ -105,15 +110,16 @@ The plugin exposes several groups of endpoints.
 
 Public endpoints for user authentication and account recovery.
 
-| Method | Endpoint | Description | Query/Body Parameters |
-|--------|----------|-------------|-----------------------|
-| `POST` | `/auth/login` | Authenticate user | Body: `email`, `password`<br>Query: `useCookies`, `useSessionCookies` |
-| `POST` | `/auth/logout` | Logout user | - |
-| `POST` | `/auth/refresh` | Refresh JWT token | Body: `refreshToken` |
-| `POST` | `/auth/forgotPassword` | Request password reset | Body: `email`<br>Query: `useApiLinks` (true/false) |
-| `POST` | `/auth/resetPassword` | Reset password with token | Query: `tenantId`, `email`, `token`<br>Body: `newPassword` |
-| `GET` | `/auth/confirmEmail` | Confirm email address | Query: `tenantId`, `email`, `token` |
-| `POST` | `/auth/resendConfirmationEmail` | Resend confirmation | Body: `email`<br>Query: `useApiLinks` |
+| Method | Endpoint | Description | Request Body | Response |
+|--------|----------|-------------|--------------|----------|
+| `POST` | `/auth/login` | Authenticate user with cookie | `email` or `username`, `password`, `rememberMe` (optional) | `LoginResponse` (sets authentication cookie) |
+| `POST` | `/auth/token` | Authenticate user and get bearer token | `email` or `username`, `password`, `rememberMe` (optional) | `AccessTokenResponse` (access token, refresh token, expires in) |
+| `POST` | `/auth/logout` | Logout user (cookie-based) | - | No content |
+| `POST` | `/auth/refresh` | Refresh JWT token | `refreshToken` | `AccessTokenResponse` |
+| `POST` | `/auth/forgotPassword` | Request password reset | `email`<br>Query: `useApiLinks` (true/false) | `ForgotPasswordResponse` |
+| `POST` | `/auth/resetPassword` | Reset password with token | Query: `tenantId`, `email`, `token`<br>Body: `newPassword` | `ResetPasswordResponse` |
+| `GET` | `/auth/confirmEmail` | Confirm email address | Query: `tenantId`, `email`, `token` | `ConfirmEmailResponse` |
+| `POST` | `/auth/resendConfirmationEmail` | Resend confirmation | Body: `email`<br>Query: `useApiLinks` | `ResendConfirmationEmailResponse` |
 
 ### User Management (`/auth/manage`)
 
@@ -158,8 +164,61 @@ The library supports multiple tenant resolution strategies out of the box:
 - **Claim**: Reads from the user's claims (useful for JWTs).
 
 ### Authentication Strategies
-The plugin uses a hybrid approach:
-- **Cookie**: Standard ASP.NET Core Identity cookies (great for browser apps).
-- **Bearer Token**: Custom implementation compatible with ASP.NET Core Identity's bearer tokens (great for SPAs and Mobile apps).
+The plugin uses a hybrid approach with separate endpoints for each authentication method:
+- **Cookie Authentication** (`/auth/login`): Sets an authentication cookie directly, ideal for browser-based applications. Returns a `LoginResponse` with user information.
+- **Bearer Token Authentication** (`/auth/token`): Returns bearer tokens (access token and refresh token) in the response body, ideal for SPAs and mobile apps. Returns an `AccessTokenResponse` with token details.
 
-The `CookieOrBearer` policy automatically selects the scheme based on the `Authorization` header.
+Both authentication methods use local token/cookie resolution and do not delegate to Identity middleware, providing full control over the authentication flow.
+
+The `CookieOrBearer` policy automatically selects the scheme based on the `Authorization` header:
+- If an `Authorization: Bearer <token>` header is present, bearer token authentication is used.
+- Otherwise, cookie authentication is attempted.
+
+#### Example: Cookie Authentication
+
+```http
+POST /auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "SecurePassword123!"
+}
+```
+
+Response:
+```json
+{
+  "userId": "123e4567-e89b-12d3-a456-426614174000"
+}
+```
+
+The authentication cookie is automatically set in the response.
+
+#### Example: Bearer Token Authentication
+
+```http
+POST /auth/token
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "SecurePassword123!"
+}
+```
+
+Response:
+```json
+{
+  "accessToken": "CfDJ8...",
+  "refreshToken": "CfDJ8...",
+  "expiresIn": 3600,
+  "tokenType": "Bearer"
+}
+```
+
+Use the `accessToken` in subsequent requests:
+```http
+GET /auth/manage/info
+Authorization: Bearer CfDJ8...
+```
