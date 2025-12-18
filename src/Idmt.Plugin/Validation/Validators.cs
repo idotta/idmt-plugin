@@ -111,10 +111,10 @@ public static partial class Validators
     }
 
     /// <summary>
-    /// Validates an email or username (non-empty string).
+    /// Validates a username (non-empty string with minimum 3 characters).
     /// </summary>
-    public static bool IsValidEmailOrUsername(string? emailOrUsername)
+    public static bool IsValidUsername(string? username)
     {
-        return !string.IsNullOrWhiteSpace(emailOrUsername) && emailOrUsername.Length >= 3;
+        return !string.IsNullOrWhiteSpace(username) && username.Length >= 3;
     }
 }

@@ -20,13 +20,17 @@ public static class AuthEndpoints
             .WithTags("Authentication")
             .WithOpenApi();
 
-        auth.MapPost("/login", LoginAsync)
+        auth.MapPost("/login", CookieLoginAsync)
             .WithSummary("Login user")
-            .WithDescription("Authenticate user and return bearer token or cookie");
+            .WithDescription("Authenticate user and return cookie");
 
-        auth.MapPost("/logout", LogoutAsync)
+        auth.MapPost("/logout", CookieLogoutAsync)
             .WithSummary("Logout user")
             .WithDescription("Logout user and invalidate bearer token or cookie");
+
+        auth.MapPost("/token", TokenLoginAsync)
+            .WithSummary("Login user")
+            .WithDescription("Authenticate user and return bearer token");
 
         auth.MapPost("/refresh", RefreshAsync)
             .WithSummary("Refresh token")
@@ -58,21 +62,19 @@ public static class AuthEndpoints
         auth.MapAuthManage();
     }
 
-    private static async Task<Results<Ok<AccessTokenResponse>, ValidationProblem, EmptyHttpResult, ProblemHttpResult>> LoginAsync(
+    private static async Task<Results<Ok<Login.AccessTokenResponse>, ValidationProblem, EmptyHttpResult, ProblemHttpResult>> CookieLoginAsync(
         [FromBody] Login.LoginRequest request,
         [FromServices] Login.ILoginHandler loginHandler,
-        HttpContext context,
-        [FromQuery] bool useCookies = false,
-        [FromQuery] bool useSessionCookies = false)
+        HttpContext context)
     {
         if (request.Validate() is { } validationErrors)
         {
             return TypedResults.ValidationProblem(validationErrors);
         }
 
-        var response = await loginHandler.HandleAsync(request, useCookies, useSessionCookies, cancellationToken: context.RequestAborted);
+        var response = await loginHandler.HandleAsync(request, cancellationToken: context.RequestAborted);
 
-        if (!response.Succeeded)
+        if (!response.IsSuccess)
         {
             return TypedResults.Problem(response.ErrorMessage, statusCode: response.StatusCode);
         }
@@ -80,7 +82,7 @@ public static class AuthEndpoints
         return TypedResults.Empty;
     }
 
-    private static async Task<NoContent> LogoutAsync(
+    private static async Task<NoContent> CookieLogoutAsync(
         [FromServices] Logout.ILogoutHandler logoutHandler,
         CancellationToken cancellationToken = default)
     {
@@ -88,7 +90,26 @@ public static class AuthEndpoints
         return TypedResults.NoContent();
     }
 
-    private static async Task<Results<Ok<AccessTokenResponse>, SignInHttpResult, ChallengeHttpResult, ValidationProblem>> RefreshAsync(
+    private static async Task<Results<Ok<Login.AccessTokenResponse>, ValidationProblem, ProblemHttpResult>> TokenLoginAsync(
+        [FromBody] Login.LoginRequest request,
+        [FromServices] Login.ITokenLoginHandler handler,
+        HttpContext context)
+    {
+        if (request.Validate() is { } validationErrors)
+        {
+            return TypedResults.ValidationProblem(validationErrors);
+        }
+
+        var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
+        if (!response.IsSuccess)
+        {
+            return TypedResults.Problem(response.ErrorMessage, statusCode: response.StatusCode);
+        }
+
+        return TypedResults.Ok(response.Value!);
+    }
+
+    private static async Task<Results<Ok<Login.AccessTokenResponse>, SignInHttpResult, ChallengeHttpResult, ValidationProblem>> RefreshAsync(
         [FromBody] RefreshToken.RefreshTokenRequest request,
         [FromServices] RefreshToken.IRefreshTokenHandler handler,
         HttpContext context)

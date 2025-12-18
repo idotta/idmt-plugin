@@ -145,7 +145,7 @@ public class ValidatorsTests
     [InlineData(null, false)]
     public void IsValidEmailOrUsername_ValidatesCorrectly(string? input, bool expected)
     {
-        var result = Validators.IsValidEmailOrUsername(input);
+        var result = Validators.IsValidEmail(input) || Validators.IsValidUsername(input);
         Assert.Equal(expected, result);
     }
 }

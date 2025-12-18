@@ -358,6 +358,7 @@ public static class ServiceCollectionExtensions
     {
         // Auth
         services.AddScoped<Login.ILoginHandler, Login.LoginHandler>();
+        services.AddScoped<Login.ITokenLoginHandler, Login.TokenLoginHandler>();
         services.AddScoped<Logout.ILogoutHandler, Logout.LogoutHandler>();
         services.AddScoped<RefreshToken.IRefreshTokenHandler, RefreshToken.RefreshTokenHandler>();
         services.AddScoped<ConfirmEmail.IConfirmEmailHandler, ConfirmEmail.ConfirmEmailHandler>();
