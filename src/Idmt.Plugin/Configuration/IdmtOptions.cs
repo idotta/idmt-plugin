@@ -145,7 +145,7 @@ public class CookieOptions
 public class BearerOptions
 {
     public const string HeaderTokenPrefix = "Bearer";
-    
+
     /// <summary>
     /// For SignalR/WebSocket connections, the token is passed as a query parameter
     /// </summary>
