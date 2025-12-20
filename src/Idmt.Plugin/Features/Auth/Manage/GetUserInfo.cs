@@ -1,3 +1,4 @@
+using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Identity;
 using System.Security.Claims;
@@ -10,11 +11,9 @@ public static class GetUserInfo
         string Id,
         string Email,
         string UserName,
-        bool EmailConfirmed,
-        string TenantId,
         string Role,
-        DateTime? LastLoginAt,
-        bool IsActive
+        string TenantIdentifier,
+        string TenantDisplayName
     );
 
     public interface IGetUserInfoHandler
@@ -22,7 +21,7 @@ public static class GetUserInfo
         Task<GetUserInfoResponse?> HandleAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default);
     }
 
-    internal sealed class GetUserInfoHandler(UserManager<IdmtUser> userManager) : IGetUserInfoHandler
+    internal sealed class GetUserInfoHandler(UserManager<IdmtUser> userManager, IMultiTenantStore<IdmtTenantInfo> tenantStore) : IGetUserInfoHandler
     {
         public async Task<GetUserInfoResponse?> HandleAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default)
         {
@@ -38,18 +37,17 @@ public static class GetUserInfo
                 return null;
             }
 
-            // Fail fast if no role is assigned
+            // Fail fast
             var role = (await userManager.GetRolesAsync(appUser)).FirstOrDefault() ?? throw new InvalidOperationException("User has no role assigned");
+            var tenant = await tenantStore.TryGetAsync(appUser.TenantId) ?? throw new InvalidOperationException("Tenant not found");
 
             return new GetUserInfoResponse(
                 appUser.Id.ToString(),
-                appUser.Email!,
-                appUser.UserName!,
-                appUser.EmailConfirmed,
-                appUser.TenantId,
-                role,
-                appUser.LastLoginAt,
-                appUser.IsActive
+                appUser.Email ?? string.Empty,
+                appUser.UserName ?? string.Empty,
+                role ?? string.Empty,
+                tenant.Identifier ?? string.Empty,
+                tenant.DisplayName ?? string.Empty
             );
         }
     }
