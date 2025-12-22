@@ -113,15 +113,9 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
             await dbContext.Database.EnsureCreatedAsync();
 
             var tenantStore = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
-            if (await tenantStore.TryGetAsync(DefaultTenantId) == null)
+            if (await tenantStore.GetAsync(DefaultTenantId) == null)
             {
-                await tenantStore.TryAddAsync(new IdmtTenantInfo
-                {
-                    Id = DefaultTenantId,
-                    Identifier = DefaultTenantId,
-                    Name = "System Tenant",
-                    IsActive = true
-                });
+                await tenantStore.AddAsync(new IdmtTenantInfo(DefaultTenantId, DefaultTenantId, "System Tenant") { IsActive = true });
             }
         }
 
@@ -130,12 +124,12 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
         {
             var provider = scope.ServiceProvider;
             var tenantStore = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
-            var tenant = await tenantStore.TryGetAsync(DefaultTenantId)
+            var tenant = await tenantStore.GetAsync(DefaultTenantId)
                 ?? throw new InvalidOperationException("Default tenant was not seeded.");
 
             // Set Tenant Context BEFORE resolving DbContext/Managers
             var tenantContextSetter = provider.GetRequiredService<IMultiTenantContextSetter>();
-            var tenantContext = new MultiTenantContext<IdmtTenantInfo> { TenantInfo = tenant };
+            var tenantContext = new MultiTenantContext<IdmtTenantInfo>(tenant);
             tenantContextSetter.MultiTenantContext = tenantContext;
 
             var dbContext = provider.GetRequiredService<IdmtDbContext>();

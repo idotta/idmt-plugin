@@ -13,6 +13,7 @@ public class IdmtRole : IdentityRole<Guid>
 
     public override Guid Id { get; set; } = Guid.CreateVersion7();
     public override string? ConcurrencyStamp { get; set; } = Guid.NewGuid().ToString();
+    public string TenantId { get; set; } = null!;
 }
 
 /// <summary>

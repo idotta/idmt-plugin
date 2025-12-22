@@ -182,7 +182,13 @@ public static class ApplicationBuilderExtensions
             };
 
             await tenantStore.AddAsync(defaultTenant);
+            // existingTenant = defaultTenant;
         }
+
+        // Set tenant context before seeding roles to avoid NullReferenceException with multi-tenant filters
+        // var tenantContextSetter = services.GetRequiredService<IMultiTenantContextSetter>();
+        // var tenantContext = new MultiTenantContext<IdmtTenantInfo>(existingTenant);
+        // tenantContextSetter.MultiTenantContext = tenantContext;
 
         // Seed default roles
         var roleStore = services.GetRequiredService<RoleManager<IdmtRole>>();

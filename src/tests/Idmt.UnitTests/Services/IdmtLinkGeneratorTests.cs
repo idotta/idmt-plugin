@@ -33,7 +33,7 @@ public class IdmtLinkGeneratorTests
         _optionsMock = new Mock<IOptions<IdmtOptions>>();
         _loggerMock = new Mock<ILogger<IdmtLinkGenerator>>();
         _options = new IdmtOptions();
-        _tenantInfo = new IdmtTenantInfo { Id = "tenant-1" };
+        _tenantInfo = new IdmtTenantInfo("tenant-1", "tenant-1", "Tenant 1");
         _httpContext = new DefaultHttpContext();
         _httpContext.Request.Scheme = "https";
         _httpContext.Request.Host = new HostString("demo.example");

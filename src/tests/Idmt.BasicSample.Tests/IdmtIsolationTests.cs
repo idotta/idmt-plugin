@@ -26,13 +26,13 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
         using var scope = _factory.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
 
-        if (await store.TryGetAsync(TenantA) == null)
+        if (await store.GetAsync(TenantA) == null)
         {
-            await store.TryAddAsync(new IdmtTenantInfo { Id = TenantA, Identifier = TenantA, Name = "Tenant A", IsActive = true });
+            await store.AddAsync(new IdmtTenantInfo(TenantA, TenantA, "Tenant A") { IsActive = true });
         }
-        if (await store.TryGetAsync(TenantB) == null)
+        if (await store.GetAsync(TenantB) == null)
         {
-            await store.TryAddAsync(new IdmtTenantInfo { Id = TenantB, Identifier = TenantB, Name = "Tenant B", IsActive = true });
+            await store.AddAsync(new IdmtTenantInfo(TenantB, TenantB, "Tenant B") { IsActive = true });
         }
     }
 
@@ -45,11 +45,18 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
 
         // Set context so UserManager/DbContext works correctly with MultiTenant filters
         var store = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
-        var tenant = await store.TryGetAsync(tenantId);
+        var tenant = await store.GetAsync(tenantId);
         Assert.NotNull(tenant);
 
         var setter = provider.GetRequiredService<IMultiTenantContextSetter>();
-        setter.MultiTenantContext = new MultiTenantContext<IdmtTenantInfo> { TenantInfo = tenant };
+        setter.MultiTenantContext = new MultiTenantContext<IdmtTenantInfo>(tenant);
+
+        // Ensure role exists in this tenant context
+        var roleManager = provider.GetRequiredService<RoleManager<IdmtRole>>();
+        if (!await roleManager.RoleExistsAsync(role))
+        {
+            await roleManager.CreateAsync(new IdmtRole(role));
+        }
 
         var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
         var user = new IdmtUser { UserName = email, Email = email, TenantId = tenantId, EmailConfirmed = true };

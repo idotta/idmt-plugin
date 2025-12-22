@@ -27,10 +27,8 @@ public class TenantAccessServiceTests
         _currentUserServiceMock = new Mock<ICurrentUserService>();
 
         // Setup mock to return a context, even if empty, to avoid NRE in base constructor if it accesses it
-        var dummyContext = new MultiTenantContext<IdmtTenantInfo>
-        {
-            TenantInfo = new IdmtTenantInfo { Id = "system-test-tenant" }
-        };
+        var dummyTenant = new IdmtTenantInfo("system-test-tenant", "system-test", "System Test Tenant");
+        var dummyContext = new MultiTenantContext<IdmtTenantInfo>(dummyTenant);
         _tenantAccessorMock.SetupGet(x => x.MultiTenantContext).Returns(dummyContext);
 
         var options = new DbContextOptionsBuilder<IdmtDbContext>()
@@ -64,10 +62,10 @@ public class TenantAccessServiceTests
         );
         await _dbContext.SaveChangesAsync();
 
-        _tenantStoreMock.Setup(x => x.TryGetAsync(tenantId1))
-            .ReturnsAsync(new IdmtTenantInfo { Id = tenantId1, Name = "Tenant 1" });
-        _tenantStoreMock.Setup(x => x.TryGetAsync(tenantId2))
-            .ReturnsAsync(new IdmtTenantInfo { Id = tenantId2, Name = "Tenant 2" });
+        _tenantStoreMock.Setup(x => x.GetAsync(tenantId1))
+            .ReturnsAsync(new IdmtTenantInfo(tenantId1, tenantId1, "Tenant 1"));
+        _tenantStoreMock.Setup(x => x.GetAsync(tenantId2))
+            .ReturnsAsync(new IdmtTenantInfo(tenantId2, tenantId2, "Tenant 2"));
 
         var result = await _service.GetUserAccessibleTenantsAsync(userId);
 
@@ -152,14 +150,15 @@ public class TenantAccessServiceTests
         await _dbContext.SaveChangesAsync();
 
         // Setup tenant resolver
-        var context = new MultiTenantContext<IdmtTenantInfo>();
-        context.TenantInfo = new IdmtTenantInfo { Id = tenantId };
+        var tenant = new IdmtTenantInfo(tenantId, tenantId, "Test Tenant");
+        var context = new MultiTenantContext<IdmtTenantInfo>(tenant);
 
         _tenantResolverMock.Setup(x => x.ResolveAsync(tenantId))
             .ReturnsAsync(context);
 
         // Mock current tenant context for restoration
-        var currentTenantContext = new MultiTenantContext<IdmtTenantInfo>();
+        var currentTenant = new IdmtTenantInfo("current", "current", "Current Tenant");
+        var currentTenantContext = new MultiTenantContext<IdmtTenantInfo>(currentTenant);
         _tenantAccessorMock.SetupGet(x => x.MultiTenantContext).Returns(currentTenantContext);
 
         var result = await _service.GrantTenantAccessAsync(userId, tenantId);
@@ -182,13 +181,14 @@ public class TenantAccessServiceTests
         _dbContext.TenantAccess.Add(new TenantAccess { UserId = userId, TenantId = tenantId, IsActive = false });
         await _dbContext.SaveChangesAsync();
 
-        var context = new MultiTenantContext<IdmtTenantInfo>();
-        context.TenantInfo = new IdmtTenantInfo { Id = tenantId };
+        var tenant = new IdmtTenantInfo(tenantId, tenantId, "Test Tenant");
+        var context = new MultiTenantContext<IdmtTenantInfo>(tenant);
 
         _tenantResolverMock.Setup(x => x.ResolveAsync(tenantId))
             .ReturnsAsync(context);
 
-        var currentTenantContext = new MultiTenantContext<IdmtTenantInfo>();
+        var currentTenant = new IdmtTenantInfo("current", "current", "Current Tenant");
+        var currentTenantContext = new MultiTenantContext<IdmtTenantInfo>(currentTenant);
         _tenantAccessorMock.SetupGet(x => x.MultiTenantContext).Returns(currentTenantContext);
 
         var result = await _service.GrantTenantAccessAsync(userId, tenantId);
@@ -222,13 +222,14 @@ public class TenantAccessServiceTests
         _dbContext.TenantAccess.Add(new TenantAccess { UserId = userId, TenantId = tenantId, IsActive = true });
         await _dbContext.SaveChangesAsync();
 
-        var context = new MultiTenantContext<IdmtTenantInfo>();
-        context.TenantInfo = new IdmtTenantInfo { Id = tenantId };
+        var tenant = new IdmtTenantInfo(tenantId, tenantId, "Test Tenant");
+        var context = new MultiTenantContext<IdmtTenantInfo>(tenant);
 
         _tenantResolverMock.Setup(x => x.ResolveAsync(tenantId))
             .ReturnsAsync(context);
 
-        var currentTenantContext = new MultiTenantContext<IdmtTenantInfo>();
+        var currentTenant = new IdmtTenantInfo("current", "current", "Current Tenant");
+        var currentTenantContext = new MultiTenantContext<IdmtTenantInfo>(currentTenant);
         _tenantAccessorMock.SetupGet(x => x.MultiTenantContext).Returns(currentTenantContext);
 
         var result = await _service.RevokeTenantAccessAsync(userId, tenantId);
