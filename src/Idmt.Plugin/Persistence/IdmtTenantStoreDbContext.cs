@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Idmt.Plugin.Models;
-using Finbuckle.MultiTenant.EntityFrameworkCore.Stores.EFCoreStore;
+using Finbuckle.MultiTenant.EntityFrameworkCore.Stores;
 
 namespace Idmt.Plugin.Persistence;
 

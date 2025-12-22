@@ -1,19 +1,18 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-using Finbuckle.MultiTenant;
+using System.Reflection;
 using Finbuckle.MultiTenant.Abstractions;
+using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Features.Auth;
+using Idmt.Plugin.Features.Sys;
 using Idmt.Plugin.Middleware;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Routing;
-using Idmt.Plugin.Features.Auth;
-using System.Reflection;
-using Idmt.Plugin.Features.Sys;
-using Microsoft.Extensions.Hosting;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Idmt.Plugin.Extensions;
 
@@ -172,20 +171,17 @@ public static class ApplicationBuilderExtensions
         // Seed default tenant if using multi-tenant store
         var tenantStore = services.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
         var defaultTenantId = MultiTenantOptions.DefaultTenantId;
-        var existingTenant = await tenantStore.TryGetAsync(defaultTenantId);
+        var existingTenant = await tenantStore.GetAsync(defaultTenantId);
 
         if (existingTenant == null)
         {
-            var defaultTenant = new IdmtTenantInfo
+            var defaultTenant = new IdmtTenantInfo(defaultTenantId, defaultTenantId, "System Tenant")
             {
-                Id = defaultTenantId,
-                Identifier = defaultTenantId,
-                Name = "System Tenant",
                 DisplayName = "System",
                 IsActive = true
             };
 
-            await tenantStore.TryAddAsync(defaultTenant);
+            await tenantStore.AddAsync(defaultTenant);
         }
 
         // Seed default roles

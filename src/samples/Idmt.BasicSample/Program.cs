@@ -1,13 +1,14 @@
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Extensions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 
-builder.Services.AddIdmt(builder.Configuration);
+builder.Services.AddIdmt(builder.Configuration, db => db.UseSqlite("Data Source=Idmt.BasicSample.db"));
 
 var app = builder.Build();
 

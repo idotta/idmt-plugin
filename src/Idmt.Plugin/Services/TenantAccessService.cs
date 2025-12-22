@@ -22,7 +22,7 @@ internal sealed class TenantAccessService(
             .Select(ta => ta.TenantId)
             .ToArrayAsync();
 
-        var tenantTasks = tenantIds.Select(tenantStore.TryGetAsync);
+        var tenantTasks = tenantIds.Select(tenantStore.GetAsync);
         var tenants = await Task.WhenAll(tenantTasks);
 
         return tenants.Where(t => t != null).ToArray()!;

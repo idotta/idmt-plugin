@@ -1,7 +1,7 @@
+using System.Security.Claims;
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Identity;
-using System.Security.Claims;
 
 namespace Idmt.Plugin.Features.Auth.Manage;
 
@@ -39,7 +39,7 @@ public static class GetUserInfo
 
             // Fail fast
             var role = (await userManager.GetRolesAsync(appUser)).FirstOrDefault() ?? throw new InvalidOperationException("User has no role assigned");
-            var tenant = await tenantStore.TryGetAsync(appUser.TenantId) ?? throw new InvalidOperationException("Tenant not found");
+            var tenant = await tenantStore.GetAsync(appUser.TenantId) ?? throw new InvalidOperationException("Tenant not found");
 
             return new GetUserInfoResponse(
                 appUser.Id.ToString(),

@@ -15,8 +15,7 @@ public static class SysEndpoints
     {
         var sys = endpoints.MapGroup("/sys")
             .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
-            .WithTags("System")
-            .WithOpenApi();
+            .WithTags("System");
 
         sys.MapGet("/users/{userId:guid}/tenants", GetUserTenantsAsync)
             .WithSummary("Get tenants accessible by user");

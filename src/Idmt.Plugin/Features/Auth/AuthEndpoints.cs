@@ -15,8 +15,7 @@ public static class AuthEndpoints
     public static void MapAuthEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var auth = endpoints.MapGroup("/auth")
-            .WithTags("Authentication")
-            .WithOpenApi();
+            .WithTags("Authentication");
 
         auth.MapPost("/login", CookieLoginAsync)
             .WithSummary("Login user")

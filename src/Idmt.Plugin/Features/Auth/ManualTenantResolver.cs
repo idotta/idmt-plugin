@@ -19,11 +19,7 @@ internal sealed class ManualTenantResolver : IDisposable
         var tenantContextAccessor = context.RequestServices.GetRequiredService<IMultiTenantContextAccessor>();
         var tenantContextSetter = context.RequestServices.GetRequiredService<IMultiTenantContextSetter>();
 
-        var targetTenant = tenantStore.TryGetAsync(tenantId).GetAwaiter().GetResult();
-        if (targetTenant is null)
-        {
-            throw new InvalidOperationException("Invalid tenant ID");
-        }
+        var targetTenant = tenantStore.GetAsync(tenantId).GetAwaiter().GetResult() ?? throw new InvalidOperationException("Invalid tenant ID");
         _currentTenantContext = tenantContextAccessor.MultiTenantContext;
         // In this case, the current tenant is not the target tenant, so we deny the request
         if (_currentTenantContext is { } ct && ct.IsResolved && ct.TenantInfo?.Id != targetTenant?.Id)
@@ -32,9 +28,8 @@ internal sealed class ManualTenantResolver : IDisposable
         }
 
         // Set the tenant context to the target tenant
-        tenantContextSetter.MultiTenantContext = new MultiTenantContext<IdmtTenantInfo>
+        tenantContextSetter.MultiTenantContext = new MultiTenantContext<IdmtTenantInfo>(targetTenant)
         {
-            TenantInfo = targetTenant,
             StrategyInfo = _currentTenantContext.StrategyInfo,
             StoreInfo = new()
         };

@@ -15,8 +15,7 @@ public static class ManageEndpoints
     {
         var manage = endpoints.MapGroup("/manage")
             .RequireAuthorization()
-            .WithTags("Authentication", "Management")
-            .WithOpenApi();
+            .WithTags("Authentication", "Management");
 
         manage.MapPost("/users", RegisterUserAsync)
             .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
