@@ -45,7 +45,8 @@ public static class CreateTenant
     {
         public async Task<Result<CreateTenantResponse>> HandleAsync(CreateTenantRequest request, CancellationToken cancellationToken = default)
         {
-            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            IdmtTenantInfo resultTenant;
+
             try
             {
                 var existingTenant = await tenantStore.GetByIdentifierAsync(request.Identifier);
@@ -56,41 +57,42 @@ public static class CreateTenant
                         existingTenant = existingTenant with { IsActive = true };
                         await tenantStore.UpdateAsync(existingTenant);
                     }
-                    await GuaranteeTenantRolesAsync(existingTenant);
-                    await transaction.CommitAsync(cancellationToken);
-                    return Result.Success(new CreateTenantResponse(
-                        existingTenant.Id ?? string.Empty,
-                        existingTenant.Identifier ?? string.Empty,
-                        existingTenant.Name ?? string.Empty,
-                        existingTenant.DisplayName ?? string.Empty), StatusCodes.Status200OK);
+                    resultTenant = existingTenant;
                 }
-
-                var tenant = new IdmtTenantInfo(request.Identifier, request.Name)
+                else
                 {
-                    DisplayName = request.DisplayName
-                };
+                    var tenant = new IdmtTenantInfo(request.Identifier, request.Name)
+                    {
+                        DisplayName = request.DisplayName
+                    };
 
-                if (!await tenantStore.AddAsync(tenant))
-                {
-                    await transaction.RollbackAsync(cancellationToken);
-                    return Result.Failure<CreateTenantResponse>("Failed to create tenant", StatusCodes.Status400BadRequest);
+                    if (!await tenantStore.AddAsync(tenant))
+                    {
+                        return Result.Failure<CreateTenantResponse>("Failed to create tenant", StatusCodes.Status400BadRequest);
+                    }
+                    resultTenant = tenant;
                 }
-
-                await GuaranteeTenantRolesAsync(tenant);
-                await transaction.CommitAsync(cancellationToken);
-
-                return Result.Success(new CreateTenantResponse(
-                    tenant.Id ?? string.Empty,
-                    tenant.Identifier ?? string.Empty,
-                    tenant.Name ?? string.Empty,
-                    tenant.DisplayName ?? string.Empty), StatusCodes.Status200OK);
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync(cancellationToken);
                 logger.LogError(ex, "Error creating tenant with identifier {Identifier}", request.Identifier);
                 return Result.Failure<CreateTenantResponse>($"Error creating tenant: {ex.Message}", StatusCodes.Status500InternalServerError);
             }
+
+            try
+            {
+                await GuaranteeTenantRolesAsync(resultTenant);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error seeding roles for tenant {Identifier}", request.Identifier);
+            }
+
+            return Result.Success(new CreateTenantResponse(
+                resultTenant.Id ?? string.Empty,
+                resultTenant.Identifier ?? string.Empty,
+                resultTenant.Name ?? string.Empty,
+                resultTenant.DisplayName ?? string.Empty), StatusCodes.Status200OK);
         }
 
         private async Task GuaranteeTenantRolesAsync(IdmtTenantInfo tenantInfo)
