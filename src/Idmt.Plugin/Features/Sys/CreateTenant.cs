@@ -35,7 +35,6 @@ public static class CreateTenant
     }
 
     internal sealed class CreateTenantHandler(
-        IdmtDbContext dbContext,
         IMultiTenantStore<IdmtTenantInfo> tenantStore,
         IMultiTenantContextSetter tenantContextSetter,
         IMultiTenantContextAccessor tenantContextAccessor,
