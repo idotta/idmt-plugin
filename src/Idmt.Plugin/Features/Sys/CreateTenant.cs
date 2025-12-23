@@ -1,7 +1,6 @@
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
-using Idmt.Plugin.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -35,7 +34,6 @@ public static class CreateTenant
     }
 
     internal sealed class CreateTenantHandler(
-        IdmtDbContext dbContext,
         IMultiTenantStore<IdmtTenantInfo> tenantStore,
         IMultiTenantContextSetter tenantContextSetter,
         IMultiTenantContextAccessor tenantContextAccessor,
@@ -45,7 +43,8 @@ public static class CreateTenant
     {
         public async Task<Result<CreateTenantResponse>> HandleAsync(CreateTenantRequest request, CancellationToken cancellationToken = default)
         {
-            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            IdmtTenantInfo resultTenant;
+
             try
             {
                 var existingTenant = await tenantStore.GetByIdentifierAsync(request.Identifier);
@@ -54,46 +53,54 @@ public static class CreateTenant
                     if (!existingTenant.IsActive)
                     {
                         existingTenant = existingTenant with { IsActive = true };
-                        await tenantStore.UpdateAsync(existingTenant);
+                        if (!await tenantStore.UpdateAsync(existingTenant))
+                        {
+                            return Result.Failure<CreateTenantResponse>("Failed to update tenant", StatusCodes.Status500InternalServerError);
+                        }
                     }
-                    await GuaranteeTenantRolesAsync(existingTenant);
-                    await transaction.CommitAsync(cancellationToken);
-                    return Result.Success(new CreateTenantResponse(
-                        existingTenant.Id ?? string.Empty,
-                        existingTenant.Identifier ?? string.Empty,
-                        existingTenant.Name ?? string.Empty,
-                        existingTenant.DisplayName ?? string.Empty), StatusCodes.Status200OK);
+                    resultTenant = existingTenant;
                 }
-
-                var tenant = new IdmtTenantInfo(request.Identifier, request.Name)
+                else
                 {
-                    DisplayName = request.DisplayName
-                };
+                    var tenant = new IdmtTenantInfo(request.Identifier, request.Name)
+                    {
+                        DisplayName = request.DisplayName
+                    };
 
-                if (!await tenantStore.AddAsync(tenant))
-                {
-                    await transaction.RollbackAsync(cancellationToken);
-                    return Result.Failure<CreateTenantResponse>("Failed to create tenant", StatusCodes.Status400BadRequest);
+                    if (!await tenantStore.AddAsync(tenant))
+                    {
+                        return Result.Failure<CreateTenantResponse>("Failed to create tenant", StatusCodes.Status400BadRequest);
+                    }
+                    resultTenant = tenant;
                 }
-
-                await GuaranteeTenantRolesAsync(tenant);
-                await transaction.CommitAsync(cancellationToken);
-
-                return Result.Success(new CreateTenantResponse(
-                    tenant.Id ?? string.Empty,
-                    tenant.Identifier ?? string.Empty,
-                    tenant.Name ?? string.Empty,
-                    tenant.DisplayName ?? string.Empty), StatusCodes.Status200OK);
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync(cancellationToken);
                 logger.LogError(ex, "Error creating tenant with identifier {Identifier}", request.Identifier);
                 return Result.Failure<CreateTenantResponse>($"Error creating tenant: {ex.Message}", StatusCodes.Status500InternalServerError);
             }
+
+            try
+            {
+                bool ok = await GuaranteeTenantRolesAsync(resultTenant);
+                if (!ok)
+                {
+                    return Result.Failure<CreateTenantResponse>($"Failed to guarantee tenant roles.", StatusCodes.Status500InternalServerError);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error seeding roles for tenant {Identifier}", request.Identifier);
+            }
+
+            return Result.Success(new CreateTenantResponse(
+                resultTenant.Id ?? string.Empty,
+                resultTenant.Identifier ?? string.Empty,
+                resultTenant.Name ?? string.Empty,
+                resultTenant.DisplayName ?? string.Empty), StatusCodes.Status200OK);
         }
 
-        private async Task GuaranteeTenantRolesAsync(IdmtTenantInfo tenantInfo)
+        private async Task<bool> GuaranteeTenantRolesAsync(IdmtTenantInfo tenantInfo)
         {
             var roles = IdmtDefaultRoleTypes.DefaultRoles;
             if (options.Value.Identity.ExtraRoles.Length > 0)
@@ -114,7 +121,11 @@ public static class CreateTenant
                 {
                     if (!await roleManager.RoleExistsAsync(role))
                     {
-                        await roleManager.CreateAsync(new IdmtRole(role));
+                        var result = await roleManager.CreateAsync(new IdmtRole(role));
+                        if (!result.Succeeded)
+                        {
+                            return false;
+                        }
                     }
                 }
             }
@@ -123,6 +134,8 @@ public static class CreateTenant
                 // Restore previous context
                 tenantContextSetter.MultiTenantContext = previousContext;
             }
+
+            return true;
         }
     }
 
