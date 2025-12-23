@@ -54,7 +54,10 @@ public static class CreateTenant
                     if (!existingTenant.IsActive)
                     {
                         existingTenant = existingTenant with { IsActive = true };
-                        await tenantStore.UpdateAsync(existingTenant);
+                        if (!await tenantStore.UpdateAsync(existingTenant))
+                        {
+                            return Result.Failure<CreateTenantResponse>("Failed to update tenant", StatusCodes.Status500InternalServerError);
+                        }
                     }
                     resultTenant = existingTenant;
                 }
@@ -80,7 +83,11 @@ public static class CreateTenant
 
             try
             {
-                await GuaranteeTenantRolesAsync(resultTenant);
+                bool ok = await GuaranteeTenantRolesAsync(resultTenant);
+                if (!ok)
+                {
+                    return Result.Failure<CreateTenantResponse>($"Failed to guarantee tenant roles.", StatusCodes.Status500InternalServerError);
+                }
             }
             catch (Exception ex)
             {
@@ -94,7 +101,7 @@ public static class CreateTenant
                 resultTenant.DisplayName ?? string.Empty), StatusCodes.Status200OK);
         }
 
-        private async Task GuaranteeTenantRolesAsync(IdmtTenantInfo tenantInfo)
+        private async Task<bool> GuaranteeTenantRolesAsync(IdmtTenantInfo tenantInfo)
         {
             var roles = IdmtDefaultRoleTypes.DefaultRoles;
             if (options.Value.Identity.ExtraRoles.Length > 0)
@@ -115,7 +122,11 @@ public static class CreateTenant
                 {
                     if (!await roleManager.RoleExistsAsync(role))
                     {
-                        await roleManager.CreateAsync(new IdmtRole(role));
+                        var result = await roleManager.CreateAsync(new IdmtRole(role));
+                        if (!result.Succeeded)
+                        {
+                            return false;
+                        }
                     }
                 }
             }
@@ -124,6 +135,8 @@ public static class CreateTenant
                 // Restore previous context
                 tenantContextSetter.MultiTenantContext = previousContext;
             }
+
+            return true;
         }
     }
 
