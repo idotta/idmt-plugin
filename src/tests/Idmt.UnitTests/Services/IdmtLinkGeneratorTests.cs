@@ -33,7 +33,7 @@ public class IdmtLinkGeneratorTests
         _optionsMock = new Mock<IOptions<IdmtOptions>>();
         _loggerMock = new Mock<ILogger<IdmtLinkGenerator>>();
         _options = new IdmtOptions();
-        _tenantInfo = new IdmtTenantInfo { Id = "tenant-1" };
+        _tenantInfo = new IdmtTenantInfo("tenant-1", "tenant-1", "Tenant 1");
         _httpContext = new DefaultHttpContext();
         _httpContext.Request.Scheme = "https";
         _httpContext.Request.Host = new HostString("demo.example");
@@ -85,7 +85,7 @@ public class IdmtLinkGeneratorTests
 
         Assert.Equal(expectedUrl, result);
         Assert.NotNull(capturedRouteValues);
-        Assert.True(HasExpectedRouteValues(capturedRouteValues!, _tenantInfo.Id ?? string.Empty, email, token));
+        Assert.True(HasExpectedRouteValues(capturedRouteValues!, _tenantInfo.Identifier ?? string.Empty, email, token));
     }
 
     [Fact]
@@ -116,7 +116,7 @@ public class IdmtLinkGeneratorTests
 
         Assert.Equal(expectedUrl, result);
         Assert.NotNull(capturedRouteValues);
-        Assert.True(HasExpectedRouteValues(capturedRouteValues!, _tenantInfo.Id ?? string.Empty, email, token));
+        Assert.True(HasExpectedRouteValues(capturedRouteValues!, _tenantInfo.Identifier ?? string.Empty, email, token));
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public class IdmtLinkGeneratorTests
         Assert.Equal(expectedBase, uri.GetLeftPart(UriPartial.Path));
 
         var query = QueryHelpers.ParseQuery(uri.Query);
-        Assert.Equal(_tenantInfo.Id, query["tenantId"].ToString());
+        Assert.Equal(_tenantInfo.Identifier, query["tenantIdentifier"].ToString());
         Assert.Equal(email, query["email"].ToString());
         Assert.Equal(token, query["token"].ToString());
     }
@@ -154,7 +154,7 @@ public class IdmtLinkGeneratorTests
         Assert.Equal(expectedBase, uri.GetLeftPart(UriPartial.Path));
 
         var query = QueryHelpers.ParseQuery(uri.Query);
-        Assert.Equal(_tenantInfo.Id, query["tenantId"].ToString());
+        Assert.Equal(_tenantInfo.Identifier, query["tenantIdentifier"].ToString());
         Assert.Equal(email, query["email"].ToString());
         Assert.Equal(token, query["token"].ToString());
     }
@@ -241,12 +241,12 @@ public class IdmtLinkGeneratorTests
         Assert.Equal("Client URL is not configured.", exception.Message);
     }
 
-    private static bool HasExpectedRouteValues(RouteValueDictionary routeValues, string tenantId, string email, string token)
+    private static bool HasExpectedRouteValues(RouteValueDictionary routeValues, string tenantIdentifier, string email, string token)
     {
-        return routeValues.TryGetValue("tenantId", out var tenantValue)
+        return routeValues.TryGetValue("tenantIdentifier", out var tenantValue)
             && routeValues.TryGetValue("email", out var emailValue)
             && routeValues.TryGetValue("token", out var tokenValue)
-            && string.Equals(tenantValue?.ToString(), tenantId, StringComparison.Ordinal)
+            && string.Equals(tenantValue?.ToString(), tenantIdentifier, StringComparison.Ordinal)
             && string.Equals(emailValue?.ToString(), email, StringComparison.Ordinal)
             && string.Equals(tokenValue?.ToString(), token, StringComparison.Ordinal);
     }

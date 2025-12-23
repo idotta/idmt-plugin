@@ -121,18 +121,18 @@ Public endpoints for user authentication and account recovery.
 | `GET` | `/auth/confirmEmail` | Confirm email address | Query: `tenantId`, `email`, `token` | `ConfirmEmailResponse` |
 | `POST` | `/auth/resendConfirmationEmail` | Resend confirmation | Body: `email`<br>Query: `useApiLinks` | `ResendConfirmationEmailResponse` |
 
-### User Management (`/auth/manage`)
+### User Management (`/manage`)
 
 Endpoints for managing user profiles and accounts.
 *   **Authorization**: Some endpoints require specific roles (`SysAdmin`, `TenantAdmin`).
 
 | Method | Endpoint | Policy | Description |
 |--------|----------|--------|-------------|
-| `GET` | `/auth/manage/info` | Authenticated | Get current user's info |
-| `PUT` | `/auth/manage/info` | Authenticated | Update current user's info |
-| `POST` | `/auth/manage/users` | `RequireSysUser` | Register a new user (Admin only) |
-| `PUT` | `/auth/manage/users/{id}` | `RequireTenantManager` | Activate/Deactivate user |
-| `DELETE` | `/auth/manage/users/{id}` | `RequireTenantManager` | Delete a user |
+| `GET` | `/manage/info` | Authenticated | Get current user's info |
+| `PUT` | `/manage/info` | Authenticated | Update current user's info |
+| `POST` | `/manage/users` | `RequireSysUser` | Register a new user (Admin only) |
+| `PUT` | `/manage/users/{id}` | `RequireTenantManager` | Activate/Deactivate user |
+| `DELETE` | `/manage/users/{id}` | `RequireTenantManager` | Delete a user |
 
 ### System & Tenant Access (`/sys`)
 
@@ -219,6 +219,6 @@ Response:
 
 Use the `accessToken` in subsequent requests:
 ```http
-GET /auth/manage/info
+GET /manage/info
 Authorization: Bearer CfDJ8...
 ```

@@ -1,5 +1,3 @@
-using Idmt.Plugin.Models;
-
 namespace Idmt.Plugin.Configuration;
 
 /// <summary>
@@ -174,9 +172,11 @@ public static class IdmtMultiTenantStrategy
 public class MultiTenantOptions
 {
     /// <summary>
-    /// Default tenant ID for fallback
+    /// Default tenant Identifier
     /// </summary>
-    public const string DefaultTenantId = "system-tenant";
+    public const string DefaultTenantIdentifier = "system-tenant";
+
+    public string DefaultTenantDisplayName { get; set; } = "System Tenant";
 
     /// <summary>
     /// Tenant resolution strategy (header, subdomain, etc.)

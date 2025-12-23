@@ -1,4 +1,3 @@
-using Finbuckle.MultiTenant;
 using Finbuckle.MultiTenant.Abstractions;
 using Finbuckle.MultiTenant.EntityFrameworkCore;
 using Idmt.Plugin.Configuration;
@@ -18,7 +17,7 @@ namespace Idmt.BasicSample.Tests;
 
 public class IdmtApiFactory : WebApplicationFactory<Program>
 {
-    public const string DefaultTenantId = MultiTenantOptions.DefaultTenantId;
+    public const string DefaultTenantIdentifier = MultiTenantOptions.DefaultTenantIdentifier;
     public const string SysAdminEmail = "sysadmin@example.com";
     public const string SysAdminPassword = "SysAdmin1!";
 
@@ -83,10 +82,10 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
 
     public HttpClient CreateClientWithTenant(string? tenantId = null, bool allowAutoRedirect = false)
     {
-        tenantId ??= DefaultTenantId;
+        tenantId ??= DefaultTenantIdentifier;
         var client = CreateClient(new WebApplicationFactoryClientOptions
         {
-            AllowAutoRedirect = allowAutoRedirect
+            AllowAutoRedirect = allowAutoRedirect,
         });
 
         if (_strategies.Contains(IdmtMultiTenantStrategy.Route))
@@ -113,15 +112,9 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
             await dbContext.Database.EnsureCreatedAsync();
 
             var tenantStore = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
-            if (await tenantStore.TryGetAsync(DefaultTenantId) == null)
+            if (await tenantStore.GetByIdentifierAsync(DefaultTenantIdentifier) == null)
             {
-                await tenantStore.TryAddAsync(new IdmtTenantInfo
-                {
-                    Id = DefaultTenantId,
-                    Identifier = DefaultTenantId,
-                    Name = "System Tenant",
-                    IsActive = true
-                });
+                await tenantStore.AddAsync(new IdmtTenantInfo(DefaultTenantIdentifier, DefaultTenantIdentifier, "System Tenant") { IsActive = true });
             }
         }
 
@@ -130,12 +123,12 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
         {
             var provider = scope.ServiceProvider;
             var tenantStore = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
-            var tenant = await tenantStore.TryGetAsync(DefaultTenantId)
+            var tenant = await tenantStore.GetByIdentifierAsync(DefaultTenantIdentifier)
                 ?? throw new InvalidOperationException("Default tenant was not seeded.");
 
             // Set Tenant Context BEFORE resolving DbContext/Managers
             var tenantContextSetter = provider.GetRequiredService<IMultiTenantContextSetter>();
-            var tenantContext = new MultiTenantContext<IdmtTenantInfo> { TenantInfo = tenant };
+            var tenantContext = new MultiTenantContext<IdmtTenantInfo>(tenant);
             tenantContextSetter.MultiTenantContext = tenantContext;
 
             var dbContext = provider.GetRequiredService<IdmtDbContext>();

@@ -1,9 +1,9 @@
-using Microsoft.EntityFrameworkCore;
-using Finbuckle.MultiTenant;
-using Finbuckle.MultiTenant.EntityFrameworkCore;
-using Idmt.Plugin.Models;
 using Finbuckle.MultiTenant.Abstractions;
+using Finbuckle.MultiTenant.EntityFrameworkCore.Extensions;
+using Finbuckle.MultiTenant.Identity.EntityFrameworkCore;
+using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace Idmt.Plugin.Persistence;
 
@@ -59,6 +59,13 @@ public class IdmtDbContext
         {
             entity.HasIndex(u => u.IsActive);
             entity.HasIndex(u => new { u.Email, u.UserName, u.TenantId }).IsUnique();
+            entity.IsMultiTenant();
+        });
+
+        // Configure role entity with proper multi-tenant support
+        builder.Entity<IdmtRole>(entity =>
+        {
+            entity.HasIndex(r => new { r.TenantId, r.Name }).IsUnique();
             entity.IsMultiTenant();
         });
 

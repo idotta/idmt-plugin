@@ -1,11 +1,18 @@
+using System.Security.Claims;
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
 using Idmt.Plugin.Validation;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
-using System.Security.Claims;
+using Microsoft.Extensions.Options;
 
-namespace Idmt.Plugin.Features.Auth.Manage;
+namespace Idmt.Plugin.Features.Manage;
 
 public static class UpdateUserInfo
 {
@@ -119,5 +126,30 @@ public static class UpdateUserInfo
         }
 
         return errors.Count == 0 ? null : errors;
+    }
+
+    public static RouteHandlerBuilder MapUpdateUserInfoEndpoint(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapPut("/info", async Task<Results<Ok, ProblemHttpResult, ValidationProblem>> (
+            [FromBody] UpdateUserInfoRequest request,
+            ClaimsPrincipal user,
+            [FromServices] IUpdateUserInfoHandler handler,
+            [FromServices] IOptions<IdmtOptions> options,
+            HttpContext context) =>
+        {
+            if (request.Validate(options.Value.Identity.Password) is { } errors)
+            {
+                return TypedResults.ValidationProblem(errors);
+            }
+
+            var result = await handler.HandleAsync(request, user, cancellationToken: context.RequestAborted);
+            if (!result)
+            {
+                return TypedResults.Problem("Failed to update user info");
+            }
+            return TypedResults.Ok();
+        })
+        .WithSummary("Update user info")
+        .WithDescription("Update current user authentication info");
     }
 }

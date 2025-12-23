@@ -1,10 +1,16 @@
+using System.Security.Claims;
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 
-namespace Idmt.Plugin.Features.Auth.Manage;
+namespace Idmt.Plugin.Features.Manage;
 
 public static class UnregisterUser
 {
@@ -41,5 +47,26 @@ public static class UnregisterUser
                 [.. result.Errors.Select(e => e.Description)],
                 result.Succeeded ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
         }
+    }
+
+    public static RouteHandlerBuilder MapUnregisterUserEndpoint(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapDelete("/users/{userId:guid}", async Task<Results<Ok<UnregisterUserResponse>, ProblemHttpResult>> (
+            [FromRoute] Guid userId,
+            ClaimsPrincipal user,
+            [FromServices] IUnregisterUserHandler handler,
+            HttpContext context) =>
+        {
+            var result = await handler.HandleAsync(userId, cancellationToken: context.RequestAborted);
+            if (!result.Success)
+            {
+                var errorMessage = result.Errors is not null ? string.Join("; ", result.Errors) : "Failed to unregister user";
+                return TypedResults.Problem(errorMessage, statusCode: result.StatusCode);
+            }
+            return TypedResults.Ok(result);
+        })
+        .RequireAuthorization(AuthOptions.RequireTenantManagerPolicy)
+        .WithSummary("Delete user")
+        .WithDescription("Delete a user within the same tenant (Admin/System only)");
     }
 }

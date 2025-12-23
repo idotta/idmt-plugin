@@ -1,20 +1,22 @@
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
+using Finbuckle.MultiTenant.AspNetCore.Extensions;
+using Finbuckle.MultiTenant.EntityFrameworkCore.Extensions;
+using Finbuckle.MultiTenant.Extensions;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Features.Auth;
+using Idmt.Plugin.Features.Manage;
+using Idmt.Plugin.Middleware;
+using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
 using Idmt.Plugin.Services;
-using Idmt.Plugin.Middleware;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Identity;
-using Finbuckle.MultiTenant;
-using Idmt.Plugin.Models;
-using Idmt.Plugin.Features.Auth;
-using Idmt.Plugin.Features.Auth.Manage;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.BearerToken;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.BearerToken;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Idmt.Plugin.Extensions;
 
@@ -163,7 +165,8 @@ public static class ServiceCollectionExtensions
 
                 case IdmtMultiTenantStrategy.Route:
                     builder.WithRouteStrategy(
-                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("RouteParameter", IdmtMultiTenantStrategy.DefaultRouteParameter));
+                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("RouteParameter", IdmtMultiTenantStrategy.DefaultRouteParameter),
+                        useTenantAmbientRouteValue: true);
                     break;
 
                 case IdmtMultiTenantStrategy.Claim:
@@ -372,6 +375,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<UpdateUser.IUpdateUserHandler, UpdateUser.UpdateUserHandler>();
         services.AddScoped<GetUserInfo.IGetUserInfoHandler, GetUserInfo.GetUserInfoHandler>();
         services.AddScoped<UpdateUserInfo.IUpdateUserInfoHandler, UpdateUserInfo.UpdateUserInfoHandler>();
+
+        // Sys
+        services.AddScoped<Features.Sys.CreateTenant.ICreateTenantHandler, Features.Sys.CreateTenant.CreateTenantHandler>();
+        services.AddScoped<Features.Sys.DeleteTenant.IDeleteTenantHandler, Features.Sys.DeleteTenant.DeleteTenantHandler>();
+        services.AddScoped<Features.Sys.GetUserTenants.IGetUserTenantsHandler, Features.Sys.GetUserTenants.GetUserTenantsHandler>();
+        services.AddScoped<Features.Sys.GrantTenantAccess.IGrantTenantAccessHandler, Features.Sys.GrantTenantAccess.GrantTenantAccessHandler>();
+        services.AddScoped<Features.Sys.RevokeTenantAccess.IRevokeTenantAccessHandler, Features.Sys.RevokeTenantAccess.RevokeTenantAccessHandler>();
 
         // Health
         services.AddHealthChecks()

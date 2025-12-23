@@ -7,57 +7,50 @@ namespace Idmt.Plugin.Models;
 /// Implements ITenantInfo interface from Finbuckle.MultiTenant.
 /// Identifier must be at least 3 characters long.
 /// </summary>
-public class IdmtTenantInfo : ITenantInfo, IAuditable
+public record IdmtTenantInfo : TenantInfo, IAuditable
 {
-    /// <summary>
-    /// Unique ID for the tenant (string representation of a GUID).
-    /// </summary>
-    public string? Id { get; set; } = Guid.CreateVersion7().ToString();
+    public IdmtTenantInfo(string id, string identifier, string name) : base(id, identifier, name)
+    {
+    }
 
-    /// <summary>
-    /// Canonical identifier (slug) for use in URL routing and tenant lookup.
-    /// </summary>
-    public string? Identifier { get; set; }
-
-    /// <summary>
-    /// Internal name of the tenant (can be used for display/lookup).
-    /// </summary>
-    public string? Name { get; set; }
+    public IdmtTenantInfo(string identifier, string name) : base(Guid.CreateVersion7().ToString(), identifier, name)
+    {
+    }
 
     /// <summary>
     /// Human-readable display name for the tenant.
     /// </summary>
-    public string? DisplayName { get; set; }
+    public string? DisplayName { get; init; }
 
     /// <summary>
     /// The tenant's subscription or feature plan, if applicable.
     /// </summary>
-    public string? Plan { get; set; }
+    public string? Plan { get; init; }
 
     /// <summary>
     /// The connection string to the tenant's database, supporting per-tenant data isolation.
     /// </summary>
-    public string? ConnectionString { get; set; }
+    public string? ConnectionString { get; init; }
 
     /// <summary>
     /// Soft delete flag. If false, this tenant is considered inactive.
     /// </summary>
-    public bool IsActive { get; set; } = true;
+    public bool IsActive { get; init; } = true;
 
     /// <summary>
     /// Path to the tenant's specific login page; defaults to "/login".
     /// </summary>
-    public string? LoginPath { get; set; } = "/login";
+    public string? LoginPath { get; init; } = "/login";
 
     /// <summary>
     /// Path to the tenant's specific logout page; defaults to "/logout".
     /// </summary>
-    public string? LogoutPath { get; set; } = "/logout";
+    public string? LogoutPath { get; init; } = "/logout";
 
     /// <summary>
     /// Path to the access denied page for this tenant; defaults to "/access-denied".
     /// </summary>
-    public string? AccessDeniedPath { get; set; } = "/access-denied";
+    public string? AccessDeniedPath { get; init; } = "/access-denied";
 
     public string GetId() => Id ?? string.Empty;
 
