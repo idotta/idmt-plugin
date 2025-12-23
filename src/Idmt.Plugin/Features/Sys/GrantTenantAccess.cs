@@ -31,8 +31,8 @@ public static class GrantTenantAccess
         public async Task<bool> HandleAsync(Guid userId, string tenantIdentifier, DateTime? expiresAt = null, CancellationToken cancellationToken = default)
         {
             IdmtUser? user = null;
-            IList<string> userRoles = [];
             IdmtTenantInfo? targetTenant = null;
+            IList<string> userRoles = [];
             using (var scope = serviceProvider.CreateScope())
             {
                 var sp = scope.ServiceProvider;
