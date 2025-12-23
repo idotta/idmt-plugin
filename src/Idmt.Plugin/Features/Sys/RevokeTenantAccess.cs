@@ -60,7 +60,7 @@ public static class RevokeTenantAccess
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "Error granting tenant access to user {UserId} for tenant {TenantIdentifier}", userId, tenantIdentifier);
+                    logger.LogError(ex, "Error revoking tenant access for user {UserId} and tenant {TenantIdentifier}", userId, tenantIdentifier);
                     return false;
                 }
             }
@@ -69,20 +69,18 @@ public static class RevokeTenantAccess
             {
                 var sp = scope.ServiceProvider;
 
-                var provider = scope.ServiceProvider;
-
-                var tenantStore = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
+                var tenantStore = sp.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
                 var tenantInfo = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
                 if (tenantInfo is null || !tenantInfo.IsActive)
                 {
                     return false;
                 }
                 // Set Tenant Context BEFORE resolving DbContext/Managers
-                var tenantContextSetter = provider.GetRequiredService<IMultiTenantContextSetter>();
+                var tenantContextSetter = sp.GetRequiredService<IMultiTenantContextSetter>();
                 var tenantContext = new MultiTenantContext<IdmtTenantInfo>(tenantInfo);
                 tenantContextSetter.MultiTenantContext = tenantContext;
 
-                var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
+                var userManager = sp.GetRequiredService<UserManager<IdmtUser>>();
                 try
                 {
                     var targetUser = await userManager.Users.FirstOrDefaultAsync(u => u.Email == user.Email && u.UserName == user.UserName, cancellationToken);

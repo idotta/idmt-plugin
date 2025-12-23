@@ -105,7 +105,6 @@ public static class GrantTenantAccess
                 var tenantContext = new MultiTenantContext<IdmtTenantInfo>(tenantInfo);
                 tenantContextSetter.MultiTenantContext = tenantContext;
 
-                var userManager = sp.GetRequiredService<UserManager<IdmtUser>>();
                 try
                 {
                     var targetUserManager = sp.GetRequiredService<UserManager<IdmtUser>>();
@@ -146,7 +145,7 @@ public static class GrantTenantAccess
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "Error deactivating user {UserId} in tenant {TenantIdentifier}", userId, tenantIdentifier);
+                    logger.LogError(ex, "Error granting tenant access to user {UserId} in tenant {TenantIdentifier}", userId, tenantIdentifier);
                     return false;
                 }
             }

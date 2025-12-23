@@ -43,12 +43,12 @@ public static class DeleteTenant
 
     public static RouteHandlerBuilder MapDeleteTenantEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapDelete("/sys/tenants/{tenantId}", async Task<Results<NoContent, NotFound>> (
-            [FromRoute] string tenantId,
+        return endpoints.MapDelete("/sys/tenants/{tenantIdentifier}", async Task<Results<NoContent, NotFound>> (
+            [FromRoute] string tenantIdentifier,
             [FromServices] IDeleteTenantHandler handler,
             CancellationToken cancellationToken = default) =>
         {
-            var deleted = await handler.HandleAsync(tenantId, cancellationToken);
+            var deleted = await handler.HandleAsync(tenantIdentifier, cancellationToken);
             return deleted ? TypedResults.NoContent() : TypedResults.NotFound();
         })
         .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
