@@ -9,9 +9,9 @@ public interface ITenantAccessService
     /// Checks if the specified user currently has access to the given tenant.
     /// </summary>
     /// <param name="userId">The ID of the user.</param>
-    /// <param name="tenantIdentifier">The identifier of the tenant.</param>
+    /// <param name="tenantId">The id of the tenant.</param>
     /// <returns>True if the user can access the tenant, false otherwise.</returns>
-    Task<bool> CanAccessTenantAsync(Guid userId, string tenantIdentifier);
+    Task<bool> CanAccessTenantAsync(Guid userId, string tenantId);
 
     /// <summary>
     /// Checks if the current user can assign the specified role.
