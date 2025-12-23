@@ -678,7 +678,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
 
             var tenantStore = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
             var tenantInfo = await tenantStore.GetByIdentifierAsync(IdmtApiFactory.DefaultTenantIdentifier);
-            
+
             var tenantContextSetter = provider.GetRequiredService<IMultiTenantContextSetter>();
             var tenantContext = new MultiTenantContext<IdmtTenantInfo>(tenantInfo!);
             tenantContextSetter.MultiTenantContext = tenantContext;
