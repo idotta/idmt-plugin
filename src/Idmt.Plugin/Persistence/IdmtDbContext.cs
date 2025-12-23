@@ -65,8 +65,6 @@ public class IdmtDbContext
         // Configure role entity with proper multi-tenant support
         builder.Entity<IdmtRole>(entity =>
         {
-            // entity.IsNotMultiTenant();
-            // entity.Ignore("TenantId");
             entity.HasIndex(r => new { r.TenantId, r.Name }).IsUnique();
             entity.IsMultiTenant();
         });

@@ -1,7 +1,15 @@
+using Finbuckle.MultiTenant.Abstractions;
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Validation;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Idmt.Plugin.Features.Auth;
 
@@ -13,22 +21,32 @@ public static class ResetPassword
 
     public interface IResetPasswordHandler
     {
-        Task<ResetPasswordResponse> HandleAsync(string tenantId, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default);
+        Task<ResetPasswordResponse> HandleAsync(string tenantIdentifier, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default);
     }
 
-    internal sealed class ResetPasswordHandler(IServiceProvider sp) : IResetPasswordHandler
+    internal sealed class ResetPasswordHandler(IServiceProvider serviceProvider) : IResetPasswordHandler
     {
-        public async Task<ResetPasswordResponse> HandleAsync(string tenantId, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default)
+        public async Task<ResetPasswordResponse> HandleAsync(string tenantIdentifier, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrEmpty(tenantId))
+            using var scope = serviceProvider.CreateScope();
+            var provider = scope.ServiceProvider;
+
+            var tenantStore = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
+            var tenantInfo = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
+            if (tenantInfo is null || !tenantInfo.IsActive)
             {
-                return new ResetPasswordResponse(false, ["Tenant ID is required"]);
+                return new ResetPasswordResponse(false, ["Invalid tenant"]);
             }
+            // Set Tenant Context BEFORE resolving DbContext/Managers
+            var tenantContextSetter = provider.GetRequiredService<IMultiTenantContextSetter>();
+            var tenantContext = new MultiTenantContext<IdmtTenantInfo>(tenantInfo);
+            tenantContextSetter.MultiTenantContext = tenantContext;
+
+            var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
             try
             {
-                var userManager = sp.GetRequiredService<UserManager<IdmtUser>>();
                 var user = await userManager.FindByEmailAsync(email);
-                if (user == null)
+                if (user is null)
                 {
                     return new ResetPasswordResponse(false, ["User not found"]);
                 }
@@ -57,12 +75,12 @@ public static class ResetPassword
         }
     }
 
-    public static Dictionary<string, string[]>? Validate(this ResetPasswordRequest request, string tenantId, string email, string token, Configuration.PasswordOptions options)
+    public static Dictionary<string, string[]>? Validate(this ResetPasswordRequest request, string tenantIdentifier, string email, string token, Configuration.PasswordOptions options)
     {
         var errors = new Dictionary<string, string[]>();
-        if (string.IsNullOrEmpty(tenantId))
+        if (string.IsNullOrEmpty(tenantIdentifier))
         {
-            errors["TenantId"] = ["Tenant ID is required"];
+            errors["TenantIdentifier"] = ["Tenant ID is required"];
         }
         if (!Validators.IsValidEmail(email))
         {
@@ -78,5 +96,67 @@ public static class ResetPassword
         }
 
         return errors.Count == 0 ? null : errors;
+    }
+
+    public static RouteHandlerBuilder MapResetPasswordEndpoint(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapPost("/resetPassword", async Task<Results<Ok<ResetPasswordResponse>, ValidationProblem, ForbidHttpResult>> (
+            [FromQuery] string tenantIdentifier,
+            [FromQuery] string email,
+            [FromQuery] string token,
+            [FromBody] ResetPasswordRequest request,
+            [FromServices] IResetPasswordHandler handler,
+            [FromServices] IOptions<IdmtOptions> options,
+            HttpContext context) =>
+        {
+            if (request.Validate(tenantIdentifier, email, token, options.Value.Identity.Password) is { } validationErrors)
+            {
+                return TypedResults.ValidationProblem(validationErrors);
+            }
+            var result = await handler.HandleAsync(tenantIdentifier, email, token, request, cancellationToken: context.RequestAborted);
+            if (!result.Success)
+            {
+                return TypedResults.Forbid();
+            }
+            return TypedResults.Ok(result);
+        })
+        .WithName(ApplicationOptions.PasswordResetEndpointName)
+        .WithSummary("Reset password")
+        .WithDescription("Reset password using reset token");
+    }
+
+    public static RouteHandlerBuilder MapResetPasswordRedirectEndpoint(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapGet("/resetPassword", Results<RedirectHttpResult, ProblemHttpResult> (
+            [FromQuery] string tenantIdentifier,
+            [FromQuery] string email,
+            [FromQuery] string token,
+            [FromServices] IOptions<IdmtOptions> options,
+            HttpContext context) =>
+        {
+            var clientUrl = options.Value.Application.ClientUrl;
+            var resetPasswordPath = options.Value.Application.ResetPasswordFormPath;
+
+            if (string.IsNullOrEmpty(clientUrl))
+            {
+                return TypedResults.Problem("Client URL is not configured.");
+            }
+
+            var queryParams = new Dictionary<string, string?>
+            {
+                ["tenantIdentifier"] = tenantIdentifier,
+                ["email"] = email,
+                ["token"] = token
+            };
+
+            var uri = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
+                $"{clientUrl.TrimEnd('/')}/{resetPasswordPath.TrimStart('/')}",
+                queryParams);
+
+            return TypedResults.Redirect(uri);
+        })
+        .WithName(ApplicationOptions.PasswordResetEndpointName + "-form")
+        .WithSummary("Redirect to reset password form")
+        .WithDescription("Redirect to reset password form");
     }
 }

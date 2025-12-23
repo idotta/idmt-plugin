@@ -1,16 +1,18 @@
+using System.Text.RegularExpressions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
 using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using System.Text.RegularExpressions;
 
-namespace Idmt.Plugin.Features.Auth.Manage;
+namespace Idmt.Plugin.Features.Manage;
 
 public static class RegisterUser
 {
@@ -286,5 +288,31 @@ public static class RegisterUser
         }
 
         return errors.Count == 0 ? null : errors;
+    }
+
+    public static RouteHandlerBuilder MapRegisterUserEndpoint(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapPost("/users", async Task<Results<Ok<RegisterUserResponse>, ProblemHttpResult, ValidationProblem>> (
+            [FromQuery] bool useApiLinks,
+            [FromBody] RegisterUserRequest request,
+            [FromServices] IRegisterUserHandler handler,
+            HttpContext context) =>
+        {
+            // Validate request data (email format, username length, role presence)
+            if (request.Validate() is { } validationErrors)
+            {
+                return TypedResults.ValidationProblem(validationErrors);
+            }
+
+            var response = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
+            if (!response.Success)
+            {
+                return TypedResults.Problem(response.ErrorMessage, statusCode: response.StatusCode);
+            }
+            return TypedResults.Ok(response);
+        })
+        .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
+        .WithSummary("Register user")
+        .WithDescription("Register a new user for a tenant (Admin/System only)");
     }
 }

@@ -1,10 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Text.RegularExpressions;
-using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Features.Auth;
-using Idmt.Plugin.Features.Auth.Manage;
+using Idmt.Plugin.Features.Manage;
 using Idmt.Plugin.Features.Sys;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Identity;
@@ -48,11 +46,11 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
     public async Task Sys_info_returns_current_tenant()
     {
         var client = await CreateAuthenticatedClientAsync();
-        var systemInfo = await client.GetFromJsonAsync<SystemInfoResponse>("/sys/info");
+        var systemInfo = await client.GetFromJsonAsync<GetSystemInfo.SystemInfoResponse>("/sys/info");
 
         Assert.NotNull(systemInfo);
         Assert.NotNull(systemInfo!.CurrentTenant);
-        Assert.Equal(IdmtApiFactory.DefaultTenantId, systemInfo.CurrentTenant!.Identifier);
+        Assert.Equal(IdmtApiFactory.DefaultTenantIdentifier, systemInfo.CurrentTenant!.Identifier);
     }
 
     [Fact]
@@ -86,7 +84,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         Assert.False(string.IsNullOrWhiteSpace(tokens.RefreshToken));
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
-        var selfInfo = await client.GetAsync("/auth/manage/info");
+        var selfInfo = await client.GetAsync("/manage/info");
         await selfInfo.AssertSuccess();
 
         var refreshResponse = await client.PostAsJsonAsync("/auth/refresh", new RefreshToken.RefreshTokenRequest(tokens.RefreshToken!));
@@ -98,7 +96,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         Assert.NotEqual(tokens.AccessToken, refreshed.AccessToken);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", refreshed.AccessToken);
-        var refreshedSelfInfo = await client.GetAsync("/auth/manage/info");
+        var refreshedSelfInfo = await client.GetAsync("/manage/info");
         await refreshedSelfInfo.AssertSuccess();
     }
 
@@ -110,7 +108,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         var newUsername = $"user{Guid.NewGuid():N}";
 
         using var sysClient = await CreateAuthenticatedClientAsync();
-        var registerResponse = await sysClient.PostAsJsonAsync("/auth/manage/users?useApiLinks=false", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
         {
             Email = newEmail,
             Username = newUsername,
@@ -129,7 +127,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         using var userClient = _factory.CreateClient(); // No auth
         var resetPasswordUrl = QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
         {
-            ["tenantId"] = IdmtApiFactory.DefaultTenantId,
+            ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
             ["email"] = newEmail,
             ["token"] = setupToken
         });
@@ -149,7 +147,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         userClientWithTenant.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
 
         // 5. Update Info
-        var updateResponse = await userClientWithTenant.PutAsJsonAsync("/auth/manage/info", new
+        var updateResponse = await userClientWithTenant.PutAsJsonAsync("/manage/info", new
         {
             OldPassword = "NewUserPassword1!",
             NewPassword = "NewUserPassword2!"
@@ -165,7 +163,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         await reLoginResponse.AssertSuccess();
 
         // 7. Unregister (Delete)
-        var deleteResponse = await sysClient.DeleteAsync($"/auth/manage/users/{registerResult.UserId}");
+        var deleteResponse = await sysClient.DeleteAsync($"/manage/users/{registerResult.UserId}");
         await deleteResponse.AssertSuccess();
 
         // 8. Verify deletion
@@ -183,7 +181,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         // 1. Setup User
         var email = $"forgot-{Guid.NewGuid():N}@example.com";
         using var sysClient = await CreateAuthenticatedClientAsync();
-        var registerResponse = await sysClient.PostAsJsonAsync("/auth/manage/users?useApiLinks=true", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=true", new
         {
             Email = email,
             Username = $"forgot{Guid.NewGuid():N}",
@@ -197,7 +195,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         await publicClient.PostAsJsonAsync(
             QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
             {
-                ["tenantId"] = IdmtApiFactory.DefaultTenantId,
+                ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
                 ["email"] = email,
                 ["token"] = reg!.PasswordSetupToken
             }),
@@ -225,13 +223,13 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         var uri = new Uri(resetLink!);
         var query = QueryHelpers.ParseQuery(uri.Query);
         var token = query["token"].ToString();
-        var tenantId = query["tenantId"].ToString();
+        var tenantIdentifier = query["tenantIdentifier"].ToString();
 
         // 4. Reset Password
         var resetResponse = await publicClient.PostAsJsonAsync(
              QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
              {
-                 ["tenantId"] = tenantId,
+                 ["tenantIdentifier"] = tenantIdentifier,
                  ["email"] = email,
                  ["token"] = token
              }),
@@ -253,7 +251,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         var sysClient = await CreateAuthenticatedClientAsync();
         var targetEmail = $"tenant-{Guid.NewGuid():N}@example.com";
 
-        var registerResponse = await sysClient.PostAsJsonAsync("/auth/manage/users?useApiLinks=false", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
         {
             Email = targetEmail,
             Username = $"tenant{Guid.NewGuid():N}",
@@ -266,20 +264,20 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         var userId = Guid.Parse(register!.UserId!);
 
         var grantResponse = await sysClient.PostAsJsonAsync(
-            $"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantId}",
+            $"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
             new { ExpiresAt = (DateTime?)null });
         await grantResponse.AssertSuccess();
 
-        var tenants = await sysClient.GetFromJsonAsync<SysEndpoints.TenantInfoResponse[]>($"/sys/users/{userId}/tenants");
+        var tenants = await sysClient.GetFromJsonAsync<GetUserTenants.TenantInfoResponse[]>($"/sys/users/{userId}/tenants");
         Assert.NotNull(tenants);
-        Assert.Contains(tenants!, t => t.Identifier == IdmtApiFactory.DefaultTenantId);
+        Assert.Contains(tenants!, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
 
-        var revokeResponse = await sysClient.DeleteAsync($"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantId}");
+        var revokeResponse = await sysClient.DeleteAsync($"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
         await revokeResponse.AssertSuccess();
 
-        tenants = await sysClient.GetFromJsonAsync<SysEndpoints.TenantInfoResponse[]>($"/sys/users/{userId}/tenants");
+        tenants = await sysClient.GetFromJsonAsync<GetUserTenants.TenantInfoResponse[]>($"/sys/users/{userId}/tenants");
         Assert.NotNull(tenants);
-        Assert.DoesNotContain(tenants!, t => t.Identifier == IdmtApiFactory.DefaultTenantId);
+        Assert.DoesNotContain(tenants!, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
     }
 
     [Fact]
@@ -291,7 +289,7 @@ public class IdmtStandardIntegrationTests : IClassFixture<IdmtApiFactory>, IDisp
         Assert.Equal(HttpStatusCode.NoContent, logoutResponse.StatusCode);
 
         // Verify that the user is logged out, selfInfo should return a 401 or 302 (Redirect to login)
-        var selfInfo = await client.GetAsync("/auth/manage/info");
+        var selfInfo = await client.GetAsync("/manage/info");
         Assert.False(selfInfo.IsSuccessStatusCode);
         Assert.Contains(selfInfo.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Found, HttpStatusCode.SeeOther });
     }

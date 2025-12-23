@@ -1,7 +1,12 @@
 using System.Security.Claims;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Authentication.BearerToken;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 
 namespace Idmt.Plugin.Features.Auth;
@@ -50,5 +55,28 @@ public static class RefreshToken
             };
         }
         return null;
+    }
+
+    public static RouteHandlerBuilder MapRefreshTokenEndpoint(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapPost("/refresh", async Task<Results<Ok<AccessTokenResponse>, SignInHttpResult, ChallengeHttpResult, ValidationProblem>> (
+            [FromBody] RefreshTokenRequest request,
+            [FromServices] IRefreshTokenHandler handler,
+            HttpContext context) =>
+        {
+            if (request.Validate() is { } validationErrors)
+            {
+                return TypedResults.ValidationProblem(validationErrors);
+            }
+
+            var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
+            if (!response.Succeeded)
+            {
+                return TypedResults.Challenge();
+            }
+            return TypedResults.SignIn(response.ClaimsPrincipal!, authenticationScheme: IdentityConstants.BearerScheme);
+        })
+        .WithSummary("Refresh token")
+        .WithDescription("Refresh JWT token using refresh token");
     }
 }

@@ -1,9 +1,15 @@
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 
-namespace Idmt.Plugin.Features.Auth.Manage;
+namespace Idmt.Plugin.Features.Manage;
 
 public static class UpdateUser
 {
@@ -43,5 +49,25 @@ public static class UpdateUser
             }
             return new UpdateUserResponse(true);
         }
+    }
+
+    public static RouteHandlerBuilder MapUpdateUserEndpoint(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapPut("/users/{userId:guid}", async Task<Results<Ok, NotFound, ProblemHttpResult>> (
+            [FromRoute] Guid userId,
+            [FromBody] UpdateUserRequest request,
+            [FromServices] IUpdateUserHandler handler,
+            HttpContext context) =>
+        {
+            var result = await handler.HandleAsync(userId, request, cancellationToken: context.RequestAborted);
+            if (!result.Success)
+            {
+                return TypedResults.Problem(result.ErrorMessage, statusCode: StatusCodes.Status403Forbidden);
+            }
+            return TypedResults.Ok();
+        })
+        .RequireAuthorization(AuthOptions.RequireTenantManagerPolicy)
+        .WithSummary("Activate/Deactivate user")
+        .WithDescription("Activate/Deactivate a user within the same tenant (Admin/System only)");
     }
 }

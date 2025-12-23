@@ -2,7 +2,12 @@ using System.Text.Encodings.Web;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 
 namespace Idmt.Plugin.Features.Auth;
 
@@ -62,5 +67,25 @@ public static class ForgotPassword
         }
 
         return errors.Count == 0 ? null : errors;
+    }
+
+    public static RouteHandlerBuilder MapForgotPasswordEndpoint(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapPost("/forgotPassword", async Task<Results<Ok<ForgotPasswordResponse>, ValidationProblem>> (
+            [FromQuery] bool useApiLinks,
+            [FromBody] ForgotPasswordRequest request,
+            [FromServices] IForgotPasswordHandler handler,
+            HttpContext context) =>
+        {
+            if (request.Validate() is { } validationErrors)
+            {
+                return TypedResults.ValidationProblem(validationErrors);
+            }
+
+            var result = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
+            return TypedResults.Ok(result);
+        })
+        .WithSummary("Forgot password")
+        .WithDescription("Initiate password reset process");
     }
 }

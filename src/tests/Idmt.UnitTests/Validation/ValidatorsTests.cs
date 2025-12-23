@@ -1,7 +1,5 @@
-using System.Collections.Generic;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Validation;
-using Xunit;
 
 namespace Idmt.UnitTests.Validation;
 

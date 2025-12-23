@@ -1,9 +1,7 @@
 using System.Reflection;
-using Finbuckle.MultiTenant.Abstractions;
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Idmt.Plugin.Configuration;
-using Idmt.Plugin.Features.Auth;
-using Idmt.Plugin.Features.Sys;
+using Idmt.Plugin.Features;
 using Idmt.Plugin.Middleware;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
@@ -76,6 +74,7 @@ public static class ApplicationBuilderExtensions
     public static IEndpointRouteBuilder MapIdmtEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapAuthEndpoints();
+        endpoints.MapAuthManageEndpoints();
         endpoints.MapSysEndpoints();
         endpoints.MapHealthChecks("/healthz").RequireAuthorization(AuthOptions.RequireSysUserPolicy);
         return endpoints;
@@ -162,43 +161,11 @@ public static class ApplicationBuilderExtensions
     private static async Task SeedDefaultDataAsync(IServiceProvider services)
     {
         var options = services.GetRequiredService<IOptions<IdmtOptions>>();
-        var roles = IdmtDefaultRoleTypes.DefaultRoles;
-        if (options.Value.Identity.ExtraRoles.Length > 0)
-        {
-            roles = [.. roles, .. options.Value.Identity.ExtraRoles];
-        }
-
-        // Seed default tenant if using multi-tenant store
-        var tenantStore = services.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
-        var defaultTenantId = MultiTenantOptions.DefaultTenantId;
-        var existingTenant = await tenantStore.GetAsync(defaultTenantId);
-
-        if (existingTenant == null)
-        {
-            var defaultTenant = new IdmtTenantInfo(defaultTenantId, defaultTenantId, "System Tenant")
-            {
-                DisplayName = "System",
-                IsActive = true
-            };
-
-            await tenantStore.AddAsync(defaultTenant);
-            // existingTenant = defaultTenant;
-        }
-
-        // Set tenant context before seeding roles to avoid NullReferenceException with multi-tenant filters
-        // var tenantContextSetter = services.GetRequiredService<IMultiTenantContextSetter>();
-        // var tenantContext = new MultiTenantContext<IdmtTenantInfo>(existingTenant);
-        // tenantContextSetter.MultiTenantContext = tenantContext;
-
-        // Seed default roles
-        var roleStore = services.GetRequiredService<RoleManager<IdmtRole>>();
-        foreach (var role in roles)
-        {
-            if (!await roleStore.RoleExistsAsync(role))
-            {
-                await roleStore.CreateAsync(new IdmtRole(role));
-            }
-        }
+        var createTenantHandler = services.GetRequiredService<Features.Sys.CreateTenant.ICreateTenantHandler>();
+        await createTenantHandler.HandleAsync(new Features.Sys.CreateTenant.CreateTenantRequest(
+            MultiTenantOptions.DefaultTenantIdentifier,
+            MultiTenantOptions.DefaultTenantIdentifier,
+            options.Value.MultiTenant.DefaultTenantDisplayName));
     }
 
     private static void VerifyUserStoreSupportsEmail(IApplicationBuilder app)

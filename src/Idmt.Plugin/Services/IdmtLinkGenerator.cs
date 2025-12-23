@@ -31,7 +31,7 @@ public sealed class IdmtLinkGenerator(
 
         var routeValues = new RouteValueDictionary()
         {
-            ["tenantId"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty,
+            ["tenantIdentifier"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
             ["email"] = email,
             ["token"] = token,
         };
@@ -61,7 +61,7 @@ public sealed class IdmtLinkGenerator(
 
         var queryParams = new Dictionary<string, string?>
         {
-            ["tenantId"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty,
+            ["tenantIdentifier"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
             ["email"] = email,
             ["token"] = token,
         };
@@ -85,7 +85,7 @@ public sealed class IdmtLinkGenerator(
         // Generate password setup URL
         var routeValues = new RouteValueDictionary()
         {
-            ["tenantId"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty,
+            ["tenantIdentifier"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
             ["email"] = email,
             ["token"] = token,
         };
@@ -118,7 +118,7 @@ public sealed class IdmtLinkGenerator(
 
         var queryParams = new Dictionary<string, string?>
         {
-            ["tenantId"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty,
+            ["tenantIdentifier"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
             ["email"] = email,
             ["token"] = token,
         };

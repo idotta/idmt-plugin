@@ -1,9 +1,14 @@
 using System.Security.Claims;
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Models;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 
-namespace Idmt.Plugin.Features.Auth.Manage;
+namespace Idmt.Plugin.Features.Manage;
 
 public static class GetUserInfo
 {
@@ -50,5 +55,23 @@ public static class GetUserInfo
                 tenant.DisplayName ?? string.Empty
             );
         }
+    }
+
+    public static RouteHandlerBuilder MapGetUserInfoEndpoint(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapGet("/info", async Task<Results<Ok<GetUserInfoResponse>, NotFound>> (
+            ClaimsPrincipal user,
+            [FromServices] IGetUserInfoHandler handler,
+            HttpContext context) =>
+        {
+            var result = await handler.HandleAsync(user, cancellationToken: context.RequestAborted);
+            if (result == null)
+            {
+                return TypedResults.NotFound();
+            }
+            return TypedResults.Ok(result);
+        })
+        .WithSummary("Get user info")
+        .WithDescription("Get current user authentication info");
     }
 }

@@ -3,8 +3,12 @@ using Idmt.Plugin.Models;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.BearerToken;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -286,5 +290,59 @@ public static class Login
         }
 
         return errors.Count == 0 ? null : errors;
+    }
+
+    public static RouteHandlerBuilder MapCookieLoginEndpoint(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapPost("/login", async Task<Results<Ok<LoginResponse>, UnauthorizedHttpResult, ForbidHttpResult, ValidationProblem, ProblemHttpResult>> (
+            [FromBody] LoginRequest request,
+            [FromServices] ILoginHandler handler,
+            HttpContext context) =>
+        {
+            if (request.Validate() is { } validationErrors)
+            {
+                return TypedResults.ValidationProblem(validationErrors);
+            }
+            var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
+            if (!response.IsSuccess)
+            {
+                return response.StatusCode switch
+                {
+                    StatusCodes.Status401Unauthorized => TypedResults.Unauthorized(),
+                    StatusCodes.Status403Forbidden => TypedResults.Forbid(),
+                    _ => TypedResults.Problem(response.ErrorMessage, statusCode: response.StatusCode),
+                };
+            }
+            return TypedResults.Ok(response.Value!);
+        })
+        .WithSummary("Login user")
+        .WithDescription("Authenticate user and return cookie");
+    }
+
+    public static RouteHandlerBuilder MapTokenLoginEndpoint(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapPost("/token", async Task<Results<Ok<AccessTokenResponse>, UnauthorizedHttpResult, ForbidHttpResult, ValidationProblem, ProblemHttpResult>> (
+            [FromBody] LoginRequest request,
+            [FromServices] ITokenLoginHandler handler,
+            HttpContext context) =>
+        {
+            if (request.Validate() is { } validationErrors)
+            {
+                return TypedResults.ValidationProblem(validationErrors);
+            }
+            var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
+            if (!response.IsSuccess)
+            {
+                return response.StatusCode switch
+                {
+                    StatusCodes.Status401Unauthorized => TypedResults.Unauthorized(),
+                    StatusCodes.Status403Forbidden => TypedResults.Forbid(),
+                    _ => TypedResults.Problem(response.ErrorMessage, statusCode: response.StatusCode),
+                };
+            }
+            return TypedResults.Ok(response.Value!);
+        })
+        .WithSummary("Login user")
+        .WithDescription("Authenticate user and return bearer token");
     }
 }

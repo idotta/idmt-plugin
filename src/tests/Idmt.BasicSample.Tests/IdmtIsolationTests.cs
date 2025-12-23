@@ -1,9 +1,9 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using Finbuckle.MultiTenant;
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Features.Auth;
+using Idmt.Plugin.Features.Sys;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,19 +24,13 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
     private async Task EnsureTenantsExistAsync()
     {
         using var scope = _factory.Services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
+        var handler = scope.ServiceProvider.GetRequiredService<CreateTenant.ICreateTenantHandler>();
 
-        if (await store.GetAsync(TenantA) == null)
-        {
-            await store.AddAsync(new IdmtTenantInfo(TenantA, TenantA, "Tenant A") { IsActive = true });
-        }
-        if (await store.GetAsync(TenantB) == null)
-        {
-            await store.AddAsync(new IdmtTenantInfo(TenantB, TenantB, "Tenant B") { IsActive = true });
-        }
+        var result = await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantA, TenantA, "Tenant A"));
+        result = await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantB, TenantB, "Tenant B"));
     }
 
-    private async Task CreateUserInTenantAsync(string tenantId, string email, string password, string role = IdmtDefaultRoleTypes.TenantAdmin)
+    private async Task CreateUserInTenantAsync(string tenantIdentifier, string email, string password, string role = IdmtDefaultRoleTypes.TenantAdmin)
     {
         Assert.NotEmpty(role);
 
@@ -45,21 +39,13 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
 
         // Set context so UserManager/DbContext works correctly with MultiTenant filters
         var store = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
-        var tenant = await store.GetAsync(tenantId);
+        var tenant = await store.GetByIdentifierAsync(tenantIdentifier);
         Assert.NotNull(tenant);
 
         var setter = provider.GetRequiredService<IMultiTenantContextSetter>();
         setter.MultiTenantContext = new MultiTenantContext<IdmtTenantInfo>(tenant);
-
-        // Ensure role exists in this tenant context
-        var roleManager = provider.GetRequiredService<RoleManager<IdmtRole>>();
-        if (!await roleManager.RoleExistsAsync(role))
-        {
-            await roleManager.CreateAsync(new IdmtRole(role));
-        }
-
         var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
-        var user = new IdmtUser { UserName = email, Email = email, TenantId = tenantId, EmailConfirmed = true };
+        var user = new IdmtUser { UserName = email, Email = email, TenantId = tenant.Id, EmailConfirmed = true };
         await userManager.CreateAsync(user, password);
         await userManager.AddToRoleAsync(user, role);
     }
@@ -106,14 +92,14 @@ public class IdmtIsolationTests : IClassFixture<IdmtApiFactory>
 
         // 3. Access Tenant A protected resource (Success)
         clientA.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
-        var infoA = await clientA.GetAsync("/auth/manage/info");
+        var infoA = await clientA.GetAsync("/manage/info");
         await infoA.AssertSuccess();
 
         // 4. Access Tenant B protected resource with Tenant A token (Fail)
         var clientB = _factory.CreateClientWithTenant(TenantB);
         clientB.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
 
-        var infoB = await clientB.GetAsync("/auth/manage/info");
+        var infoB = await clientB.GetAsync("/manage/info");
 
         Assert.Contains(infoB.StatusCode, new[] { HttpStatusCode.NotFound, HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
     }
