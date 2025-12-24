@@ -18,6 +18,10 @@ internal sealed class IdmtUserClaimsPrincipalFactory(
         // Add custom claims
         identity.AddClaim(new Claim("is_active", user.IsActive.ToString()));
 
+        // Add tenant claim for multi-tenant strategies (header, claim, route)
+        // This ensures token validation includes tenant context
+        identity.AddClaim(new Claim("__tenant__", user.TenantId));
+
         return identity;
     }
 }

@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Idmt.Plugin.Features.Manage;
 
@@ -22,11 +23,14 @@ public static class UnregisterUser
     }
 
     internal sealed class UnregisterUserHandler(
+        ICurrentUserService currentUserService,
+        ILogger<UnregisterUserHandler> logger,
         UserManager<IdmtUser> userManager,
         ITenantAccessService tenantAccessService) : IUnregisterUserHandler
     {
         public async Task<UnregisterUserResponse> HandleAsync(Guid userId, CancellationToken cancellationToken = default)
         {
+            logger.LogDebug("Unregistering user {UserId} requested by {CurrentUserId}", userId, currentUserService.UserId);
             var appUser = await userManager.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
             if (appUser is null)
             {

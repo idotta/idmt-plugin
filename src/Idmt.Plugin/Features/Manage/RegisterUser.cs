@@ -311,7 +311,7 @@ public static class RegisterUser
             }
             return TypedResults.Ok(response);
         })
-        .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
+        .RequireAuthorization(AuthOptions.RequireTenantManagerPolicy)
         .WithSummary("Register user")
         .WithDescription("Register a new user for a tenant (Admin/System only)");
     }
