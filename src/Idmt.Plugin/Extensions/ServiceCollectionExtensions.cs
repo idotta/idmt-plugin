@@ -306,6 +306,7 @@ public static class ServiceCollectionExtensions
                 return IdentityConstants.ApplicationScheme;
             };
         });
+
         customizeAuthentication?.Invoke(authenticationBuilder);
     }
 
@@ -392,6 +393,7 @@ public static class ServiceCollectionExtensions
     {
         // Register middleware as scoped services
         services.AddScoped<CurrentUserMiddleware>();
+        services.AddScoped<ValidateBearerTokenTenantMiddleware>();
     }
 
     #endregion

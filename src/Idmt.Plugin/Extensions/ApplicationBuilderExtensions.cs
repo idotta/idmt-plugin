@@ -55,6 +55,7 @@ public static class ApplicationBuilderExtensions
         app.UseAuthorization();
 
         // Add current user middleware after authentication
+        app.UseMiddleware<ValidateBearerTokenTenantMiddleware>();
         app.UseMiddleware<CurrentUserMiddleware>();
 
         // Verify that the user store supports email operations (required for Idmt.Plugin)
