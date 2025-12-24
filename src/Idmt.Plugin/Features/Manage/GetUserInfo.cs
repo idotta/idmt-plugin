@@ -72,6 +72,7 @@ public static class GetUserInfo
             return TypedResults.Ok(result);
         })
         .WithSummary("Get user info")
-        .WithDescription("Get current user authentication info");
+        .WithDescription("Get current user authentication info")
+        .RequireAuthorization();
     }
 }

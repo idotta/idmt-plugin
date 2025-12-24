@@ -17,14 +17,14 @@ public static class RevokeTenantAccess
 {
     public interface IRevokeTenantAccessHandler
     {
-        Task<bool> HandleAsync(Guid userId, string tenantIdentifier, CancellationToken cancellationToken = default);
+        Task<Result> HandleAsync(Guid userId, string tenantIdentifier, CancellationToken cancellationToken = default);
     }
 
     internal sealed class RevokeTenantAccessHandler(
         IServiceProvider serviceProvider,
         ILogger<RevokeTenantAccessHandler> logger) : IRevokeTenantAccessHandler
     {
-        public async Task<bool> HandleAsync(Guid userId, string tenantIdentifier, CancellationToken cancellationToken = default)
+        public async Task<Result> HandleAsync(Guid userId, string tenantIdentifier, CancellationToken cancellationToken = default)
         {
             IdmtUser? user;
             using (var scope = serviceProvider.CreateScope())
@@ -40,13 +40,13 @@ public static class RevokeTenantAccess
                     user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
                     if (user is null)
                     {
-                        return false;
+                        return Result.Failure("User not found", StatusCodes.Status404NotFound);
                     }
 
                     var targetTenant = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
                     if (targetTenant is null)
                     {
-                        return false;
+                        return Result.Failure("Tenant not found", StatusCodes.Status404NotFound);
                     }
 
                     var tenantAccess = await dbContext.TenantAccess
@@ -61,7 +61,7 @@ public static class RevokeTenantAccess
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Error revoking tenant access for user {UserId} and tenant {TenantIdentifier}", userId, tenantIdentifier);
-                    return false;
+                    return Result.Failure("An error occurred while revoking tenant access", StatusCodes.Status500InternalServerError);
                 }
             }
 
@@ -71,9 +71,9 @@ public static class RevokeTenantAccess
 
                 var tenantStore = sp.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
                 var tenantInfo = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
-                if (tenantInfo is null || !tenantInfo.IsActive)
+                if (tenantInfo is null)
                 {
-                    return false;
+                    return Result.Failure("Tenant not found", StatusCodes.Status404NotFound);
                 }
                 // Set Tenant Context BEFORE resolving DbContext/Managers
                 var tenantContextSetter = sp.GetRequiredService<IMultiTenantContextSetter>();
@@ -86,19 +86,19 @@ public static class RevokeTenantAccess
                     var targetUser = await userManager.Users.FirstOrDefaultAsync(u => u.Email == user.Email && u.UserName == user.UserName, cancellationToken);
                     if (targetUser is null)
                     {
-                        return true;
+                        return Result.Success();
                     }
                     else
                     {
                         targetUser.IsActive = false;
                         await userManager.UpdateAsync(targetUser);
                     }
-                    return true;
+                    return Result.Success();
                 }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Error deactivating user {UserId} in tenant {TenantIdentifier}", userId, tenantIdentifier);
-                    return false;
+                    return Result.Failure("An error occurred while deactivating user", StatusCodes.Status500InternalServerError);
                 }
             }
         }
@@ -106,16 +106,22 @@ public static class RevokeTenantAccess
 
     public static RouteHandlerBuilder MapRevokeTenantAccessEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantId}", async Task<Results<Ok, NotFound<string>>> (
+        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantId}", async Task<Results<Ok, NotFound, InternalServerError>> (
             Guid userId,
             string tenantId,
             IRevokeTenantAccessHandler handler,
             CancellationToken cancellationToken) =>
         {
-            var success = await handler.HandleAsync(userId, tenantId, cancellationToken);
-            return success
-                ? TypedResults.Ok()
-                : TypedResults.NotFound("User or Tenant not found, or operation failed.");
+            var result = await handler.HandleAsync(userId, tenantId, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                return result.StatusCode switch
+                {
+                    StatusCodes.Status404NotFound => TypedResults.NotFound(),
+                    _ => TypedResults.InternalServerError(),
+                };
+            }
+            return TypedResults.Ok();
         })
         .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
         .WithSummary("Revoke user access from a tenant");

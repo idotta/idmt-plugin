@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 
 namespace Idmt.Plugin.Features.Auth;
 
@@ -15,11 +16,9 @@ public static class ResendConfirmationEmail
 {
     public sealed record ResendConfirmationEmailRequest(string Email);
 
-    public sealed record ResendConfirmationEmailResponse(bool Success, string? ConfirmationToken = null, string? ConfirmationUrl = null, string? Message = null);
-
     public interface IResendConfirmationEmailHandler
     {
-        Task<ResendConfirmationEmailResponse> HandleAsync(
+        Task<Result> HandleAsync(
             bool useApiLinks,
             ResendConfirmationEmailRequest request,
             CancellationToken cancellationToken = default);
@@ -28,36 +27,45 @@ public static class ResendConfirmationEmail
     internal sealed class ResendConfirmationEmailHandler(
         UserManager<IdmtUser> userManager,
         IIdmtLinkGenerator linkGenerator,
-        IEmailSender<IdmtUser> emailSender
+        IEmailSender<IdmtUser> emailSender,
+        ILogger<ResendConfirmationEmailHandler> logger
         ) : IResendConfirmationEmailHandler
     {
-        public async Task<ResendConfirmationEmailResponse> HandleAsync(
+        public async Task<Result> HandleAsync(
             bool useApiLinks,
             ResendConfirmationEmailRequest request,
             CancellationToken cancellationToken = default)
         {
-            var user = await userManager.FindByEmailAsync(request.Email);
-            if (user == null || !user.IsActive)
+            try
             {
-                // Don't reveal whether user exists for security
-                return new ResendConfirmationEmailResponse(true, Message: "If the email exists, a confirmation link has been sent.");
-            }
+                var user = await userManager.FindByEmailAsync(request.Email);
+                if (user == null || !user.IsActive)
+                {
+                    // Don't reveal whether user exists for security
+                    return Result.Success(true, StatusCodes.Status200OK);
+                }
 
-            if (user.EmailConfirmed)
+                if (user.EmailConfirmed)
+                {
+                    return Result.Success(true, StatusCodes.Status200OK);
+                }
+
+                // Generate email confirmation token
+                string token = await userManager.GenerateEmailConfirmationTokenAsync(user);
+
+                string confirmEmailUrl = useApiLinks
+                    ? linkGenerator.GenerateConfirmEmailApiLink(request.Email, token)
+                    : linkGenerator.GenerateConfirmEmailFormLink(request.Email, token);
+
+                await emailSender.SendConfirmationLinkAsync(user, request.Email, HtmlEncoder.Default.Encode(confirmEmailUrl));
+
+                return Result.Success(true, StatusCodes.Status200OK);
+            }
+            catch (Exception ex)
             {
-                return new ResendConfirmationEmailResponse(true, Message: "Email is already confirmed.");
+                logger.LogError(ex, "Error resending confirmation email to {Email}", request.Email);
+                return Result.Failure($"An error occurred while resending confirmation email: {ex.Message}", StatusCodes.Status500InternalServerError);
             }
-
-            // Generate email confirmation token
-            string token = await userManager.GenerateEmailConfirmationTokenAsync(user);
-
-            string confirmEmailUrl = useApiLinks
-                ? linkGenerator.GenerateConfirmEmailApiLink(request.Email, token)
-                : linkGenerator.GenerateConfirmEmailFormLink(request.Email, token);
-
-            await emailSender.SendConfirmationLinkAsync(user, request.Email, HtmlEncoder.Default.Encode(confirmEmailUrl));
-
-            return new ResendConfirmationEmailResponse(true, token, confirmEmailUrl, "If the email exists, a confirmation link has been sent.");
         }
     }
 
@@ -76,7 +84,7 @@ public static class ResendConfirmationEmail
 
     public static RouteHandlerBuilder MapResendConfirmationEmailEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/resendConfirmationEmail", async Task<Results<Ok<ResendConfirmationEmailResponse>, ValidationProblem>> (
+        return endpoints.MapPost("/resendConfirmationEmail", async Task<Results<Ok, ValidationProblem, InternalServerError>> (
             [FromQuery] bool useApiLinks,
             [FromBody] ResendConfirmationEmailRequest request,
             [FromServices] IResendConfirmationEmailHandler handler,
@@ -86,11 +94,17 @@ public static class ResendConfirmationEmail
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
-
+            
             var result = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
-            return TypedResults.Ok(result);
+            if (!result.IsSuccess)
+            {
+                return TypedResults.InternalServerError();
+            }
+            
+            return TypedResults.Ok();
         })
         .WithSummary("Resend confirmation email")
-        .WithDescription("Resend email confirmation link");
+        .WithDescription("Resend email confirmation link")
+        .RequireAuthorization();
     }
 }

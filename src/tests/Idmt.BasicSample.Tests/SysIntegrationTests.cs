@@ -136,7 +136,7 @@ public class SysIntegrationTests : BaseIntegrationTest
         await createHandler.HandleAsync(request);
 
         var deleted = await deleteHandler.HandleAsync(tenantIdentifier);
-        Assert.True(deleted);
+        Assert.True(deleted.IsSuccess);
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public class SysIntegrationTests : BaseIntegrationTest
         var deleteHandler = scope.ServiceProvider.GetRequiredService<DeleteTenant.IDeleteTenantHandler>();
 
         var deleted = await deleteHandler.HandleAsync($"nonexistent-{Guid.NewGuid():N}");
-        Assert.False(deleted);
+        Assert.False(deleted.IsSuccess);
     }
 
     #endregion

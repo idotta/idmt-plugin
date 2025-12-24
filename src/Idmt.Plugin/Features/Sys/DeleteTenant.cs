@@ -14,42 +14,55 @@ public static class DeleteTenant
 {
     public interface IDeleteTenantHandler
     {
-        Task<bool> HandleAsync(string tenantIdentifier, CancellationToken cancellationToken = default);
+        Task<Result> HandleAsync(string tenantIdentifier, CancellationToken cancellationToken = default);
     }
 
     internal sealed class DeleteTenantHandler(
         IMultiTenantStore<IdmtTenantInfo> tenantStore,
         ILogger<DeleteTenantHandler> logger) : IDeleteTenantHandler
     {
-        public async Task<bool> HandleAsync(string tenantIdentifier, CancellationToken cancellationToken = default)
+        public async Task<Result> HandleAsync(string tenantIdentifier, CancellationToken cancellationToken = default)
         {
             try
             {
                 var tenant = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
                 if (tenant is null)
                 {
-                    return false;
+                    return Result.Failure("Tenant not found", StatusCodes.Status404NotFound);
                 }
                 tenant = tenant with { IsActive = false };
-                return await tenantStore.UpdateAsync(tenant);
+                var updateResult = await tenantStore.UpdateAsync(tenant);
+                if (!updateResult)
+                {
+                    return Result.Failure("Failed to delete tenant", StatusCodes.Status500InternalServerError);
+                }
+                return Result.Success();
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "An error occurred while deleting tenant with ID {TenantId}", tenantIdentifier);
-                throw;
+                return Result.Failure($"An error occurred while deleting the tenant: {ex.Message}", StatusCodes.Status500InternalServerError);
             }
         }
     }
 
     public static RouteHandlerBuilder MapDeleteTenantEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapDelete("/sys/tenants/{tenantIdentifier}", async Task<Results<NoContent, NotFound>> (
+        return endpoints.MapDelete("/sys/tenants/{tenantIdentifier}", async Task<Results<NoContent, NotFound, InternalServerError>> (
             [FromRoute] string tenantIdentifier,
             [FromServices] IDeleteTenantHandler handler,
             CancellationToken cancellationToken = default) =>
         {
-            var deleted = await handler.HandleAsync(tenantIdentifier, cancellationToken);
-            return deleted ? TypedResults.NoContent() : TypedResults.NotFound();
+            var result = await handler.HandleAsync(tenantIdentifier, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                return result.StatusCode switch
+                {
+                    StatusCodes.Status404NotFound => TypedResults.NotFound(),
+                    _ => TypedResults.InternalServerError(),
+                };
+            }
+            return TypedResults.NoContent();
         })
         .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
         .WithSummary("Delete tenant")
