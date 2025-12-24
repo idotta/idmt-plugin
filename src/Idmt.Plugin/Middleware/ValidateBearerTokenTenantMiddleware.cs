@@ -62,8 +62,7 @@ public class ValidateBearerTokenTenantMiddleware(IMultiTenantContextAccessor ten
         }
         catch
         {
-            // On error, allow the request to continue (fail open to avoid DoS)
-            return true;
+            return false; // On error, reject the request
         }
     }
 }
