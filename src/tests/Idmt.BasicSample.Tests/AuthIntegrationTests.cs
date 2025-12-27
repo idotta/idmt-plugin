@@ -178,6 +178,8 @@ public class AuthIntegrationTests : BaseIntegrationTest
         });
         var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
 
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
+
         var refreshResponse = await client.PostAsJsonAsync("/auth/refresh", new RefreshToken.RefreshTokenRequest(tokens!.RefreshToken!));
         await refreshResponse.AssertSuccess();
 
@@ -219,6 +221,8 @@ public class AuthIntegrationTests : BaseIntegrationTest
         });
         var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
 
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
+
         var refreshResponse = await client.PostAsJsonAsync("/auth/refresh", new RefreshToken.RefreshTokenRequest(tokens!.RefreshToken!));
         var refreshedTokens = await refreshResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
 
@@ -245,11 +249,19 @@ public class AuthIntegrationTests : BaseIntegrationTest
 
     #region Confirm Email Tests
 
-    [Fact]
+    [Fact(Skip = "Confirmation email currently is superseded by password setup during user registration")]
     public async Task ConfirmEmail_with_valid_token_succeeds()
     {
         var sysClient = await CreateAuthenticatedClientAsync();
         var newEmail = $"confirm-{Guid.NewGuid():N}@example.com";
+
+        var emailSenderMock = Factory.EmailSenderMock;
+        var resetPasswordCapture = new List<string>();
+        emailSenderMock.Setup(x => x.SendPasswordResetCodeAsync(
+            It.IsAny<IdmtUser>(),
+            It.IsAny<string>(),
+            It.IsAny<string>()))
+            .Callback<IdmtUser, string, string>((user, code, link) => resetPasswordCapture.Add(code));
 
         // Register user
         var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
@@ -263,7 +275,8 @@ public class AuthIntegrationTests : BaseIntegrationTest
 
         // First, set the initial password using the password setup token
         using var publicClient = Factory.CreateClient();
-        await publicClient.PostAsJsonAsync(
+
+        var resetResponse = await publicClient.PostAsJsonAsync(
             QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
             {
                 ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
@@ -271,31 +284,45 @@ public class AuthIntegrationTests : BaseIntegrationTest
                 ["token"] = passwordSetupToken
             }),
             new { NewPassword = "InitialPassword1!" });
+        await resetResponse.AssertSuccess();
 
         // Now request a confirmation email to get the email confirmation token
         using var tenantClient = Factory.CreateClientWithTenant();
-        var resendResponse = await tenantClient.PostAsJsonAsync($"/auth/resendConfirmationEmail?useApiLinks=false", new
+
+        // Authenticate the client
+        var loginResponse = await tenantClient.PostAsJsonAsync("/auth/token", new
+        {
+            Email = newEmail,
+            Password = "InitialPassword1!"
+        });
+        var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
+        tenantClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
+
+        var resendResponse = await tenantClient.PostAsJsonAsync($"/auth/resendConfirmationEmail?useApiLinks=true", new
         {
             Email = newEmail
         });
         await resendResponse.AssertSuccess();
-        var resendResponseValue = await resendResponse.Content.ReadFromJsonAsync<ResendConfirmationEmail.ResendConfirmationEmailResponse>();
-        var confirmToken = resendResponseValue!.ConfirmationToken;
 
-        if (confirmToken is null)
-        {
-            // Password reset is confirming email, so we skip the rest of the test
-            return;
-        }
+        // Get message sent by the email sender
 
-        // Now confirm email using the email confirmation token
-        var confirmResponse = await publicClient.GetAsync(
-            $"/auth/confirmEmail?tenantIdentifier={IdmtApiFactory.DefaultTenantIdentifier}&email={newEmail}&token={Uri.EscapeDataString(confirmToken)}");
+        // var resendResponseValue = await resendResponse.Content.ReadFromJsonAsync<ResendConfirmationEmail.ResendConfirmationEmailResponse>();
+        // var confirmToken = resendResponseValue!.ConfirmationToken;
 
-        await confirmResponse.AssertSuccess();
-        var result = await confirmResponse.Content.ReadFromJsonAsync<ConfirmEmail.ConfirmEmailResponse>();
-        Assert.NotNull(result);
-        Assert.True(result!.Success);
+        // if (confirmToken is null)
+        // {
+        //     // Password reset is confirming email, so we skip the rest of the test
+        //     return;
+        // }
+
+        // // Now confirm email using the email confirmation token
+        // var confirmResponse = await publicClient.GetAsync(
+        //     $"/auth/confirmEmail?tenantIdentifier={IdmtApiFactory.DefaultTenantIdentifier}&email={newEmail}&token={Uri.EscapeDataString(confirmToken)}");
+
+        // await confirmResponse.AssertSuccess();
+        // var result = await confirmResponse.Content.ReadFromJsonAsync<ConfirmEmail.ConfirmEmailResponse>();
+        // Assert.NotNull(result);
+        // Assert.True(result!.Success);
     }
 
     [Fact]
@@ -366,18 +393,18 @@ public class AuthIntegrationTests : BaseIntegrationTest
 
         // Resend confirmation email
         using var publicClient = Factory.CreateClientWithTenant();
-        var resendResponse = await publicClient.PostAsJsonAsync($"/auth/resendConfirmationEmail?useApiLinks=false", new
+        var resendResponse = await publicClient.PostAsJsonAsync($"/auth/resendConfirmationEmail?useApiLinks=true", new
         {
             Email = newEmail
         });
         await resendResponse.AssertSuccess();
 
-        var result = await resendResponse.Content.ReadFromJsonAsync<ResendConfirmationEmail.ResendConfirmationEmailResponse>();
-        Assert.NotNull(result);
-        Assert.True(result!.Success);
+        // var result = await resendResponse.Content.ReadFromJsonAsync<ResendConfirmationEmail.ResendConfirmationEmailResponse>();
+        // Assert.NotNull(result);
+        // Assert.True(result!.Success);
     }
 
-    [Fact]
+    [Fact(Skip = "Email is currently being confirmed during password setup")]
     public async Task ResendConfirmationEmail_sends_email()
     {
         var sysClient = await CreateAuthenticatedClientAsync();

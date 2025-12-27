@@ -94,17 +94,16 @@ public static class ResendConfirmationEmail
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
-            
+
             var result = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
             if (!result.IsSuccess)
             {
                 return TypedResults.InternalServerError();
             }
-            
+
             return TypedResults.Ok();
         })
         .WithSummary("Resend confirmation email")
-        .WithDescription("Resend email confirmation link")
-        .RequireAuthorization();
+        .WithDescription("Resend email confirmation link");
     }
 }
