@@ -191,7 +191,7 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
             var createResult = await userManager.CreateAsync(user, SysAdminPassword);
             if (!createResult.Succeeded)
             {
-                var errors = string.Join(", ", createResult.Errors.Select(e => e.Description));
+                var errors = string.Join("\n", createResult.Errors.Select(e => e.Description));
                 throw new InvalidOperationException($"Failed to seed sysadmin user: {errors}");
             }
         }

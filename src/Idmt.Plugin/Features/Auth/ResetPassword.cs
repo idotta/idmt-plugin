@@ -55,7 +55,7 @@ public static class ResetPassword
 
                 if (!result.Succeeded)
                 {
-                    var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                    var errors = string.Join("\n", result.Errors.Select(e => e.Description));
                     return Result.Failure(errors, StatusCodes.Status400BadRequest);
                 }
 
