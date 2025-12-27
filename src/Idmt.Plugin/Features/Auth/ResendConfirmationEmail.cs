@@ -42,12 +42,12 @@ public static class ResendConfirmationEmail
                 if (user == null || !user.IsActive)
                 {
                     // Don't reveal whether user exists for security
-                    return Result.Success(true, StatusCodes.Status200OK);
+                    return Result.Success(StatusCodes.Status200OK);
                 }
 
                 if (user.EmailConfirmed)
                 {
-                    return Result.Success(true, StatusCodes.Status200OK);
+                    return Result.Success(StatusCodes.Status200OK);
                 }
 
                 // Generate email confirmation token
@@ -59,7 +59,7 @@ public static class ResendConfirmationEmail
 
                 await emailSender.SendConfirmationLinkAsync(user, request.Email, HtmlEncoder.Default.Encode(confirmEmailUrl));
 
-                return Result.Success(true, StatusCodes.Status200OK);
+                return Result.Success(StatusCodes.Status200OK);
             }
             catch (Exception ex)
             {
