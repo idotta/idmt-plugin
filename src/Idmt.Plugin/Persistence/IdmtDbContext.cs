@@ -150,7 +150,7 @@ public class IdmtDbContext
             }
             else if (entry.State == EntityState.Modified)
             {
-                string details = string.Join(", ", entry.Properties
+                string details = string.Join("\n", entry.Properties
                     .Where(prop => prop.IsModified)
                     .Select(prop => prop.Metadata.Name));
                 AuditLogs.Add(new IdmtAuditLog

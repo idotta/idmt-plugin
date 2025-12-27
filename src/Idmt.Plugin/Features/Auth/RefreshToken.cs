@@ -15,11 +15,11 @@ public static class RefreshToken
 {
     public sealed record RefreshTokenRequest(string RefreshToken);
 
-    public sealed record RefreshTokenResponse(bool Succeeded, ClaimsPrincipal? ClaimsPrincipal = null);
+    public sealed record RefreshTokenResponse(ClaimsPrincipal ClaimsPrincipal);
 
     public interface IRefreshTokenHandler
     {
-        Task<RefreshTokenResponse> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default);
+        Task<Result<RefreshTokenResponse>> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default);
     }
 
     internal sealed class RefreshTokenHandler(
@@ -28,7 +28,7 @@ public static class RefreshToken
         SignInManager<IdmtUser> signInManager)
         : IRefreshTokenHandler
     {
-        public async Task<RefreshTokenResponse> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default)
+        public async Task<Result<RefreshTokenResponse>> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default)
         {
             var refreshTokenProtector = bearerTokenOptions.Get(IdentityConstants.BearerScheme).RefreshTokenProtector;
             var refreshTicket = refreshTokenProtector.Unprotect(request.RefreshToken);
@@ -37,11 +37,11 @@ public static class RefreshToken
                 timeProvider.GetUtcNow() >= expiresUtc ||
                 await signInManager.ValidateSecurityStampAsync(refreshTicket.Principal) is not IdmtUser user)
             {
-                return new RefreshTokenResponse(false);
+                return Result.Failure<RefreshTokenResponse>("Invalid refresh token", StatusCodes.Status400BadRequest);
             }
 
             ClaimsPrincipal claimsPrincipal = await signInManager.CreateUserPrincipalAsync(user);
-            return new RefreshTokenResponse(true, claimsPrincipal);
+            return Result.Success(new RefreshTokenResponse(claimsPrincipal));
         }
     }
 
@@ -70,13 +70,14 @@ public static class RefreshToken
             }
 
             var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
-            if (!response.Succeeded)
+            if (!response.IsSuccess)
             {
                 return TypedResults.Challenge();
             }
-            return TypedResults.SignIn(response.ClaimsPrincipal!, authenticationScheme: IdentityConstants.BearerScheme);
+            return TypedResults.SignIn(response.Value!.ClaimsPrincipal, authenticationScheme: IdentityConstants.BearerScheme);
         })
         .WithSummary("Refresh token")
-        .WithDescription("Refresh JWT token using refresh token");
+        .WithDescription("Refresh JWT token using refresh token")
+        .RequireAuthorization();
     }
 }

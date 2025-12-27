@@ -15,11 +15,11 @@ public static class ForgotPassword
 {
     public sealed record ForgotPasswordRequest(string Email);
 
-    public sealed record ForgotPasswordResponse(bool Success, string? ResetToken = null, string? ResetUrl = null, string? Message = null);
+    public sealed record ForgotPasswordResponse(string? ResetToken = null, string? ResetUrl = null);
 
     public interface IForgotPasswordHandler
     {
-        Task<ForgotPasswordResponse> HandleAsync(
+        Task<Result<ForgotPasswordResponse>> HandleAsync(
             bool useApiLinks,
             ForgotPasswordRequest request,
             CancellationToken cancellationToken = default);
@@ -30,30 +30,37 @@ public static class ForgotPassword
         IEmailSender<IdmtUser> emailSender,
         IIdmtLinkGenerator linkGenerator) : IForgotPasswordHandler
     {
-        public async Task<ForgotPasswordResponse> HandleAsync(
+        public async Task<Result<ForgotPasswordResponse>> HandleAsync(
             bool useApiLinks,
             ForgotPasswordRequest request,
             CancellationToken cancellationToken = default)
         {
-            var user = await userManager.FindByEmailAsync(request.Email);
-            if (user == null || !user.IsActive)
+            try
             {
-                // Don't reveal whether user exists or not for security
-                return new ForgotPasswordResponse(true, Message: "If the email exists, a reset link has been sent.");
+                var user = await userManager.FindByEmailAsync(request.Email);
+                if (user == null || !user.IsActive)
+                {
+                    // Don't reveal whether user exists or not for security
+                    return Result.Success(new ForgotPasswordResponse(null, null), StatusCodes.Status200OK);
+                }
+
+                // Generate password reset token
+                var token = await userManager.GeneratePasswordResetTokenAsync(user);
+
+                // Generate password reset link
+                var resetUrl = useApiLinks
+                    ? linkGenerator.GeneratePasswordResetApiLink(user.Email!, token)
+                    : linkGenerator.GeneratePasswordResetFormLink(user.Email!, token);
+
+                // Send email with reset code
+                await emailSender.SendPasswordResetCodeAsync(user, request.Email, HtmlEncoder.Default.Encode(resetUrl));
+
+                return Result.Success(new ForgotPasswordResponse(token, resetUrl), StatusCodes.Status200OK);
             }
-
-            // Generate password reset token
-            var token = await userManager.GeneratePasswordResetTokenAsync(user);
-
-            // Generate password reset link
-            var resetUrl = useApiLinks
-                ? linkGenerator.GeneratePasswordResetApiLink(user.Email!, token)
-                : linkGenerator.GeneratePasswordResetFormLink(user.Email!, token);
-
-            // Send email with reset code
-            await emailSender.SendPasswordResetCodeAsync(user, request.Email, HtmlEncoder.Default.Encode(resetUrl));
-
-            return new ForgotPasswordResponse(true, token, resetUrl, "If the email exists, a reset link has been sent.");
+            catch (Exception ex)
+            {
+                return Result.Failure<ForgotPasswordResponse>(ex.Message, StatusCodes.Status500InternalServerError);
+            }
         }
     }
 
@@ -71,7 +78,7 @@ public static class ForgotPassword
 
     public static RouteHandlerBuilder MapForgotPasswordEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/forgotPassword", async Task<Results<Ok<ForgotPasswordResponse>, ValidationProblem>> (
+        return endpoints.MapPost("/forgotPassword", async Task<Results<Ok, ValidationProblem, StatusCodeHttpResult>> (
             [FromQuery] bool useApiLinks,
             [FromBody] ForgotPasswordRequest request,
             [FromServices] IForgotPasswordHandler handler,
@@ -81,9 +88,12 @@ public static class ForgotPassword
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
-
             var result = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
-            return TypedResults.Ok(result);
+            if (!result.IsSuccess)
+            {
+                return TypedResults.StatusCode(result.StatusCode);
+            }
+            return TypedResults.Ok();
         })
         .WithSummary("Forgot password")
         .WithDescription("Initiate password reset process");

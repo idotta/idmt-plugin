@@ -45,11 +45,6 @@ public static class RegisterUser
     public sealed record RegisterUserResponse
     {
         /// <summary>
-        /// Indicates whether the registration operation succeeded.
-        /// </summary>
-        public bool Success { get; init; }
-
-        /// <summary>
         /// The unique identifier of the created user (as string). Only populated when Success is true.
         /// </summary>
         public string? UserId { get; init; }
@@ -66,17 +61,6 @@ public static class RegisterUser
         /// Contains the email and token as query parameters. Only populated when Success is true.
         /// </summary>
         public string? PasswordSetupUrl { get; init; }
-
-        /// <summary>
-        /// HTTP status code for the response. Defaults to 201 Created for successful registrations,
-        /// 400 Bad Request for validation errors or failures.
-        /// </summary>
-        public int StatusCode { get; init; } = StatusCodes.Status201Created;
-
-        /// <summary>
-        /// General error message when registration fails. Used for non-validation errors.
-        /// </summary>
-        public string? ErrorMessage { get; init; }
     }
 
     /// <summary>
@@ -93,7 +77,7 @@ public static class RegisterUser
         /// <param name="request">The registration request containing email, optional username, and role</param>
         /// <param name="cancellationToken">Cancellation token to cancel the operation</param>
         /// <returns>Registration response containing success status, user ID, password setup token, and any errors</returns>
-        Task<RegisterUserResponse> HandleAsync(
+        Task<Result<RegisterUserResponse>> HandleAsync(
             bool useApiLinks,
             RegisterUserRequest request,
             CancellationToken cancellationToken = default);
@@ -137,7 +121,7 @@ public static class RegisterUser
         /// <param name="cancellationToken">Cancellation token to cancel the operation</param>
         /// <returns>Registration response with success status, user ID, password setup token, and any errors</returns>
         /// <exception cref="NotSupportedException">Thrown when the user store does not support email functionality</exception>
-        public async Task<RegisterUserResponse> HandleAsync(
+        public async Task<Result<RegisterUserResponse>> HandleAsync(
             bool useApiLinks,
             RegisterUserRequest request,
             CancellationToken cancellationToken = default)
@@ -145,14 +129,8 @@ public static class RegisterUser
             // Security check: Validate role assignment permissions based on current user's role
             if (!tenantAccessService.CanAssignRole(request.Role))
             {
-                return new RegisterUserResponse
-                {
-                    Success = false,
-                    StatusCode = StatusCodes.Status403Forbidden,
-                    ErrorMessage = "Insufficient permissions to assign this role."
-                };
+                return Result.Failure<RegisterUserResponse>("Insufficient permissions to assign this role.", StatusCodes.Status403Forbidden);
             }
-
             // Create user entity with basic information, no password set
             // User is active by default, but email is not confirmed until password is set
             // When the user is unregistered, we set IsActive to false (soft delete)
@@ -178,12 +156,7 @@ public static class RegisterUser
                 if (!roleExists)
                 {
                     await transaction.RollbackAsync(cancellationToken);
-                    return new RegisterUserResponse
-                    {
-                        Success = false,
-                        StatusCode = StatusCodes.Status400BadRequest,
-                        ErrorMessage = "Role not found",
-                    };
+                    return Result.Failure<RegisterUserResponse>("Role not found", StatusCodes.Status400BadRequest);
                 }
 
                 // Create the user account (this will validate uniqueness constraints per tenant)
@@ -193,12 +166,7 @@ public static class RegisterUser
                 {
                     await transaction.RollbackAsync(cancellationToken);
                     logger.LogError("Failed to create user: {ErrorMessage}", result.Errors);
-                    return new RegisterUserResponse
-                    {
-                        Success = false,
-                        StatusCode = StatusCodes.Status400BadRequest,
-                        ErrorMessage = "Failed to create user"
-                    };
+                    return Result.Failure<RegisterUserResponse>("Failed to create user", StatusCodes.Status400BadRequest);
                 }
 
                 // Set username and email using store-specific methods (ensures proper normalization)
@@ -214,12 +182,7 @@ public static class RegisterUser
                 {
                     await transaction.RollbackAsync(cancellationToken);
                     logger.LogError("Failed to assign role to user: {ErrorMessage}", roleResult.Errors);
-                    return new RegisterUserResponse
-                    {
-                        Success = false,
-                        StatusCode = StatusCodes.Status400BadRequest,
-                        ErrorMessage = "Failed to assign role to user"
-                    };
+                    return Result.Failure<RegisterUserResponse>("Failed to assign role to user", StatusCodes.Status400BadRequest);
                 }
 
                 // Commit the transaction only if role check, user creation, and role assignment all succeeded
@@ -229,7 +192,7 @@ public static class RegisterUser
             {
                 await transaction.RollbackAsync(cancellationToken);
                 logger.LogError(ex, "Exception occurred during user registration. Transaction rolled back.");
-                throw;
+                return Result.Failure<RegisterUserResponse>($"An error occurred during user registration: {ex.Message}", StatusCodes.Status500InternalServerError);
             }
 
             // Generate password setup token using ASP.NET Core Identity's password reset token mechanism
@@ -245,14 +208,12 @@ public static class RegisterUser
 
             await emailSender.SendPasswordResetLinkAsync(user, user.Email, passwordSetupUrl);
 
-            return new RegisterUserResponse
+            return Result.Success(new RegisterUserResponse
             {
-                Success = true,
-                StatusCode = StatusCodes.Status201Created,
-                UserId = user.Id.ToString(),
+                UserId = user.GetId(),
                 PasswordSetupToken = token,
-                PasswordSetupUrl = passwordSetupUrl,
-            };
+                PasswordSetupUrl = passwordSetupUrl
+            });
         }
     }
 
@@ -292,7 +253,7 @@ public static class RegisterUser
 
     public static RouteHandlerBuilder MapRegisterUserEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/users", async Task<Results<Ok<RegisterUserResponse>, ProblemHttpResult, ValidationProblem>> (
+        return endpoints.MapPost("/users", async Task<Results<Ok<RegisterUserResponse>, ValidationProblem, ForbidHttpResult, BadRequest, InternalServerError>> (
             [FromQuery] bool useApiLinks,
             [FromBody] RegisterUserRequest request,
             [FromServices] IRegisterUserHandler handler,
@@ -305,11 +266,16 @@ public static class RegisterUser
             }
 
             var response = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
-            if (!response.Success)
+            if (!response.IsSuccess)
             {
-                return TypedResults.Problem(response.ErrorMessage, statusCode: response.StatusCode);
+                return response.StatusCode switch
+                {
+                    StatusCodes.Status403Forbidden => TypedResults.Forbid(),
+                    StatusCodes.Status400BadRequest => TypedResults.BadRequest(),
+                    _ => TypedResults.InternalServerError(),
+                };
             }
-            return TypedResults.Ok(response);
+            return TypedResults.Ok(response.Value!);
         })
         .RequireAuthorization(AuthOptions.RequireTenantManagerPolicy)
         .WithSummary("Register user")

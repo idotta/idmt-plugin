@@ -25,7 +25,7 @@ public static class UpdateUserInfo
 
     public interface IUpdateUserInfoHandler
     {
-        Task<bool> HandleAsync(UpdateUserInfoRequest request, ClaimsPrincipal user, CancellationToken cancellationToken = default);
+        Task<Result> HandleAsync(UpdateUserInfoRequest request, ClaimsPrincipal user, CancellationToken cancellationToken = default);
     }
 
     internal sealed class UpdateUserInfoHandler(
@@ -33,7 +33,7 @@ public static class UpdateUserInfo
         IdmtDbContext dbContext,
         ILogger<UpdateUserInfoHandler> logger) : IUpdateUserInfoHandler
     {
-        public async Task<bool> HandleAsync(
+        public async Task<Result> HandleAsync(
             UpdateUserInfoRequest request,
             ClaimsPrincipal user,
             CancellationToken cancellationToken = default)
@@ -41,13 +41,17 @@ public static class UpdateUserInfo
             var userEmail = user.FindFirstValue(ClaimTypes.Email);
             if (string.IsNullOrEmpty(userEmail))
             {
-                return false;
+                return Result.Failure("User email not found in claims", StatusCodes.Status400BadRequest);
             }
 
             var appUser = await userManager.FindByEmailAsync(userEmail);
-            if (appUser == null || !appUser.IsActive)
+            if (appUser == null)
             {
-                return false;
+                return Result.Failure("User not found", StatusCodes.Status404NotFound);
+            }
+            if (!appUser.IsActive)
+            {
+                return Result.Failure("User is not active", StatusCodes.Status403Forbidden);
             }
 
             await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
@@ -61,7 +65,7 @@ public static class UpdateUserInfo
                     {
                         logger.LogError("Failed to set username: {ErrorMessage}", setUsernameResult.Errors.Select(e => e.Description));
                         await transaction.RollbackAsync(cancellationToken);
-                        return false;
+                        return Result.Failure("Failed to update username", StatusCodes.Status400BadRequest);
                     }
                 }
 
@@ -78,7 +82,7 @@ public static class UpdateUserInfo
                     {
                         logger.LogError("Failed to change email: {ErrorMessage}", result.Errors.Select(e => e.Description));
                         await transaction.RollbackAsync(cancellationToken);
-                        return false;
+                        return Result.Failure("Failed to update email", StatusCodes.Status400BadRequest);
                     }
                 }
 
@@ -90,21 +94,22 @@ public static class UpdateUserInfo
                     {
                         logger.LogError("Failed to change password: {ErrorMessage}", changePasswordResult.Errors.Select(e => e.Description));
                         await transaction.RollbackAsync(cancellationToken);
-                        return false;
+                        return Result.Failure("Failed to update password", StatusCodes.Status400BadRequest);
                     }
                 }
 
                 await userManager.UpdateAsync(appUser);
 
                 await transaction.CommitAsync(cancellationToken);
+
+                return Result.Success();
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 logger.LogError(ex, "Exception occurred during user registration. Transaction rolled back.");
-                throw;
+                return Result.Failure($"An error occurred while updating user info: {ex.Message}", StatusCodes.Status500InternalServerError);
             }
-            return true;
         }
     }
 
@@ -130,7 +135,7 @@ public static class UpdateUserInfo
 
     public static RouteHandlerBuilder MapUpdateUserInfoEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPut("/info", async Task<Results<Ok, ProblemHttpResult, ValidationProblem>> (
+        return endpoints.MapPut("/info", async Task<Results<Ok, ValidationProblem, BadRequest, NotFound, ForbidHttpResult, InternalServerError>> (
             [FromBody] UpdateUserInfoRequest request,
             ClaimsPrincipal user,
             [FromServices] IUpdateUserInfoHandler handler,
@@ -143,13 +148,20 @@ public static class UpdateUserInfo
             }
 
             var result = await handler.HandleAsync(request, user, cancellationToken: context.RequestAborted);
-            if (!result)
+            if (!result.IsSuccess)
             {
-                return TypedResults.Problem("Failed to update user info");
+                return result.StatusCode switch
+                {
+                    StatusCodes.Status400BadRequest => TypedResults.BadRequest(),
+                    StatusCodes.Status403Forbidden => TypedResults.Forbid(),
+                    StatusCodes.Status404NotFound => TypedResults.NotFound(),
+                    _ => TypedResults.InternalServerError(),
+                };
             }
             return TypedResults.Ok();
         })
         .WithSummary("Update user info")
-        .WithDescription("Update current user authentication info");
+        .WithDescription("Update current user authentication info")
+        .RequireAuthorization();
     }
 }

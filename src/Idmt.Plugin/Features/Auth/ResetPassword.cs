@@ -17,16 +17,14 @@ public static class ResetPassword
 {
     public sealed record ResetPasswordRequest(string NewPassword);
 
-    public sealed record ResetPasswordResponse(bool Success, string[]? Errors = null);
-
     public interface IResetPasswordHandler
     {
-        Task<ResetPasswordResponse> HandleAsync(string tenantIdentifier, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default);
+        Task<Result> HandleAsync(string tenantIdentifier, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default);
     }
 
     internal sealed class ResetPasswordHandler(IServiceProvider serviceProvider) : IResetPasswordHandler
     {
-        public async Task<ResetPasswordResponse> HandleAsync(string tenantIdentifier, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default)
+        public async Task<Result> HandleAsync(string tenantIdentifier, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default)
         {
             using var scope = serviceProvider.CreateScope();
             var provider = scope.ServiceProvider;
@@ -35,7 +33,7 @@ public static class ResetPassword
             var tenantInfo = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
             if (tenantInfo is null || !tenantInfo.IsActive)
             {
-                return new ResetPasswordResponse(false, ["Invalid tenant"]);
+                return Result.Failure("Invalid tenant", StatusCodes.Status400BadRequest);
             }
             // Set Tenant Context BEFORE resolving DbContext/Managers
             var tenantContextSetter = provider.GetRequiredService<IMultiTenantContextSetter>();
@@ -48,7 +46,8 @@ public static class ResetPassword
                 var user = await userManager.FindByEmailAsync(email);
                 if (user is null)
                 {
-                    return new ResetPasswordResponse(false, ["User not found"]);
+                    // Avoid revealing that the email does not exist
+                    return Result.Failure("User not found", StatusCodes.Status400BadRequest);
                 }
 
                 // Reset password using the token
@@ -56,8 +55,8 @@ public static class ResetPassword
 
                 if (!result.Succeeded)
                 {
-                    var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-                    return new ResetPasswordResponse(false, [errors]);
+                    var errors = string.Join("\n", result.Errors.Select(e => e.Description));
+                    return Result.Failure(errors, StatusCodes.Status400BadRequest);
                 }
 
                 if (!user.EmailConfirmed)
@@ -66,11 +65,11 @@ public static class ResetPassword
                     await userManager.UpdateAsync(user);
                 }
 
-                return new ResetPasswordResponse(true, null);
+                return Result.Success();
             }
             catch (Exception ex)
             {
-                return new ResetPasswordResponse(false, [ex.Message]);
+                return Result.Failure($"An error occurred while resetting the password: {ex.Message}", StatusCodes.Status500InternalServerError);
             }
         }
     }
@@ -100,7 +99,7 @@ public static class ResetPassword
 
     public static RouteHandlerBuilder MapResetPasswordEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/resetPassword", async Task<Results<Ok<ResetPasswordResponse>, ValidationProblem, ForbidHttpResult>> (
+        return endpoints.MapPost("/resetPassword", async Task<Results<Ok, ValidationProblem, BadRequest>> (
             [FromQuery] string tenantIdentifier,
             [FromQuery] string email,
             [FromQuery] string token,
@@ -114,11 +113,11 @@ public static class ResetPassword
                 return TypedResults.ValidationProblem(validationErrors);
             }
             var result = await handler.HandleAsync(tenantIdentifier, email, token, request, cancellationToken: context.RequestAborted);
-            if (!result.Success)
+            if (!result.IsSuccess)
             {
-                return TypedResults.Forbid();
+                return TypedResults.BadRequest();
             }
-            return TypedResults.Ok(result);
+            return TypedResults.Ok();
         })
         .WithName(ApplicationOptions.PasswordResetEndpointName)
         .WithSummary("Reset password")

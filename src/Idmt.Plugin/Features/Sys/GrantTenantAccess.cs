@@ -20,7 +20,7 @@ public static class GrantTenantAccess
 
     public interface IGrantTenantAccessHandler
     {
-        Task<bool> HandleAsync(Guid userId, string tenantIdentifier, DateTime? expiresAt = null, CancellationToken cancellationToken = default);
+        Task<Result> HandleAsync(Guid userId, string tenantIdentifier, DateTime? expiresAt = null, CancellationToken cancellationToken = default);
     }
 
     internal sealed class GrantTenantAccessHandler(
@@ -28,7 +28,7 @@ public static class GrantTenantAccess
         ILogger<GrantTenantAccessHandler> logger
         ) : IGrantTenantAccessHandler
     {
-        public async Task<bool> HandleAsync(Guid userId, string tenantIdentifier, DateTime? expiresAt = null, CancellationToken cancellationToken = default)
+        public async Task<Result> HandleAsync(Guid userId, string tenantIdentifier, DateTime? expiresAt = null, CancellationToken cancellationToken = default)
         {
             IdmtUser? user = null;
             IdmtTenantInfo? targetTenant = null;
@@ -46,20 +46,20 @@ public static class GrantTenantAccess
                     user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
                     if (user is null)
                     {
-                        return false;
+                        return Result.Failure("User not found", StatusCodes.Status404NotFound);
                     }
 
                     targetTenant = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
                     if (targetTenant is null)
                     {
-                        return false;
+                        return Result.Failure("Tenant not found", StatusCodes.Status404NotFound);
                     }
 
                     userRoles = await userManager.GetRolesAsync(user);
                     if (userRoles.Count == 0)
                     {
                         logger.LogWarning("User {UserId} has no roles assigned; cannot grant tenant access.", userId);
-                        return false;
+                        return Result.Failure("User has no roles assigned", StatusCodes.Status400BadRequest);
                     }
 
                     var tenantAccess = await dbContext.TenantAccess
@@ -86,7 +86,7 @@ public static class GrantTenantAccess
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Error granting tenant access to user {UserId} for tenant {TenantIdentifier}", userId, tenantIdentifier);
-                    return false;
+                    return Result.Failure("An error occurred while granting tenant access", StatusCodes.Status500InternalServerError);
                 }
             }
 
@@ -98,7 +98,7 @@ public static class GrantTenantAccess
                 var tenantInfo = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
                 if (tenantInfo is null || !tenantInfo.IsActive)
                 {
-                    return false;
+                    return Result.Failure("Tenant not found or inactive", StatusCodes.Status404NotFound);
                 }
                 // Set Tenant Context BEFORE resolving DbContext/Managers
                 var tenantContextSetter = sp.GetRequiredService<IMultiTenantContextSetter>();
@@ -141,12 +141,12 @@ public static class GrantTenantAccess
                         await targetUserManager.UpdateAsync(targetUser);
                     }
 
-                    return true;
+                    return Result.Success();
                 }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Error granting tenant access to user {UserId} in tenant {TenantIdentifier}", userId, tenantIdentifier);
-                    return false;
+                    return Result.Failure("An error occurred while granting tenant access", StatusCodes.Status500InternalServerError);
                 }
             }
         }
@@ -154,17 +154,24 @@ public static class GrantTenantAccess
 
     public static RouteHandlerBuilder MapGrantTenantAccessEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/users/{userId:guid}/tenants/{tenantIdentifier}", async Task<Results<Ok, NotFound<string>>> (
+        return endpoints.MapPost("/users/{userId:guid}/tenants/{tenantIdentifier}", async Task<Results<Ok, BadRequest, NotFound, InternalServerError>> (
             Guid userId,
             string tenantIdentifier,
             [FromBody] GrantAccessRequest request,
             IGrantTenantAccessHandler handler,
             CancellationToken cancellationToken) =>
         {
-            var success = await handler.HandleAsync(userId, tenantIdentifier, request.ExpiresAt, cancellationToken);
-            return success
-                ? TypedResults.Ok()
-                : TypedResults.NotFound("User or Tenant not found, or operation failed.");
+            var result = await handler.HandleAsync(userId, tenantIdentifier, request.ExpiresAt, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                return result.StatusCode switch
+                {
+                    StatusCodes.Status400BadRequest => TypedResults.BadRequest(),
+                    StatusCodes.Status404NotFound => TypedResults.NotFound(),
+                    _ => TypedResults.InternalServerError()
+                };
+            }
+            return TypedResults.Ok();
         })
         .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
         .WithSummary("Grant user access to a tenant");

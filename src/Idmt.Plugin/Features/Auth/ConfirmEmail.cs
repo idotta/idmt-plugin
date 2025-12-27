@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Idmt.Plugin.Features.Auth;
 
@@ -16,16 +17,14 @@ public static class ConfirmEmail
 {
     public sealed record ConfirmEmailRequest(string TenantIdentifier, string Email, string Token);
 
-    public sealed record ConfirmEmailResponse(bool Success, string? Message = null);
-
     public interface IConfirmEmailHandler
     {
-        Task<ConfirmEmailResponse> HandleAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default);
+        Task<Result> HandleAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default);
     }
 
-    internal sealed class ConfirmEmailHandler(IServiceProvider serviceProvider) : IConfirmEmailHandler
+    internal sealed class ConfirmEmailHandler(IServiceProvider serviceProvider, ILogger<ConfirmEmailHandler> logger) : IConfirmEmailHandler
     {
-        public async Task<ConfirmEmailResponse> HandleAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default)
+        public async Task<Result> HandleAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default)
         {
             using var scope = serviceProvider.CreateScope();
             var provider = scope.ServiceProvider;
@@ -34,7 +33,7 @@ public static class ConfirmEmail
             var tenantInfo = await tenantStore.GetByIdentifierAsync(request.TenantIdentifier);
             if (tenantInfo is null || !tenantInfo.IsActive)
             {
-                return new ConfirmEmailResponse(false, "Invalid tenant");
+                return Result.Failure("Invalid tenant", StatusCodes.Status400BadRequest);
             }
             // Set Tenant Context BEFORE resolving DbContext/Managers
             var tenantContextSetter = provider.GetRequiredService<IMultiTenantContextSetter>();
@@ -47,7 +46,8 @@ public static class ConfirmEmail
                 var user = await userManager.FindByEmailAsync(request.Email);
                 if (user == null)
                 {
-                    return new ConfirmEmailResponse(false, "User not found");
+                    // Avoid revealing that the email does not exist
+                    return Result.Failure("User not found", StatusCodes.Status400BadRequest);
                 }
 
                 // Reset password using the token
@@ -55,15 +55,16 @@ public static class ConfirmEmail
 
                 if (!result.Succeeded)
                 {
-                    var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-                    return new ConfirmEmailResponse(false, errors);
+                    var errors = string.Join("\n", result.Errors.Select(e => e.Description));
+                    return Result.Failure(errors, StatusCodes.Status400BadRequest);
                 }
 
-                return new ConfirmEmailResponse(true, null);
+                return Result.Success();
             }
             catch (Exception ex)
             {
-                return new ConfirmEmailResponse(false, ex.Message);
+                logger.LogError(ex, "Error confirming email for {Email} in tenant {TenantIdentifier}", request.Email, request.TenantIdentifier);
+                return Result.Failure(ex.Message, StatusCodes.Status500InternalServerError);
             }
         }
     }
@@ -94,7 +95,7 @@ public static class ConfirmEmail
 
     public static RouteHandlerBuilder MapConfirmEmailEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapGet("/confirmEmail", async Task<Results<Ok<ConfirmEmailResponse>, ValidationProblem, ForbidHttpResult>> (
+        return endpoints.MapGet("/confirmEmail", async Task<Results<Ok, ValidationProblem, BadRequest, InternalServerError>> (
             [FromQuery] string tenantIdentifier,
             [FromQuery] string email,
             [FromQuery] string token,
@@ -110,11 +111,15 @@ public static class ConfirmEmail
 
             var result = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
 
-            if (!result.Success)
+            if (!result.IsSuccess)
             {
-                return TypedResults.Forbid();
+                return result.StatusCode switch
+                {
+                    StatusCodes.Status400BadRequest => TypedResults.BadRequest(),
+                    _ => TypedResults.InternalServerError(),
+                };
             }
-            return TypedResults.Ok(result);
+            return TypedResults.Ok();
         })
         .WithName(ApplicationOptions.ConfirmEmailEndpointName)
         .WithSummary("Confirm email")
