@@ -18,6 +18,10 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi().ExcludeFromMultiTenantResolution();
 }
 
+// Enable static files and default files
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseIdmt();
 
 var options = app.Services.GetRequiredService<IOptions<IdmtOptions>>().Value;
