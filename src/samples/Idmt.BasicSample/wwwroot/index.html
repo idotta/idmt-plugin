@@ -17,8 +17,10 @@
         <section class="panel config-panel">
             <h2>Configuration</h2>
             <div class="info-box">
-                <strong>Note:</strong> The default tenant is "system-tenant". No default users are seeded.
-                Use the Register User endpoint to create your first user, then set their password using the passwordSetupToken.
+                <strong>Note:</strong> In development mode, a test admin user is automatically seeded:<br>
+                <strong>Email:</strong> testadmin@example.com<br>
+                <strong>Password:</strong> TestAdmin123!<br>
+                <strong>Tenant:</strong> system-tenant
             </div>
             <div class="form-group">
                 <label for="tenantId">Tenant ID:</label>
@@ -55,10 +57,10 @@
             <div class="endpoint-group">
                 <h3>POST /auth/login (Cookie-based)</h3>
                 <div class="form-group">
-                    <input type="email" id="loginEmail" placeholder="Email" value="">
+                    <input type="email" id="loginEmail" placeholder="Email" value="testadmin@example.com">
                 </div>
                 <div class="form-group">
-                    <input type="password" id="loginPassword" placeholder="Password" value="">
+                    <input type="password" id="loginPassword" placeholder="Password" value="TestAdmin123!">
                 </div>
                 <div class="form-group">
                     <label>
@@ -72,10 +74,10 @@
             <div class="endpoint-group">
                 <h3>POST /auth/token (Bearer Token)</h3>
                 <div class="form-group">
-                    <input type="email" id="tokenEmail" placeholder="Email" value="">
+                    <input type="email" id="tokenEmail" placeholder="Email" value="testadmin@example.com">
                 </div>
                 <div class="form-group">
-                    <input type="password" id="tokenPassword" placeholder="Password" value="">
+                    <input type="password" id="tokenPassword" placeholder="Password" value="TestAdmin123!">
                 </div>
                 <button onclick="getToken()">Get Token</button>
             </div>
