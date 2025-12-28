@@ -24,8 +24,16 @@ app.UseStaticFiles();
 
 app.UseIdmt();
 
-// Map endpoints without route prefix since we're using header strategy only
-app.MapIdmtEndpoints();
+var options = app.Services.GetRequiredService<IOptions<IdmtOptions>>().Value;
+
+if (options.MultiTenant.Strategies.Contains(IdmtMultiTenantStrategy.Route))
+{
+    app.MapGroup("/{__tenant__}").MapIdmtEndpoints();
+}
+else
+{
+    app.MapGroup("").MapIdmtEndpoints();
+}
 
 await app.EnsureIdmtDatabaseAsync();
 
