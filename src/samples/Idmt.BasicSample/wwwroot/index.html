@@ -239,6 +239,28 @@
             </div>
 
             <div class="endpoint-group">
+                <h3>POST /sys/tenants (Create Tenant)</h3>
+                <div class="form-group">
+                    <input type="text" id="createTenantIdentifier" placeholder="Tenant Identifier (e.g., acme-corp)">
+                </div>
+                <div class="form-group">
+                    <input type="text" id="createTenantName" placeholder="Tenant Name (e.g., Acme Corporation)">
+                </div>
+                <div class="form-group">
+                    <input type="text" id="createTenantDisplayName" placeholder="Display Name (optional)">
+                </div>
+                <button onclick="createTenant()">Create Tenant</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>DELETE /sys/tenants/{tenantIdentifier}</h3>
+                <div class="form-group">
+                    <input type="text" id="deleteTenantIdentifier" placeholder="Tenant Identifier">
+                </div>
+                <button onclick="deleteTenant()">Delete Tenant</button>
+            </div>
+
+            <div class="endpoint-group">
                 <h3>GET /sys/users/{id}/tenants</h3>
                 <div class="form-group">
                     <input type="text" id="userTenantsId" placeholder="User ID">

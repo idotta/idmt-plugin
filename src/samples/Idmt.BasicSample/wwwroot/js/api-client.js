@@ -326,6 +326,38 @@ async function healthCheck() {
     });
 }
 
+async function createTenant() {
+    const identifier = document.getElementById('createTenantIdentifier').value;
+    const name = document.getElementById('createTenantName').value;
+    const displayName = document.getElementById('createTenantDisplayName').value;
+    
+    const body = {
+        identifier,
+        name: name || identifier
+    };
+    
+    if (displayName) {
+        body.displayName = displayName;
+    }
+    
+    await apiRequest('/sys/tenants', {
+        method: 'POST',
+        body: JSON.stringify(body)
+    });
+}
+
+async function deleteTenant() {
+    const tenantIdentifier = document.getElementById('deleteTenantIdentifier').value;
+    
+    if (!confirm(`Are you sure you want to delete tenant ${tenantIdentifier}? This action cannot be undone.`)) {
+        return;
+    }
+    
+    await apiRequest(`/sys/tenants/${encodeURIComponent(tenantIdentifier)}`, {
+        method: 'DELETE'
+    });
+}
+
 async function getUserTenants() {
     const userId = document.getElementById('userTenantsId').value;
     
