@@ -13,45 +13,49 @@
             <p class="subtitle">Interactive client for testing the Identity MultiTenant Plugin API</p>
         </header>
 
-        <!-- Configuration Panel -->
-        <section class="panel config-panel">
-            <h2>Configuration</h2>
-            <div class="info-box">
-                <strong>Note:</strong> In development mode, a test admin user is automatically seeded:<br>
-                <strong>Email:</strong> testadmin@example.com<br>
-                <strong>Password:</strong> TestAdmin123!<br>
-                <strong>Tenant:</strong> system-tenant
-            </div>
-            <div class="form-group">
-                <label for="tenantId">Tenant ID:</label>
-                <input type="text" id="tenantId" value="system-tenant" placeholder="system-tenant">
-            </div>
-            <div class="form-group">
-                <label for="authMode">Authentication Mode:</label>
-                <select id="authMode">
-                    <option value="bearer">Bearer Token</option>
-                    <option value="cookie">Cookie</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="currentToken">Current Access Token:</label>
-                <input type="text" id="currentToken" readonly placeholder="No token yet">
-            </div>
-            <div class="form-group">
-                <button onclick="clearToken()">Clear Token</button>
-            </div>
-        </section>
+        <div class="main-layout">
+            <!-- Sidebar with Configuration and Response -->
+            <aside class="sidebar">
+                <!-- Configuration Panel -->
+                <section class="panel config-panel">
+                    <h2>Configuration</h2>
+                    <div class="info-box">
+                        <strong>Note:</strong> In development mode, a test admin user is automatically seeded:<br>
+                        <strong>Email:</strong> testadmin@example.com<br>
+                        <strong>Password:</strong> TestAdmin123!<br>
+                        <strong>Tenant:</strong> system-tenant
+                    </div>
+                    <div class="form-group">
+                        <label for="tenantId">Tenant ID:</label>
+                        <input type="text" id="tenantId" value="system-tenant" placeholder="system-tenant">
+                    </div>
+                    <div class="form-group">
+                        <label for="authMode">Authentication Mode:</label>
+                        <select id="authMode">
+                            <option value="bearer">Bearer Token</option>
+                            <option value="cookie">Cookie</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="currentToken">Current Access Token:</label>
+                        <input type="text" id="currentToken" readonly placeholder="No token yet">
+                    </div>
+                    <div class="form-group">
+                        <button onclick="clearToken()">Clear Token</button>
+                    </div>
+                </section>
 
-        <!-- Response Display -->
-        <section class="panel response-panel">
-            <h2>Response</h2>
-            <div id="responseArea">
-                <p class="placeholder">Response will appear here...</p>
-            </div>
-        </section>
+                <!-- Response Display -->
+                <section class="panel response-panel">
+                    <h2>Response</h2>
+                    <div id="responseArea">
+                        <p class="placeholder">Response will appear here...</p>
+                    </div>
+                </section>
+            </aside>
 
-        <!-- Authentication Endpoints -->
-        <section class="panel">
+            <!-- Main Content with API Endpoints -->
+            <main class="content">
             <h2>Authentication (/auth)</h2>
             
             <div class="endpoint-group">
@@ -264,6 +268,8 @@
                 <button onclick="revokeTenantAccess()">Revoke Access</button>
             </div>
         </section>
+            </main>
+        </div>
     </div>
 
     <script src="/js/api-client.js"></script>

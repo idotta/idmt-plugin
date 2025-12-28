@@ -8,19 +8,45 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
-    padding: 20px;
+    padding: 0;
+    margin: 0;
     color: #333;
 }
 
 .container {
-    max-width: 1400px;
-    margin: 0 auto;
+    max-width: 100%;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.main-layout {
+    display: grid;
+    grid-template-columns: 400px 1fr;
+    gap: 0;
+    flex: 1;
+}
+
+.sidebar {
+    background: white;
+    padding: 20px;
+    overflow-y: auto;
+    max-height: calc(100vh - 120px);
+    border-right: 2px solid #e0e0e0;
+}
+
+.content {
+    padding: 20px;
+    overflow-y: auto;
+    max-height: calc(100vh - 120px);
 }
 
 header {
     text-align: center;
     color: white;
-    margin-bottom: 30px;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.1);
 }
 
 header h1 {
@@ -40,6 +66,13 @@ header h1 {
     padding: 25px;
     margin-bottom: 20px;
     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.sidebar .panel {
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+    background: transparent;
 }
 
 .panel h2 {
@@ -71,9 +104,12 @@ header h1 {
 
 .config-panel,
 .response-panel {
-    position: sticky;
-    top: 20px;
-    z-index: 10;
+    margin-bottom: 20px;
+}
+
+.config-panel {
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 20px;
 }
 
 .endpoint-group {
@@ -209,11 +245,23 @@ button:disabled {
     color: #721c24;
 }
 
-@media (max-width: 768px) {
-    .container {
-        padding: 10px;
+@media (max-width: 1024px) {
+    .main-layout {
+        grid-template-columns: 1fr;
     }
 
+    .sidebar {
+        max-height: none;
+        border-right: none;
+        border-bottom: 2px solid #e0e0e0;
+    }
+
+    .content {
+        max-height: none;
+    }
+}
+
+@media (max-width: 768px) {
     header h1 {
         font-size: 1.8rem;
     }
@@ -222,10 +270,12 @@ button:disabled {
         padding: 15px;
     }
 
-    .config-panel,
-    .response-panel {
-        position: relative;
-        top: 0;
+    .sidebar {
+        padding: 15px;
+    }
+
+    .content {
+        padding: 15px;
     }
 }
 
