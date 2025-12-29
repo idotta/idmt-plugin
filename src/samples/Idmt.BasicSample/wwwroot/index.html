@@ -269,23 +269,27 @@
             </div>
 
             <div class="endpoint-group">
-                <h3>POST /sys/users/{id}/tenants/{tenantId}</h3>
+                <h3>POST /sys/users/{id}/tenants/{tenantIdentifier}</h3>
                 <div class="form-group">
                     <input type="text" id="grantUserId" placeholder="User ID">
                 </div>
                 <div class="form-group">
-                    <input type="text" id="grantTenantId" placeholder="Tenant ID">
+                    <input type="text" id="grantTenantIdentifier" placeholder="Tenant ID">
+                </div>
+                <div class="form-group">
+                    <label for="grantExpiresAt">Expires At (optional):</label>
+                    <input type="datetime-local" id="grantExpiresAt">
                 </div>
                 <button onclick="grantTenantAccess()">Grant Access</button>
             </div>
 
             <div class="endpoint-group">
-                <h3>DELETE /sys/users/{id}/tenants/{tenantId}</h3>
+                <h3>DELETE /sys/users/{id}/tenants/{tenantIdentifier}</h3>
                 <div class="form-group">
                     <input type="text" id="revokeUserId" placeholder="User ID">
                 </div>
                 <div class="form-group">
-                    <input type="text" id="revokeTenantId" placeholder="Tenant ID">
+                    <input type="text" id="revokeTenantIdentifier" placeholder="Tenant ID">
                 </div>
                 <button onclick="revokeTenantAccess()">Revoke Access</button>
             </div>

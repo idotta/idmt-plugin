@@ -161,8 +161,8 @@ public static class CreateTenant
 
     public static RouteHandlerBuilder MapCreateTenantEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/sys/tenants", static async Task<Results<Ok<CreateTenantResponse>, Created<CreateTenantResponse>, ValidationProblem, BadRequest>> (
-            CreateTenantRequest request,
+        return endpoints.MapPost("/tenants", static async Task<Results<Ok<CreateTenantResponse>, Created<CreateTenantResponse>, ValidationProblem, BadRequest>> (
+            [FromBody] CreateTenantRequest request,
             [FromServices] ICreateTenantHandler handler,
             HttpContext context) =>
         {

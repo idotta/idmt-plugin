@@ -219,7 +219,7 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
     [Fact]
     public async Task Auth_login_via_route_strategy()
     {
-        var factory = new IdmtApiFactory(new[] { IdmtMultiTenantStrategy.Route });
+        var factory = new IdmtApiFactory([IdmtMultiTenantStrategy.Route]);
         try
         {
             var client = factory.CreateClientWithTenant();
@@ -260,7 +260,7 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
     [Fact]
     public async Task Healthz_accessible_via_route_strategy()
     {
-        var factory = new IdmtApiFactory(new[] { IdmtMultiTenantStrategy.Route });
+        var factory = new IdmtApiFactory([IdmtMultiTenantStrategy.Route]);
         try
         {
             var client = factory.CreateClientWithTenant();

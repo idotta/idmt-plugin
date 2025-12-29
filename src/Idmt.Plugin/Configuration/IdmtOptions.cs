@@ -6,6 +6,17 @@ namespace Idmt.Plugin.Configuration;
 public class IdmtOptions
 {
     /// <summary>
+    /// Gets the default IDMT configuration
+    /// </summary>
+    public static IdmtOptions Default => new()
+    {
+        MultiTenant = new MultiTenantOptions
+        {
+            Strategies = [IdmtMultiTenantStrategy.Header, IdmtMultiTenantStrategy.Claim, IdmtMultiTenantStrategy.Route]
+        }
+    };
+
+    /// <summary>
     /// Application configuration options
     /// </summary>
     public ApplicationOptions Application { get; set; } = new();
@@ -181,7 +192,7 @@ public class MultiTenantOptions
     /// <summary>
     /// Tenant resolution strategy (header, subdomain, etc.)
     /// </summary>
-    public string[] Strategies { get; set; } = [IdmtMultiTenantStrategy.Header, IdmtMultiTenantStrategy.Claim, IdmtMultiTenantStrategy.Route];
+    public string[] Strategies { get; set; } = [];
 
     /// <summary>
     /// Strategy-specific configuration

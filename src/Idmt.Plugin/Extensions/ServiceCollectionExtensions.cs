@@ -97,13 +97,37 @@ public static class ServiceCollectionExtensions
         IConfiguration configuration,
         Action<IdmtOptions>? configureOptions)
     {
+        var idmtSection = configuration.GetSection("Idmt");
+        
+        // If section doesn't exist and no custom configuration, return defaults
+        if (!idmtSection.Exists() && configureOptions == null)
+        {
+            var defaultOptions = IdmtOptions.Default;
+            services.Configure<IdmtOptions>(opts => { });
+            return defaultOptions;
+        }
+
         var idmtOptions = new IdmtOptions();
-        configuration.GetSection("Idmt").Bind(idmtOptions);
+        idmtSection.Bind(idmtOptions);
+        
+        // Apply defaults for empty arrays (which means they weren't configured)
+        if (idmtOptions.MultiTenant.Strategies.Length == 0)
+        {
+            idmtOptions.MultiTenant.Strategies = IdmtOptions.Default.MultiTenant.Strategies;
+        }
+        
         configureOptions?.Invoke(idmtOptions);
 
         services.Configure<IdmtOptions>(opts =>
         {
-            configuration.GetSection("Idmt").Bind(opts);
+            idmtSection.Bind(opts);
+            
+            // Apply defaults for empty arrays (which means they weren't configured)
+            if (opts.MultiTenant.Strategies.Length == 0)
+            {
+                opts.MultiTenant.Strategies = IdmtOptions.Default.MultiTenant.Strategies;
+            }
+            
             configureOptions?.Invoke(opts);
         });
 

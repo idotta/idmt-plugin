@@ -368,22 +368,28 @@ async function getUserTenants() {
 
 async function grantTenantAccess() {
     const userId = document.getElementById('grantUserId').value;
-    const tenantId = document.getElementById('grantTenantId').value;
+    const tenantIdentifier = document.getElementById('grantTenantIdentifier').value;
+    const expiresAt = document.getElementById('grantExpiresAt').value;
     
-    await apiRequest(`/sys/users/${encodeURIComponent(userId)}/tenants/${encodeURIComponent(tenantId)}`, {
-        method: 'POST'
+    const body = {
+        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null
+    };
+    
+    await apiRequest(`/sys/users/${encodeURIComponent(userId)}/tenants/${encodeURIComponent(tenantIdentifier)}`, {
+        method: 'POST',
+        body: JSON.stringify(body)
     });
 }
 
 async function revokeTenantAccess() {
     const userId = document.getElementById('revokeUserId').value;
-    const tenantId = document.getElementById('revokeTenantId').value;
+    const tenantIdentifier = document.getElementById('revokeTenantIdentifier').value;
     
-    if (!confirm(`Are you sure you want to revoke access for user ${userId} to tenant ${tenantId}?`)) {
+    if (!confirm(`Are you sure you want to revoke access for user ${userId} to tenant ${tenantIdentifier}?`)) {
         return;
     }
     
-    await apiRequest(`/sys/users/${encodeURIComponent(userId)}/tenants/${encodeURIComponent(tenantId)}`, {
+    await apiRequest(`/sys/users/${encodeURIComponent(userId)}/tenants/${encodeURIComponent(tenantIdentifier)}`, {
         method: 'DELETE'
     });
 }

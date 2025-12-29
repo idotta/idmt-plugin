@@ -48,7 +48,7 @@ public static class DeleteTenant
 
     public static RouteHandlerBuilder MapDeleteTenantEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapDelete("/sys/tenants/{tenantIdentifier}", async Task<Results<NoContent, NotFound, InternalServerError>> (
+        return endpoints.MapDelete("/tenants/{tenantIdentifier}", async Task<Results<NoContent, NotFound, InternalServerError>> (
             [FromRoute] string tenantIdentifier,
             [FromServices] IDeleteTenantHandler handler,
             CancellationToken cancellationToken = default) =>
