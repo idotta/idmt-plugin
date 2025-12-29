@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Finbuckle.MultiTenant.Abstractions;
 using Finbuckle.MultiTenant.EntityFrameworkCore;
 using Idmt.Plugin.Configuration;
@@ -40,9 +41,19 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment("Development");
         builder.UseSetting("SkipDbConfig", "true");
-        builder.UseSetting("Idmt:Application:ClientUrl", "http://localhost");
+        // Configure idmt
+        var configSettings = new Dictionary<string, string?>
+        {
+            { "Idmt:Application:ClientUrl", "http://localhost" },
+        };
+        // Add strategies as indexed array for proper deserialization
+        for (int i = 0; i < _strategies.Length; i++)
+        {
+            configSettings[$"Idmt:MultiTenant:Strategies:{i}"] = _strategies[i];
+        }
 
         IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(configSettings)
             .AddEnvironmentVariables()
             .Build();
         builder.UseConfiguration(configuration);
@@ -69,12 +80,6 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
             if (emailSenderDescriptor != null) services.Remove(emailSenderDescriptor);
 
             services.AddSingleton(EmailSenderMock.Object);
-
-            // Configure Strategies
-            services.PostConfigure<IdmtOptions>(options =>
-            {
-                options.MultiTenant.Strategies = _strategies;
-            });
 
             services.AddSingleton<SeedDataAsync>(new SeedDataAsync(SeedAsync));
         });

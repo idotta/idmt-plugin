@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IDMT Plugin API Test Client</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>IDMT Plugin API Test Client</h1>
+            <p class="subtitle">Interactive client for testing the Identity MultiTenant Plugin API</p>
+        </header>
+
+        <div class="main-layout">
+            <!-- Sidebar with Configuration and Response -->
+            <aside class="sidebar">
+                <!-- Configuration Panel -->
+                <section class="panel config-panel">
+                    <h2>Configuration</h2>
+                    <div class="info-box">
+                        <strong>Note:</strong> In development mode, a test admin user is automatically seeded:<br>
+                        <strong>Email:</strong> testadmin@example.com<br>
+                        <strong>Password:</strong> TestAdmin123!<br>
+                        <strong>Tenant:</strong> system-tenant
+                    </div>
+                    <div class="form-group">
+                        <label for="tenantId">Tenant ID:</label>
+                        <input type="text" id="tenantId" value="system-tenant" placeholder="system-tenant">
+                    </div>
+                    <div class="form-group">
+                        <label for="authMode">Authentication Mode:</label>
+                        <select id="authMode">
+                            <option value="bearer">Bearer Token</option>
+                            <option value="cookie">Cookie</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="currentToken">Current Access Token:</label>
+                        <input type="text" id="currentToken" readonly placeholder="No token yet">
+                    </div>
+                    <div class="form-group">
+                        <button onclick="clearToken()">Clear Token</button>
+                    </div>
+                </section>
+
+                <!-- Response Display -->
+                <section class="panel response-panel">
+                    <h2>Response</h2>
+                    <div id="responseArea">
+                        <p class="placeholder">Response will appear here...</p>
+                    </div>
+                </section>
+            </aside>
+
+            <!-- Main Content with API Endpoints -->
+            <main class="content">
+            <h2>Authentication (/auth)</h2>
+            
+            <div class="endpoint-group">
+                <h3>POST /auth/login (Cookie-based)</h3>
+                <div class="form-group">
+                    <input type="email" id="loginEmail" placeholder="Email" value="testadmin@example.com">
+                </div>
+                <div class="form-group">
+                    <input type="password" id="loginPassword" placeholder="Password" value="TestAdmin123!">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="loginRememberMe">
+                        Remember Me
+                    </label>
+                </div>
+                <button onclick="login()">Login</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>POST /auth/token (Bearer Token)</h3>
+                <div class="form-group">
+                    <input type="email" id="tokenEmail" placeholder="Email" value="testadmin@example.com">
+                </div>
+                <div class="form-group">
+                    <input type="password" id="tokenPassword" placeholder="Password" value="TestAdmin123!">
+                </div>
+                <button onclick="getToken()">Get Token</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>POST /auth/logout</h3>
+                <button onclick="logout()">Logout</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>POST /auth/refresh</h3>
+                <div class="form-group">
+                    <input type="text" id="refreshToken" placeholder="Refresh Token">
+                </div>
+                <button onclick="refreshToken()">Refresh Token</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>POST /auth/forgotPassword</h3>
+                <div class="form-group">
+                    <input type="email" id="forgotEmail" placeholder="Email">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="forgotUseApiLinks">
+                        Use API Links
+                    </label>
+                </div>
+                <button onclick="forgotPassword()">Forgot Password</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>POST /auth/resetPassword</h3>
+                <div class="form-group">
+                    <input type="email" id="resetEmail" placeholder="Email">
+                </div>
+                <div class="form-group">
+                    <input type="text" id="resetToken" placeholder="Reset Token">
+                </div>
+                <div class="form-group">
+                    <input type="password" id="resetNewPassword" placeholder="New Password">
+                </div>
+                <button onclick="resetPassword()">Reset Password</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>GET /auth/confirmEmail</h3>
+                <div class="form-group">
+                    <input type="email" id="confirmEmail" placeholder="Email">
+                </div>
+                <div class="form-group">
+                    <input type="text" id="confirmToken" placeholder="Confirmation Token">
+                </div>
+                <button onclick="confirmEmail()">Confirm Email</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>POST /auth/resendConfirmationEmail</h3>
+                <div class="form-group">
+                    <input type="email" id="resendEmail" placeholder="Email">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="resendUseApiLinks">
+                        Use API Links
+                    </label>
+                </div>
+                <button onclick="resendConfirmationEmail()">Resend Confirmation</button>
+            </div>
+        </section>
+
+        <!-- User Management Endpoints -->
+        <section class="panel">
+            <h2>User Management (/manage)</h2>
+            
+            <div class="endpoint-group">
+                <h3>GET /manage/info</h3>
+                <button onclick="getManageInfo()">Get User Info</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>PUT /manage/info</h3>
+                <div class="form-group">
+                    <input type="text" id="updateUsername" placeholder="Username">
+                </div>
+                <div class="form-group">
+                    <input type="email" id="updateEmail" placeholder="Email">
+                </div>
+                <div class="form-group">
+                    <input type="text" id="updatePhoneNumber" placeholder="Phone Number">
+                </div>
+                <button onclick="updateManageInfo()">Update Info</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>POST /manage/users (Register User)</h3>
+                <div class="form-group">
+                    <input type="email" id="registerEmail" placeholder="Email">
+                </div>
+                <div class="form-group">
+                    <input type="text" id="registerUsername" placeholder="Username">
+                </div>
+                <div class="form-group">
+                    <select id="registerRole">
+                        <option value="TenantAdmin">TenantAdmin</option>
+                        <option value="TenantUser">TenantUser</option>
+                        <option value="SysAdmin">SysAdmin</option>
+                        <option value="SysSupport">SysSupport</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="registerUseApiLinks">
+                        Use API Links
+                    </label>
+                </div>
+                <button onclick="registerUser()">Register User</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>PUT /manage/users/{id}</h3>
+                <div class="form-group">
+                    <input type="text" id="updateUserId" placeholder="User ID">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="updateUserActive">
+                        Active
+                    </label>
+                </div>
+                <button onclick="updateUser()">Update User</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>DELETE /manage/users/{id}</h3>
+                <div class="form-group">
+                    <input type="text" id="deleteUserId" placeholder="User ID">
+                </div>
+                <button onclick="deleteUser()">Delete User</button>
+            </div>
+        </section>
+
+        <!-- System Endpoints -->
+        <section class="panel">
+            <h2>System (/sys)</h2>
+            
+            <div class="endpoint-group">
+                <h3>GET /sys/info</h3>
+                <button onclick="getSystemInfo()">Get System Info</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>GET /healthz</h3>
+                <button onclick="healthCheck()">Health Check</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>POST /sys/tenants (Create Tenant)</h3>
+                <div class="form-group">
+                    <input type="text" id="createTenantIdentifier" placeholder="Tenant Identifier (e.g., acme-corp)">
+                </div>
+                <div class="form-group">
+                    <input type="text" id="createTenantName" placeholder="Tenant Name (e.g., Acme Corporation)">
+                </div>
+                <div class="form-group">
+                    <input type="text" id="createTenantDisplayName" placeholder="Display Name (optional)">
+                </div>
+                <button onclick="createTenant()">Create Tenant</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>DELETE /sys/tenants/{tenantIdentifier}</h3>
+                <div class="form-group">
+                    <input type="text" id="deleteTenantIdentifier" placeholder="Tenant Identifier">
+                </div>
+                <button onclick="deleteTenant()">Delete Tenant</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>GET /sys/users/{id}/tenants</h3>
+                <div class="form-group">
+                    <input type="text" id="userTenantsId" placeholder="User ID">
+                </div>
+                <button onclick="getUserTenants()">Get User Tenants</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>POST /sys/users/{id}/tenants/{tenantIdentifier}</h3>
+                <div class="form-group">
+                    <input type="text" id="grantUserId" placeholder="User ID">
+                </div>
+                <div class="form-group">
+                    <input type="text" id="grantTenantIdentifier" placeholder="Tenant ID">
+                </div>
+                <div class="form-group">
+                    <label for="grantExpiresAt">Expires At (optional):</label>
+                    <input type="datetime-local" id="grantExpiresAt">
+                </div>
+                <button onclick="grantTenantAccess()">Grant Access</button>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>DELETE /sys/users/{id}/tenants/{tenantIdentifier}</h3>
+                <div class="form-group">
+                    <input type="text" id="revokeUserId" placeholder="User ID">
+                </div>
+                <div class="form-group">
+                    <input type="text" id="revokeTenantIdentifier" placeholder="Tenant ID">
+                </div>
+                <button onclick="revokeTenantAccess()">Revoke Access</button>
+            </div>
+        </section>
+            </main>
+        </div>
+    </div>
+
+    <script src="/js/api-client.js"></script>
+</body>
+</html>

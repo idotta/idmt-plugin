@@ -18,24 +18,34 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi().ExcludeFromMultiTenantResolution();
 }
 
+// Enable static files and default files
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseIdmt();
 
 var options = app.Services.GetRequiredService<IOptions<IdmtOptions>>().Value;
 
 if (options.MultiTenant.Strategies.Contains(IdmtMultiTenantStrategy.Route))
 {
-    app.MapGroup("/{__tenant__}")
-        .MapIdmtEndpoints();
+    app.MapGroup("/{__tenant__}").MapIdmtEndpoints();
 }
 else
 {
-    app.MapIdmtEndpoints();
+    app.MapGroup("").MapIdmtEndpoints();
 }
 
 await app.EnsureIdmtDatabaseAsync();
 
 var seedAction = app.Services.GetService<SeedDataAsync>();
 await app.SeedIdmtDataAsync(seedAction);
+
+// Seed test user in development
+if (app.Environment.IsDevelopment())
+{
+    using var scope = app.Services.CreateScope();
+    await Idmt.BasicSample.SeedTestUser.SeedAsync(scope.ServiceProvider);
+}
 
 app.Run();
 
