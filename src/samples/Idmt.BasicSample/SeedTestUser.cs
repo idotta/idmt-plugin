@@ -1,9 +1,7 @@
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
-using Idmt.Plugin.Persistence;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 
 namespace Idmt.BasicSample;
 
@@ -29,7 +27,6 @@ public static class SeedTestUser
 
         var userManager = services.GetRequiredService<UserManager<IdmtUser>>();
         var roleManager = services.GetRequiredService<RoleManager<IdmtRole>>();
-        var dbContext = services.GetRequiredService<IdmtDbContext>();
 
         // Ensure roles exist
         var roles = new[] { IdmtDefaultRoleTypes.SysAdmin, IdmtDefaultRoleTypes.TenantAdmin };
@@ -62,20 +59,6 @@ public static class SeedTestUser
         if (result.Succeeded)
         {
             await userManager.AddToRoleAsync(user, IdmtDefaultRoleTypes.SysAdmin);
-
-            // Add tenant access
-            var hasAccess = await dbContext.TenantAccess.AnyAsync(ta => ta.UserId == user.Id && ta.TenantId == tenant.Id);
-            if (!hasAccess)
-            {
-                dbContext.TenantAccess.Add(new TenantAccess
-                {
-                    UserId = user.Id,
-                    TenantId = tenant.Id,
-                    IsActive = true,
-                    ExpiresAt = null
-                });
-                await dbContext.SaveChangesAsync();
-            }
         }
     }
 }
