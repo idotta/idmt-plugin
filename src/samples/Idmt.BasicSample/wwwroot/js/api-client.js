@@ -253,14 +253,16 @@ async function getManageInfo() {
 }
 
 async function updateManageInfo() {
-    const username = document.getElementById('updateUsername').value;
-    const email = document.getElementById('updateEmail').value;
-    const phoneNumber = document.getElementById('updatePhoneNumber').value;
+    const newUsername = document.getElementById('updateUsername').value;
+    const newEmail = document.getElementById('updateEmail').value;
+    const oldPassword = document.getElementById('updateOldPassword').value;
+    const newPassword = document.getElementById('updateNewPassword').value;
     
     const body = {};
-    if (username) body.username = username;
-    if (email) body.email = email;
-    if (phoneNumber) body.phoneNumber = phoneNumber;
+    if (newUsername) body.newUsername = newUsername;
+    if (newEmail) body.newEmail = newEmail;
+    if (oldPassword) body.oldPassword = oldPassword;
+    if (newPassword) body.newPassword = newPassword;
     
     await apiRequest('/manage/info', {
         method: 'PUT',

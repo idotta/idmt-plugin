@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
-
+builder.Services.AddSingleton<SeedDataAsync>(Idmt.BasicSample.SeedTestUser.SeedAsync);
 builder.Services.AddIdmt(builder.Configuration, db => db.UseSqlite("Data Source=Idmt.BasicSample.db"));
 
 var app = builder.Build();
@@ -35,17 +35,17 @@ else
     app.MapGroup("").MapIdmtEndpoints();
 }
 
-await app.EnsureIdmtDatabaseAsync();
+await app.EnsureIdmtDatabaseAsync(autoMigrate: false);
 
 var seedAction = app.Services.GetService<SeedDataAsync>();
 await app.SeedIdmtDataAsync(seedAction);
 
 // Seed test user in development
-if (app.Environment.IsDevelopment())
-{
-    using var scope = app.Services.CreateScope();
-    await Idmt.BasicSample.SeedTestUser.SeedAsync(scope.ServiceProvider);
-}
+// if (app.Environment.IsDevelopment())
+// {
+//     using var scope = app.Services.CreateScope();
+//     await Idmt.BasicSample.SeedTestUser.SeedAsync(scope.ServiceProvider);
+// }
 
 app.Run();
 

@@ -165,13 +165,16 @@
             <div class="endpoint-group">
                 <h3>PUT /manage/info</h3>
                 <div class="form-group">
-                    <input type="text" id="updateUsername" placeholder="Username">
+                    <input type="text" id="updateUsername" placeholder="New Username (optional)">
                 </div>
                 <div class="form-group">
-                    <input type="email" id="updateEmail" placeholder="Email">
+                    <input type="email" id="updateEmail" placeholder="New Email (optional)">
                 </div>
                 <div class="form-group">
-                    <input type="text" id="updatePhoneNumber" placeholder="Phone Number">
+                    <input type="password" id="updateOldPassword" placeholder="Old Password (required for password change)">
+                </div>
+                <div class="form-group">
+                    <input type="password" id="updateNewPassword" placeholder="New Password (optional)">
                 </div>
                 <button onclick="updateManageInfo()">Update Info</button>
             </div>

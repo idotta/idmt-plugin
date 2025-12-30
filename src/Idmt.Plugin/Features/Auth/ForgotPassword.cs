@@ -52,8 +52,10 @@ public static class ForgotPassword
                     ? linkGenerator.GeneratePasswordResetApiLink(user.Email!, token)
                     : linkGenerator.GeneratePasswordResetFormLink(user.Email!, token);
 
+                System.Diagnostics.Debug.WriteLine($"Password reset token for {user.Email}: {token}");
+
                 // Send email with reset code
-                await emailSender.SendPasswordResetCodeAsync(user, request.Email, HtmlEncoder.Default.Encode(resetUrl));
+                await emailSender.SendPasswordResetCodeAsync(user, request.Email, resetUrl);
 
                 return Result.Success(new ForgotPasswordResponse(token, resetUrl), StatusCodes.Status200OK);
             }
