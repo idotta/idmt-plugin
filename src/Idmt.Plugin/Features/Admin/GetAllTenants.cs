@@ -25,7 +25,10 @@ public static class GetAllTenants
             try
             {
                 var tenants = await tenantStore.GetAllAsync();
-                var res = tenants.Where(t => t is not null).Select(t => new TenantInfoResponse(
+                var res = tenants
+                .Where(t => t is not null && !string.Equals(t.Identifier, MultiTenantOptions.DefaultTenantIdentifier, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(t => t.Name)
+                .Select(t => new TenantInfoResponse(
                     t!.Id ?? string.Empty,
                     t.Identifier ?? string.Empty,
                     t.Name ?? string.Empty,
