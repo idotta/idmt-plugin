@@ -148,7 +148,7 @@ public static class CreateTenant
         {
             errors["Identifier"] = ["Identifier is required"];
         }
-        if (!Validators.IsValidTenantIdentifier(request.Identifier))
+        else if (!Validators.IsValidTenantIdentifier(request.Identifier))
         {
             errors["Identifier"] = ["Identifier can only contain lowercase alphanumeric characters, dashes, and underscores"];
         }

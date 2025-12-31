@@ -16,7 +16,8 @@ public sealed record TenantInfoResponse(
     string Identifier,
     string Name,
     string DisplayName,
-    string Plan
+    string Plan,
+    bool IsActive
 );
 
 public static class GetUserTenants
@@ -48,7 +49,8 @@ public static class GetUserTenants
                     t.Identifier ?? string.Empty,
                     t.Name ?? string.Empty,
                     t.DisplayName ?? string.Empty,
-                    t.Plan ?? string.Empty)).ToArray();
+                    t.Plan ?? string.Empty,
+                    t.IsActive)).ToArray();
 
                 return Result.Success(res);
             }

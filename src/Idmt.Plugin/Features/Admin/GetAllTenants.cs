@@ -30,7 +30,8 @@ public static class GetAllTenants
                     t.Identifier ?? string.Empty,
                     t.Name ?? string.Empty,
                     t.DisplayName ?? string.Empty,
-                    t.Plan ?? string.Empty)).ToArray();
+                    t.Plan ?? string.Empty,
+                    t.IsActive)).ToArray();
 
                 return Result.Success(res);
             }
