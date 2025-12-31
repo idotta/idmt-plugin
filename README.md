@@ -134,17 +134,17 @@ Endpoints for managing user profiles and accounts.
 | `PUT` | `/manage/users/{id}` | `RequireTenantManager` | Activate/Deactivate user |
 | `DELETE` | `/manage/users/{id}` | `RequireTenantManager` | Delete a user |
 
-### System & Tenant Access (`/sys`)
+### System & Tenant Access (`/admin`)
 
 System-level endpoints for managing tenant access.
-*   **Authorization**: `RequireSysUser` (SysAdmin or SysSupport roles).
+*   **Authorization**: `RequireAdminUser` (SysAdmin or SysSupport roles).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/sys/info` | Get system version and environment info |
-| `GET` | `/sys/users/{id}/tenants` | List tenants accessible by a user |
-| `POST` | `/sys/users/{id}/tenants/{tenantId}` | Grant user access to a tenant |
-| `DELETE` | `/sys/users/{id}/tenants/{tenantId}` | Revoke user access to a tenant |
+| `GET` | `/admin/info` | Get system version and environment info |
+| `GET` | `/admin/users/{id}/tenants` | List tenants accessible by a user |
+| `POST` | `/admin/users/{id}/tenants/{tenantId}` | Grant user access to a tenant |
+| `DELETE` | `/admin/users/{id}/tenants/{tenantId}` | Revoke user access to a tenant |
 
 ## Authorization Policies
 

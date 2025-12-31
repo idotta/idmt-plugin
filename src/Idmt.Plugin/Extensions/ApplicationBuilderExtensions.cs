@@ -2,6 +2,7 @@ using System.Reflection;
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Features;
+using Idmt.Plugin.Features.Admin;
 using Idmt.Plugin.Middleware;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
@@ -76,7 +77,7 @@ public static class ApplicationBuilderExtensions
     {
         endpoints.MapAuthEndpoints();
         endpoints.MapAuthManageEndpoints();
-        endpoints.MapSysEndpoints();
+        endpoints.MapAdminEndpoints();
         endpoints.MapHealthChecks("/healthz").RequireAuthorization(AuthOptions.RequireSysUserPolicy);
         return endpoints;
     }
@@ -162,8 +163,8 @@ public static class ApplicationBuilderExtensions
     private static async Task SeedDefaultDataAsync(IServiceProvider services)
     {
         var options = services.GetRequiredService<IOptions<IdmtOptions>>();
-        var createTenantHandler = services.GetRequiredService<Features.Sys.CreateTenant.ICreateTenantHandler>();
-        await createTenantHandler.HandleAsync(new Features.Sys.CreateTenant.CreateTenantRequest(
+        var createTenantHandler = services.GetRequiredService<CreateTenant.ICreateTenantHandler>();
+        await createTenantHandler.HandleAsync(new CreateTenant.CreateTenantRequest(
             MultiTenantOptions.DefaultTenantIdentifier,
             MultiTenantOptions.DefaultTenantIdentifier,
             options.Value.MultiTenant.DefaultTenantDisplayName));

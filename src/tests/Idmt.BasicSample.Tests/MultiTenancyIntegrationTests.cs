@@ -3,9 +3,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Features.Admin;
 using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Features.Manage;
-using Idmt.Plugin.Features.Sys;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
@@ -201,13 +201,13 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
         var tokens = await loginA.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
 
         clientA.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
-        var infoResponseA = await clientA.GetAsync("/sys/info");
+        var infoResponseA = await clientA.GetAsync("/admin/info");
         var infoA = await infoResponseA.Content.ReadFromJsonAsync<GetSystemInfo.SystemInfoResponse>();
 
         // Try to access Tenant B with Tenant A token
         var clientB = Factory.CreateClientWithTenant(TenantB);
         clientB.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
-        var infoResponseB = await clientB.GetAsync("/sys/info");
+        var infoResponseB = await clientB.GetAsync("/admin/info");
 
         Assert.Contains(infoResponseB.StatusCode, new[] { HttpStatusCode.NotFound, HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
     }

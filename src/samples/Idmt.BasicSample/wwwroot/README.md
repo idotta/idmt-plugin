@@ -117,15 +117,15 @@ The application supports multiple tenant resolution strategies:
 | `PUT /manage/users/{id}` | Update user (activate/deactivate) | Yes | RequireTenantManager |
 | `DELETE /manage/users/{id}` | Delete user | Yes | RequireTenantManager |
 
-### System (`/sys`)
+### System (`/admin`)
 
 | Endpoint | Description | Auth Required | Policy |
 |----------|-------------|---------------|--------|
-| `GET /sys/info` | Get system information | Yes | Authenticated |
+| `GET /admin/info` | Get system information | Yes | Authenticated |
 | `GET /healthz` | Health check | Yes | Authenticated |
-| `GET /sys/users/{id}/tenants` | List user's tenants | Yes | RequireSysUser |
-| `POST /sys/users/{id}/tenants/{tenantId}` | Grant tenant access | Yes | RequireSysUser |
-| `DELETE /sys/users/{id}/tenants/{tenantId}` | Revoke tenant access | Yes | RequireSysUser |
+| `GET /admin/users/{id}/tenants` | List user's tenants | Yes | RequireAdminUser |
+| `POST /admin/users/{id}/tenants/{tenantId}` | Grant tenant access | Yes | RequireAdminUser |
+| `DELETE /admin/users/{id}/tenants/{tenantId}` | Revoke tenant access | Yes | RequireAdminUser |
 
 ## Typical Testing Workflow
 

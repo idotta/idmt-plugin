@@ -23,6 +23,9 @@ public static partial class Validators
     [GeneratedRegex(@"[^a-zA-Z0-9]", RegexOptions.Compiled)]
     public static partial Regex OneNonAlphaRegex();
 
+    [GeneratedRegex("^[a-z0-9-_]+$", RegexOptions.Compiled)]
+    public static partial Regex ValidIdentifier();
+
     /// <summary>
     /// Validates an email address.
     /// </summary>
@@ -116,5 +119,15 @@ public static partial class Validators
     public static bool IsValidUsername(string? username)
     {
         return !string.IsNullOrWhiteSpace(username) && username.Length >= 3;
+    }
+
+    /// <summary>
+    /// Validates a tenant identifier (lowercase alphanumeric, dashes, underscores).
+    /// </summary>
+    /// <param name="identifier">The tenant identifier to validate.</param>
+    /// <returns>True if the identifier is valid, false otherwise.</returns>
+    public static bool IsValidTenantIdentifier(string? identifier)
+    {
+        return !string.IsNullOrWhiteSpace(identifier) && ValidIdentifier().IsMatch(identifier);
     }
 }

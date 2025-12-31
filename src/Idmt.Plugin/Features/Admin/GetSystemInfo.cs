@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 
-namespace Idmt.Plugin.Features.Sys;
+namespace Idmt.Plugin.Features.Admin;
 
 public static class GetSystemInfo
 {

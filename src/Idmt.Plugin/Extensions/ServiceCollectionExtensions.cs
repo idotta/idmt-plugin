@@ -2,6 +2,7 @@ using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Finbuckle.MultiTenant.EntityFrameworkCore.Extensions;
 using Finbuckle.MultiTenant.Extensions;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Features.Admin;
 using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Features.Manage;
 using Idmt.Plugin.Middleware;
@@ -401,12 +402,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GetUserInfo.IGetUserInfoHandler, GetUserInfo.GetUserInfoHandler>();
         services.AddScoped<UpdateUserInfo.IUpdateUserInfoHandler, UpdateUserInfo.UpdateUserInfoHandler>();
 
-        // Sys
-        services.AddScoped<Features.Sys.CreateTenant.ICreateTenantHandler, Features.Sys.CreateTenant.CreateTenantHandler>();
-        services.AddScoped<Features.Sys.DeleteTenant.IDeleteTenantHandler, Features.Sys.DeleteTenant.DeleteTenantHandler>();
-        services.AddScoped<Features.Sys.GetUserTenants.IGetUserTenantsHandler, Features.Sys.GetUserTenants.GetUserTenantsHandler>();
-        services.AddScoped<Features.Sys.GrantTenantAccess.IGrantTenantAccessHandler, Features.Sys.GrantTenantAccess.GrantTenantAccessHandler>();
-        services.AddScoped<Features.Sys.RevokeTenantAccess.IRevokeTenantAccessHandler, Features.Sys.RevokeTenantAccess.RevokeTenantAccessHandler>();
+        // Admin
+        services.AddScoped<CreateTenant.ICreateTenantHandler, CreateTenant.CreateTenantHandler>();
+        services.AddScoped<DeleteTenant.IDeleteTenantHandler, DeleteTenant.DeleteTenantHandler>();
+        services.AddScoped<GetUserTenants.IGetUserTenantsHandler, GetUserTenants.GetUserTenantsHandler>();
+        services.AddScoped<GrantTenantAccess.IGrantTenantAccessHandler, GrantTenantAccess.GrantTenantAccessHandler>();
+        services.AddScoped<RevokeTenantAccess.IRevokeTenantAccessHandler, RevokeTenantAccess.RevokeTenantAccessHandler>();
+        services.AddScoped<GetAllTenants.IGetAllTenantsHandler, GetAllTenants.GetAllTenantsHandler>();
 
         // Health
         services.AddHealthChecks()

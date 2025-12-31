@@ -9,18 +9,19 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace Idmt.Plugin.Features.Sys;
+namespace Idmt.Plugin.Features.Admin;
+
+public sealed record TenantInfoResponse(
+    string Id,
+    string Identifier,
+    string Name,
+    string DisplayName,
+    string Plan,
+    bool IsActive
+);
 
 public static class GetUserTenants
 {
-    public sealed record TenantInfoResponse(
-        string Id,
-        string Identifier,
-        string Name,
-        string DisplayName,
-        string Plan
-    );
-
     public interface IGetUserTenantsHandler
     {
         Task<Result<TenantInfoResponse[]>> HandleAsync(Guid userId, CancellationToken cancellationToken = default);
@@ -48,7 +49,8 @@ public static class GetUserTenants
                     t.Identifier ?? string.Empty,
                     t.Name ?? string.Empty,
                     t.DisplayName ?? string.Empty,
-                    t.Plan ?? string.Empty)).ToArray();
+                    t.Plan ?? string.Empty,
+                    t.IsActive)).ToArray();
 
                 return Result.Success(res);
             }
