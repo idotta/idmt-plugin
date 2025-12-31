@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using Idmt.Plugin.Features.Admin;
 using Idmt.Plugin.Features.Manage;
-using Idmt.Plugin.Features.Sys;
 using Idmt.Plugin.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -9,11 +9,11 @@ namespace Idmt.BasicSample.Tests;
 
 /// <summary>
 /// Integration tests for System Management endpoints.
-/// Covers: /sys/tenants, /sys/users/{userId}/tenants, /sys/info, /healthz
+/// Covers: /admin/tenants, /admin/users/{userId}/tenants, /admin/info, /healthz
 /// </summary>
-public class SysIntegrationTests : BaseIntegrationTest
+public class AdminIntegrationTests : BaseIntegrationTest
 {
-    public SysIntegrationTests(IdmtApiFactory factory) : base(factory) { }
+    public AdminIntegrationTests(IdmtApiFactory factory) : base(factory) { }
 
     #region Health Check Tests
 
@@ -42,7 +42,7 @@ public class SysIntegrationTests : BaseIntegrationTest
     {
         var client = await CreateAuthenticatedClientAsync();
 
-        var response = await client.GetAsync("/sys/info");
+        var response = await client.GetAsync("/admin/info");
         await response.AssertSuccess();
 
         var sysInfo = await response.Content.ReadFromJsonAsync<GetSystemInfo.SystemInfoResponse>();
@@ -58,7 +58,7 @@ public class SysIntegrationTests : BaseIntegrationTest
     {
         var client = await CreateAuthenticatedClientAsync();
 
-        var response = await client.GetAsync("/sys/info");
+        var response = await client.GetAsync("/admin/info");
         await response.AssertSuccess();
 
         var sysInfo = await response.Content.ReadFromJsonAsync<GetSystemInfo.SystemInfoResponse>();
@@ -74,7 +74,7 @@ public class SysIntegrationTests : BaseIntegrationTest
     {
         var client = Factory.CreateClientWithTenant();
 
-        var response = await client.GetAsync("/sys/info");
+        var response = await client.GetAsync("/admin/info");
         Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.Found });
     }
 
@@ -170,7 +170,7 @@ public class SysIntegrationTests : BaseIntegrationTest
 
         // Grant access
         var grantResponse = await sysClient.PostAsJsonAsync(
-            $"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
+            $"/admin/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
             new { ExpiresAt = (DateTime?)null });
 
         await grantResponse.AssertSuccess();
@@ -193,11 +193,11 @@ public class SysIntegrationTests : BaseIntegrationTest
 
         // Grant access
         await sysClient.PostAsJsonAsync(
-            $"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
+            $"/admin/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
             new { ExpiresAt = (DateTime?)null });
 
         // Verify user can access tenant
-        var tenants = await sysClient.GetFromJsonAsync<GetUserTenants.TenantInfoResponse[]>($"/sys/users/{userId}/tenants");
+        var tenants = await sysClient.GetFromJsonAsync<TenantInfoResponse[]>($"/admin/users/{userId}/tenants");
         Assert.NotNull(tenants);
         Assert.Contains(tenants!, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
     }
@@ -208,7 +208,7 @@ public class SysIntegrationTests : BaseIntegrationTest
         var sysClient = await CreateAuthenticatedClientAsync();
 
         var response = await sysClient.PostAsJsonAsync(
-            $"/sys/users/{Guid.NewGuid()}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
+            $"/admin/users/{Guid.NewGuid()}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
             new { ExpiresAt = (DateTime?)null });
 
         Assert.False(response.IsSuccessStatusCode);
@@ -231,7 +231,7 @@ public class SysIntegrationTests : BaseIntegrationTest
 
         // Try to grant access to nonexistent tenant
         var response = await sysClient.PostAsJsonAsync(
-            $"/sys/users/{userId}/tenants/nonexistent-tenant",
+            $"/admin/users/{userId}/tenants/nonexistent-tenant",
             new { ExpiresAt = (DateTime?)null });
 
         Assert.False(response.IsSuccessStatusCode);
@@ -255,7 +255,7 @@ public class SysIntegrationTests : BaseIntegrationTest
         // Grant access with expiration
         var expiresAt = DateTime.UtcNow.AddDays(1);
         var grantResponse = await sysClient.PostAsJsonAsync(
-            $"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
+            $"/admin/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
             new { ExpiresAt = expiresAt });
 
         await grantResponse.AssertSuccess();
@@ -267,7 +267,7 @@ public class SysIntegrationTests : BaseIntegrationTest
         var client = Factory.CreateClientWithTenant();
 
         var response = await client.PostAsJsonAsync(
-            $"/sys/users/{Guid.NewGuid()}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
+            $"/admin/users/{Guid.NewGuid()}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
             new { ExpiresAt = (DateTime?)null });
 
         Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
@@ -294,11 +294,11 @@ public class SysIntegrationTests : BaseIntegrationTest
 
         // Grant access
         await sysClient.PostAsJsonAsync(
-            $"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
+            $"/admin/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
             new { ExpiresAt = (DateTime?)null });
 
         // Revoke access
-        var revokeResponse = await sysClient.DeleteAsync($"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
+        var revokeResponse = await sysClient.DeleteAsync($"/admin/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
         await revokeResponse.AssertSuccess();
     }
 
@@ -319,18 +319,18 @@ public class SysIntegrationTests : BaseIntegrationTest
 
         // Grant access
         await sysClient.PostAsJsonAsync(
-            $"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
+            $"/admin/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
             new { ExpiresAt = (DateTime?)null });
 
         // Verify access exists
-        var tenantsBeforeRevoke = await sysClient.GetFromJsonAsync<GetUserTenants.TenantInfoResponse[]>($"/sys/users/{userId}/tenants");
+        var tenantsBeforeRevoke = await sysClient.GetFromJsonAsync<TenantInfoResponse[]>($"/admin/users/{userId}/tenants");
         Assert.Contains(tenantsBeforeRevoke!, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
 
         // Revoke access
-        await sysClient.DeleteAsync($"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
+        await sysClient.DeleteAsync($"/admin/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
 
         // Verify access is removed
-        var tenantsAfterRevoke = await sysClient.GetFromJsonAsync<GetUserTenants.TenantInfoResponse[]>($"/sys/users/{userId}/tenants");
+        var tenantsAfterRevoke = await sysClient.GetFromJsonAsync<TenantInfoResponse[]>($"/admin/users/{userId}/tenants");
         Assert.DoesNotContain(tenantsAfterRevoke!, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
     }
 
@@ -339,7 +339,7 @@ public class SysIntegrationTests : BaseIntegrationTest
     {
         var sysClient = await CreateAuthenticatedClientAsync();
 
-        var response = await sysClient.DeleteAsync($"/sys/users/{Guid.NewGuid()}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
+        var response = await sysClient.DeleteAsync($"/admin/users/{Guid.NewGuid()}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
         Assert.False(response.IsSuccessStatusCode);
     }
 
@@ -348,7 +348,7 @@ public class SysIntegrationTests : BaseIntegrationTest
     {
         var client = Factory.CreateClientWithTenant();
 
-        var response = await client.DeleteAsync($"/sys/users/{Guid.NewGuid()}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
+        var response = await client.DeleteAsync($"/admin/users/{Guid.NewGuid()}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
         Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
     }
 
@@ -373,14 +373,14 @@ public class SysIntegrationTests : BaseIntegrationTest
 
         // Grant access to a tenant
         await sysClient.PostAsJsonAsync(
-            $"/sys/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
+            $"/admin/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
             new { ExpiresAt = (DateTime?)null });
 
         // Get user tenants
-        var response = await sysClient.GetAsync($"/sys/users/{userId}/tenants");
+        var response = await sysClient.GetAsync($"/admin/users/{userId}/tenants");
         await response.AssertSuccess();
 
-        var tenants = await response.Content.ReadFromJsonAsync<GetUserTenants.TenantInfoResponse[]>();
+        var tenants = await response.Content.ReadFromJsonAsync<TenantInfoResponse[]>();
         Assert.NotNull(tenants);
         Assert.NotEmpty(tenants);
         Assert.Contains(tenants!, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
@@ -402,10 +402,10 @@ public class SysIntegrationTests : BaseIntegrationTest
         var userId = Guid.Parse((await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>())!.UserId!);
 
         // Get user tenants
-        var response = await sysClient.GetAsync($"/sys/users/{userId}/tenants");
+        var response = await sysClient.GetAsync($"/admin/users/{userId}/tenants");
         await response.AssertSuccess();
 
-        var tenants = await response.Content.ReadFromJsonAsync<GetUserTenants.TenantInfoResponse[]>();
+        var tenants = await response.Content.ReadFromJsonAsync<TenantInfoResponse[]>();
         Assert.NotNull(tenants);
         Assert.Empty(tenants!);
     }
@@ -415,7 +415,7 @@ public class SysIntegrationTests : BaseIntegrationTest
     {
         var sysClient = await CreateAuthenticatedClientAsync();
 
-        var response = await sysClient.GetAsync($"/sys/users/{Guid.NewGuid()}/tenants");
+        var response = await sysClient.GetAsync($"/admin/users/{Guid.NewGuid()}/tenants");
         // May return 200 with empty or 404
         Assert.True(response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NotFound);
     }
@@ -425,7 +425,7 @@ public class SysIntegrationTests : BaseIntegrationTest
     {
         var client = Factory.CreateClientWithTenant();
 
-        var response = await client.GetAsync($"/sys/users/{Guid.NewGuid()}/tenants");
+        var response = await client.GetAsync($"/admin/users/{Guid.NewGuid()}/tenants");
         Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
     }
 

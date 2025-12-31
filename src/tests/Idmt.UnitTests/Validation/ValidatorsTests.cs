@@ -146,4 +146,19 @@ public class ValidatorsTests
         var result = Validators.IsValidEmail(input) || Validators.IsValidUsername(input);
         Assert.Equal(expected, result);
     }
+
+    [Theory]
+    [InlineData("tenant-1", true)]
+    [InlineData("tenant_1", true)]
+    [InlineData("tenant1", true)]
+    [InlineData("Tenant1", false)] // Contains uppercase letters
+    [InlineData("tenant 1", false)] // Contains space
+    [InlineData("tenant@1", false)] // Contains invalid character
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void IsValidTenantIdentifier_ValidatesCorrectly(string? identifier, bool expected)
+    {
+        var result = Validators.IsValidTenantIdentifier(identifier);
+        Assert.Equal(expected, result);
+    }
 }

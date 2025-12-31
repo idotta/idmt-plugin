@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
 
-namespace Idmt.Plugin.Features.Sys;
+namespace Idmt.Plugin.Features.Admin;
 
 public static class DeleteTenant
 {
@@ -25,6 +25,10 @@ public static class DeleteTenant
         {
             try
             {
+                if (string.Compare(tenantIdentifier, MultiTenantOptions.DefaultTenantIdentifier, StringComparison.OrdinalIgnoreCase) == 0)
+                {
+                    return Result.Failure("Cannot delete the default tenant", StatusCodes.Status403Forbidden);
+                }
                 var tenant = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
                 if (tenant is null)
                 {
@@ -48,7 +52,7 @@ public static class DeleteTenant
 
     public static RouteHandlerBuilder MapDeleteTenantEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapDelete("/tenants/{tenantIdentifier}", async Task<Results<NoContent, NotFound, InternalServerError>> (
+        return endpoints.MapDelete("/tenants/{tenantIdentifier}", async Task<Results<NoContent, NotFound, InternalServerError, ForbidHttpResult>> (
             [FromRoute] string tenantIdentifier,
             [FromServices] IDeleteTenantHandler handler,
             CancellationToken cancellationToken = default) =>
@@ -58,13 +62,14 @@ public static class DeleteTenant
             {
                 return result.StatusCode switch
                 {
+                    StatusCodes.Status403Forbidden => TypedResults.Forbid(),
                     StatusCodes.Status404NotFound => TypedResults.NotFound(),
                     _ => TypedResults.InternalServerError(),
                 };
             }
             return TypedResults.NoContent();
         })
-        .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
+        .RequireAuthorization(AuthOptions.RequireSysAdminPolicy)
         .WithSummary("Delete tenant")
         .WithDescription("Soft deletes a tenant by its identifier");
     }

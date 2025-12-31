@@ -317,7 +317,7 @@ async function deleteUser() {
 // ============================================
 
 async function getSystemInfo() {
-    await apiRequest('/sys/info', {
+    await apiRequest('/admin/info', {
         method: 'GET'
     });
 }
@@ -342,7 +342,7 @@ async function createTenant() {
         body.displayName = displayName;
     }
     
-    await apiRequest('/sys/tenants', {
+    await apiRequest('/admin/tenants', {
         method: 'POST',
         body: JSON.stringify(body)
     });
@@ -355,7 +355,7 @@ async function deleteTenant() {
         return;
     }
     
-    await apiRequest(`/sys/tenants/${encodeURIComponent(tenantIdentifier)}`, {
+    await apiRequest(`/admin/tenants/${encodeURIComponent(tenantIdentifier)}`, {
         method: 'DELETE'
     });
 }
@@ -363,7 +363,7 @@ async function deleteTenant() {
 async function getUserTenants() {
     const userId = document.getElementById('userTenantsId').value;
     
-    await apiRequest(`/sys/users/${encodeURIComponent(userId)}/tenants`, {
+    await apiRequest(`/admin/users/${encodeURIComponent(userId)}/tenants`, {
         method: 'GET'
     });
 }
@@ -377,7 +377,7 @@ async function grantTenantAccess() {
         expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null
     };
     
-    await apiRequest(`/sys/users/${encodeURIComponent(userId)}/tenants/${encodeURIComponent(tenantIdentifier)}`, {
+    await apiRequest(`/admin/users/${encodeURIComponent(userId)}/tenants/${encodeURIComponent(tenantIdentifier)}`, {
         method: 'POST',
         body: JSON.stringify(body)
     });
@@ -391,7 +391,7 @@ async function revokeTenantAccess() {
         return;
     }
     
-    await apiRequest(`/sys/users/${encodeURIComponent(userId)}/tenants/${encodeURIComponent(tenantIdentifier)}`, {
+    await apiRequest(`/admin/users/${encodeURIComponent(userId)}/tenants/${encodeURIComponent(tenantIdentifier)}`, {
         method: 'DELETE'
     });
 }

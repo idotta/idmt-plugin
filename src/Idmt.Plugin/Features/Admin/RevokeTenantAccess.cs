@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Idmt.Plugin.Features.Sys;
+namespace Idmt.Plugin.Features.Admin;
 
 public static class RevokeTenantAccess
 {

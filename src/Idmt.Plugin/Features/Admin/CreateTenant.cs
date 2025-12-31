@@ -1,6 +1,7 @@
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -11,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Idmt.Plugin.Features.Sys;
+namespace Idmt.Plugin.Features.Admin;
 
 public static class CreateTenant
 {
@@ -147,6 +148,10 @@ public static class CreateTenant
         {
             errors["Identifier"] = ["Identifier is required"];
         }
+        if (!Validators.IsValidTenantIdentifier(request.Identifier))
+        {
+            errors["Identifier"] = ["Identifier can only contain lowercase alphanumeric characters, dashes, and underscores"];
+        }
         if (string.IsNullOrEmpty(request.Name))
         {
             errors["Name"] = ["Name is required"];
@@ -177,7 +182,7 @@ public static class CreateTenant
             }
             return TypedResults.Ok(response.Value);
         })
-        .RequireAuthorization(AuthOptions.RequireSysAdminPolicy)
+        .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
         .WithSummary("Create Tenant")
         .WithDescription("Create a new tenant in the system or reactivate an existing inactive tenant");
     }
