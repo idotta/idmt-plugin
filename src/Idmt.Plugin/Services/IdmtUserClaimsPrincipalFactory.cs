@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Identity;
@@ -10,6 +11,7 @@ internal sealed class IdmtUserClaimsPrincipalFactory(
     UserManager<IdmtUser> userManager,
     RoleManager<IdmtRole> roleManager,
     IOptions<IdentityOptions> optionsAccessor,
+    IMultiTenantStore<IdmtTenantInfo> tenantStore,
     IOptions<IdmtOptions> idmtOptions)
     : UserClaimsPrincipalFactory<IdmtUser, IdmtRole>(userManager, roleManager, optionsAccessor)
 {
@@ -23,7 +25,8 @@ internal sealed class IdmtUserClaimsPrincipalFactory(
         // Add tenant claim for multi-tenant strategies (header, claim, route)
         // This ensures token validation includes tenant context
         var claimKey = idmtOptions.Value.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.ClaimOption, IdmtMultiTenantStrategy.DefaultClaimType);
-        identity.AddClaim(new Claim(claimKey, user.TenantId));
+        var tenantInfo = await tenantStore.GetAsync(user.TenantId);
+        identity.AddClaim(new Claim(claimKey, tenantInfo?.Identifier ?? throw new InvalidOperationException("Tenant information not found.")));
 
         return identity;
     }
