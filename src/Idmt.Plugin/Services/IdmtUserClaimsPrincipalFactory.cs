@@ -25,8 +25,10 @@ internal sealed class IdmtUserClaimsPrincipalFactory(
         // Add tenant claim for multi-tenant strategies (header, claim, route)
         // This ensures token validation includes tenant context
         var claimKey = idmtOptions.Value.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.ClaimOption, IdmtMultiTenantStrategy.DefaultClaimType);
-        var tenantInfo = await tenantStore.GetAsync(user.TenantId);
-        identity.AddClaim(new Claim(claimKey, tenantInfo?.Identifier ?? throw new InvalidOperationException("Tenant information not found.")));
+        
+        // Try to get tenant info from store using user's TenantId
+        var tenantInfo = await tenantStore.GetAsync(user.TenantId) ?? throw new InvalidOperationException($"Tenant information not found for tenant ID: {user.TenantId}. User ID: {user.Id}");
+        identity.AddClaim(new Claim(claimKey, tenantInfo.Identifier));
 
         return identity;
     }

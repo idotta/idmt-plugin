@@ -1,9 +1,13 @@
 using Finbuckle.MultiTenant.Abstractions;
+using Idmt.Plugin.Configuration;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 
 namespace Idmt.Plugin.Middleware;
 
-public class ValidateBearerTokenTenantMiddleware(IMultiTenantContextAccessor tenantContextAccessor) : IMiddleware
+public class ValidateBearerTokenTenantMiddleware(
+    IMultiTenantContextAccessor tenantContextAccessor,
+    IOptions<IdmtOptions> idmtOptions) : IMiddleware
 {
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
@@ -39,7 +43,9 @@ public class ValidateBearerTokenTenantMiddleware(IMultiTenantContextAccessor ten
             }
 
             // Get the tenant claim type from configuration
-            string tenantClaimType = "__tenant__";
+            var tenantClaimType = idmtOptions.Value.MultiTenant.StrategyOptions.GetValueOrDefault(
+                IdmtMultiTenantStrategy.ClaimOption,
+                IdmtMultiTenantStrategy.DefaultClaimType);
 
             // Extract tenant claim from token
             var tokenTenantClaim = context.User.FindFirst(tenantClaimType)?.Value;
@@ -51,8 +57,9 @@ public class ValidateBearerTokenTenantMiddleware(IMultiTenantContextAccessor ten
                 return false;
             }
 
-            // Validate that the token's tenant matches the current request's tenant
-            if (!tokenTenantClaim.Equals(currentTenant.Id, StringComparison.Ordinal))
+            // Validate that the token's tenant identifier matches the current request's tenant identifier
+            // The factory adds tenantInfo.Identifier to the claim, so we compare with Identifier, not Id
+            if (!tokenTenantClaim.Equals(currentTenant.Identifier, StringComparison.Ordinal))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return false;

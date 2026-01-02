@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
@@ -17,6 +18,7 @@ public class IdmtUserClaimsPrincipalFactoryTests
     private readonly Mock<UserManager<IdmtUser>> _userManagerMock;
     private readonly Mock<RoleManager<IdmtRole>> _roleManagerMock;
     private readonly Mock<IOptions<IdentityOptions>> _identityOptionsMock;
+    private readonly Mock<IMultiTenantStore<IdmtTenantInfo>> _tenantStoreMock;
     private readonly Mock<IOptions<IdmtOptions>> _idmtOptionsMock;
     private readonly IdmtUserClaimsPrincipalFactory _factory;
 
@@ -32,6 +34,16 @@ public class IdmtUserClaimsPrincipalFactoryTests
             .ReturnsAsync(Array.Empty<string>());
         _userManagerMock.Setup(x => x.GetClaimsAsync(It.IsAny<IdmtUser>()))
             .ReturnsAsync(Array.Empty<Claim>());
+        _userManagerMock.Setup(x => x.GetSecurityStampAsync(It.IsAny<IdmtUser>()))
+            .ReturnsAsync(() => Guid.NewGuid().ToString());
+        _userManagerMock.Setup(x => x.GetUserIdAsync(It.IsAny<IdmtUser>()))
+            .ReturnsAsync((IdmtUser u) => u.Id.ToString());
+        _userManagerMock.Setup(x => x.GetUserNameAsync(It.IsAny<IdmtUser>()))
+            .ReturnsAsync((IdmtUser u) => u.UserName ?? string.Empty);
+        _userManagerMock.Setup(x => x.GetEmailAsync(It.IsAny<IdmtUser>()))
+            .ReturnsAsync((IdmtUser u) => u.Email ?? string.Empty);
+        _userManagerMock.Setup(x => x.GetPhoneNumberAsync(It.IsAny<IdmtUser>()))
+            .ReturnsAsync((IdmtUser u) => u.PhoneNumber ?? string.Empty);
 
         var roleStoreMock = Mock.Of<IRoleStore<IdmtRole>>();
         _roleManagerMock = new Mock<RoleManager<IdmtRole>>(
@@ -53,6 +65,8 @@ public class IdmtUserClaimsPrincipalFactoryTests
         };
         _identityOptionsMock.Setup(x => x.Value).Returns(identityOptions);
 
+        _tenantStoreMock = new Mock<IMultiTenantStore<IdmtTenantInfo>>();
+        
         _idmtOptionsMock = new Mock<IOptions<IdmtOptions>>();
         _idmtOptionsMock.Setup(x => x.Value).Returns(IdmtOptions.Default);
 
@@ -60,32 +74,53 @@ public class IdmtUserClaimsPrincipalFactoryTests
             _userManagerMock.Object,
             _roleManagerMock.Object,
             _identityOptionsMock.Object,
+            _tenantStoreMock.Object,
             _idmtOptionsMock.Object);
+    }
+
+    private async Task<ClaimsIdentity> CallGenerateClaimsAsync(IdmtUser user)
+    {
+        var method = typeof(IdmtUserClaimsPrincipalFactory)
+            .GetMethod("GenerateClaimsAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        if (method == null)
+        {
+            throw new InvalidOperationException("GenerateClaimsAsync method not found.");
+        }
+        return (ClaimsIdentity)await (dynamic)method.Invoke(_factory, new object[] { user })!;
     }
 
     [Fact]
     public async Task CreateAsync_AddsIsActiveClaim_WithCorrectValue()
     {
+        const string tenantId = "tenant-id-123";
+        const string tenantIdentifier = "tenant-123";
+        var tenantInfo = new IdmtTenantInfo(tenantId, tenantIdentifier, "Test Tenant");
+        
         var user = new IdmtUser
         {
             Id = Guid.NewGuid(),
             UserName = "testuser",
+            NormalizedUserName = "TESTUSER",
             Email = "test@example.com",
-            EmailConfirmed = false,
-            PhoneNumber = null,
-            PhoneNumberConfirmed = false,
+            NormalizedEmail = "TEST@EXAMPLE.COM",
+            EmailConfirmed = true,
+            PhoneNumber = "1234567890",
+            PhoneNumberConfirmed = true,
             TwoFactorEnabled = false,
             LockoutEnabled = false,
             AccessFailedCount = 0,
-            TenantId = "tenant-123",
+            TenantId = tenantId,
             IsActive = true,
             SecurityStamp = Guid.NewGuid().ToString(),
             ConcurrencyStamp = Guid.NewGuid().ToString()
         };
 
-        var principal = await _factory.CreateAsync(user);
+        _tenantStoreMock.Setup(x => x.GetAsync(tenantId))
+            .ReturnsAsync(tenantInfo);
 
-        var isActiveClaim = principal.FindFirst("is_active");
+        var identity = await CallGenerateClaimsAsync(user);
+
+        var isActiveClaim = identity.FindFirst("is_active");
         Assert.NotNull(isActiveClaim);
         Assert.Equal("True", isActiveClaim.Value);
     }
@@ -93,20 +128,27 @@ public class IdmtUserClaimsPrincipalFactoryTests
     [Fact]
     public async Task CreateAsync_AddsIsActiveClaim_WhenUserIsInactive()
     {
+        const string tenantId = "tenant-id-123";
+        const string tenantIdentifier = "tenant-123";
+        var tenantInfo = new IdmtTenantInfo(tenantId, tenantIdentifier, "Test Tenant");
+        
         var user = new IdmtUser
         {
             Id = Guid.NewGuid(),
             UserName = "testuser",
             Email = "test@example.com",
-            TenantId = "tenant-123",
+            TenantId = tenantId,
             IsActive = false,
             SecurityStamp = Guid.NewGuid().ToString(),
             ConcurrencyStamp = Guid.NewGuid().ToString()
         };
 
-        var principal = await _factory.CreateAsync(user);
+        _tenantStoreMock.Setup(x => x.GetAsync(tenantId))
+            .ReturnsAsync(tenantInfo);
 
-        var isActiveClaim = principal.FindFirst("is_active");
+        var identity = await CallGenerateClaimsAsync(user);
+
+        var isActiveClaim = identity.FindFirst("is_active");
         Assert.NotNull(isActiveClaim);
         Assert.Equal("False", isActiveClaim.Value);
     }
@@ -114,7 +156,10 @@ public class IdmtUserClaimsPrincipalFactoryTests
     [Fact]
     public async Task CreateAsync_AddsTenantClaim_WithDefaultClaimType()
     {
-        const string tenantId = "tenant-456";
+        const string tenantId = "tenant-id-456";
+        const string tenantIdentifier = "tenant-456";
+        var tenantInfo = new IdmtTenantInfo(tenantId, tenantIdentifier, "Test Tenant");
+        
         var user = new IdmtUser
         {
             Id = Guid.NewGuid(),
@@ -126,18 +171,24 @@ public class IdmtUserClaimsPrincipalFactoryTests
             ConcurrencyStamp = Guid.NewGuid().ToString()
         };
 
-        var principal = await _factory.CreateAsync(user);
+        _tenantStoreMock.Setup(x => x.GetAsync(tenantId))
+            .ReturnsAsync(tenantInfo);
 
-        var tenantClaim = principal.FindFirst(IdmtMultiTenantStrategy.DefaultClaimType);
+        var identity = await CallGenerateClaimsAsync(user);
+
+        var tenantClaim = identity.FindFirst(IdmtMultiTenantStrategy.DefaultClaimType);
         Assert.NotNull(tenantClaim);
-        Assert.Equal(tenantId, tenantClaim.Value);
+        // The factory adds tenantInfo.Identifier, not tenantId
+        Assert.Equal(tenantIdentifier, tenantClaim.Value);
     }
 
     [Fact]
     public async Task CreateAsync_AddsTenantClaim_WithCustomClaimType()
     {
         const string customClaimType = "custom_tenant_claim";
-        const string tenantId = "tenant-789";
+        const string tenantId = "tenant-id-789";
+        const string tenantIdentifier = "tenant-789";
+        var tenantInfo = new IdmtTenantInfo(tenantId, tenantIdentifier, "Test Tenant");
 
         var customOptions = new IdmtOptions
         {
@@ -153,10 +204,15 @@ public class IdmtUserClaimsPrincipalFactoryTests
         var customOptionsMock = new Mock<IOptions<IdmtOptions>>();
         customOptionsMock.Setup(x => x.Value).Returns(customOptions);
 
+        var customTenantStoreMock = new Mock<IMultiTenantStore<IdmtTenantInfo>>();
+        customTenantStoreMock.Setup(x => x.GetAsync(tenantId))
+            .ReturnsAsync(tenantInfo);
+
         var customFactory = new IdmtUserClaimsPrincipalFactory(
             _userManagerMock.Object,
             _roleManagerMock.Object,
             _identityOptionsMock.Object,
+            customTenantStoreMock.Object,
             customOptionsMock.Object);
 
         var user = new IdmtUser
@@ -170,40 +226,50 @@ public class IdmtUserClaimsPrincipalFactoryTests
             ConcurrencyStamp = Guid.NewGuid().ToString()
         };
 
-        var principal = await customFactory.CreateAsync(user);
+        var customMethod = typeof(IdmtUserClaimsPrincipalFactory)
+            .GetMethod("GenerateClaimsAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var identity = (ClaimsIdentity)await (dynamic)customMethod!.Invoke(customFactory, new object[] { user })!;
 
-        var tenantClaim = principal.FindFirst(customClaimType);
+        var tenantClaim = identity.FindFirst(customClaimType);
         Assert.NotNull(tenantClaim);
-        Assert.Equal(tenantId, tenantClaim.Value);
+        // The factory adds tenantInfo.Identifier, not tenantId
+        Assert.Equal(tenantIdentifier, tenantClaim.Value);
 
         // Verify default claim type is not present
-        var defaultTenantClaim = principal.FindFirst(IdmtMultiTenantStrategy.DefaultClaimType);
+        var defaultTenantClaim = identity.FindFirst(IdmtMultiTenantStrategy.DefaultClaimType);
         Assert.Null(defaultTenantClaim);
     }
 
     [Fact]
     public async Task CreateAsync_IncludesBaseClaims()
     {
+        const string tenantId = "tenant-id-123";
+        const string tenantIdentifier = "tenant-123";
+        var tenantInfo = new IdmtTenantInfo(tenantId, tenantIdentifier, "Test Tenant");
+        
         var userId = Guid.NewGuid();
         var user = new IdmtUser
         {
             Id = userId,
             UserName = "testuser",
             Email = "test@example.com",
-            TenantId = "tenant-123",
+            TenantId = tenantId,
             IsActive = true,
             SecurityStamp = Guid.NewGuid().ToString(),
             ConcurrencyStamp = Guid.NewGuid().ToString()
         };
 
-        var principal = await _factory.CreateAsync(user);
+        _tenantStoreMock.Setup(x => x.GetAsync(tenantId))
+            .ReturnsAsync(tenantInfo);
+
+        var identity = await CallGenerateClaimsAsync(user);
 
         // Verify base claims are present (from base.GenerateClaimsAsync)
-        var nameIdentifierClaim = principal.FindFirst(ClaimTypes.NameIdentifier);
+        var nameIdentifierClaim = identity.FindFirst(ClaimTypes.NameIdentifier);
         Assert.NotNull(nameIdentifierClaim);
         Assert.Equal(userId.ToString(), nameIdentifierClaim.Value);
 
-        var nameClaim = principal.FindFirst(ClaimTypes.Name);
+        var nameClaim = identity.FindFirst(ClaimTypes.Name);
         Assert.NotNull(nameClaim);
         Assert.Equal(user.UserName, nameClaim.Value);
     }
@@ -211,7 +277,10 @@ public class IdmtUserClaimsPrincipalFactoryTests
     [Fact]
     public async Task CreateAsync_AddsAllCustomClaims()
     {
-        const string tenantId = "tenant-999";
+        const string tenantId = "tenant-id-999";
+        const string tenantIdentifier = "tenant-999";
+        var tenantInfo = new IdmtTenantInfo(tenantId, tenantIdentifier, "Test Tenant");
+        
         var user = new IdmtUser
         {
             Id = Guid.NewGuid(),
@@ -223,16 +292,20 @@ public class IdmtUserClaimsPrincipalFactoryTests
             ConcurrencyStamp = Guid.NewGuid().ToString()
         };
 
-        var principal = await _factory.CreateAsync(user);
+        _tenantStoreMock.Setup(x => x.GetAsync(tenantId))
+            .ReturnsAsync(tenantInfo);
+
+        var identity = await CallGenerateClaimsAsync(user);
 
         // Verify both custom claims are present
-        var isActiveClaim = principal.FindFirst("is_active");
+        var isActiveClaim = identity.FindFirst("is_active");
         Assert.NotNull(isActiveClaim);
         Assert.Equal("True", isActiveClaim.Value);
 
-        var tenantClaim = principal.FindFirst(IdmtMultiTenantStrategy.DefaultClaimType);
+        var tenantClaim = identity.FindFirst(IdmtMultiTenantStrategy.DefaultClaimType);
         Assert.NotNull(tenantClaim);
-        Assert.Equal(tenantId, tenantClaim.Value);
+        // The factory adds tenantInfo.Identifier, not tenantId
+        Assert.Equal(tenantIdentifier, tenantClaim.Value);
     }
 }
 
