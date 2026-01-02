@@ -28,10 +28,10 @@ internal sealed class CurrentUserService(
         multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id;
 
     public string? TenantIdentifier =>
-        User?.FindFirstValue(idmtOptions.Value.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.ClaimOption, IdmtMultiTenantStrategy.DefaultClaimType)) ??
+        User?.FindFirstValue(idmtOptions.Value.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.Claim, IdmtMultiTenantStrategy.DefaultClaim)) ??
         multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier;
 
-    public bool IsActive => User?.FindFirstValue("is_active") == "true";
+    public bool IsActive => string.Equals(User?.FindFirstValue("is_active"), "true", StringComparison.OrdinalIgnoreCase);
 
     public bool IsInRole(string role) => User?.IsInRole(role) ?? false;
 

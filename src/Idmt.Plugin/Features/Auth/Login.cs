@@ -1,4 +1,5 @@
 using Finbuckle.MultiTenant.Abstractions;
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Authentication;
@@ -57,12 +58,14 @@ public static class Login
         UserManager<IdmtUser> userManager,
         SignInManager<IdmtUser> signInManager,
         IMultiTenantContextAccessor multiTenantContextAccessor,
+        IOptions<IdmtOptions> idmtOptions,
         ILogger<LoginHandler> logger) : ILoginHandler
     {
         public async Task<Result<LoginResponse>> HandleAsync(
             LoginRequest request,
             CancellationToken cancellationToken = default)
         {
+            logger.LogInformation(idmtOptions.Value.MultiTenant.StrategyOptions.ToString());
             try
             {
                 // Resolve tenant ID from context
