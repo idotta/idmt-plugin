@@ -1,10 +1,13 @@
 using System.Security.Claims;
+using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Idmt.Plugin.Services;
 
-internal sealed class CurrentUserService(IOptions<IdmtOptions> idmtOptions) : ICurrentUserService
+internal sealed class CurrentUserService(
+    IOptions<IdmtOptions> idmtOptions,
+    IMultiTenantContextAccessor multiTenantContextAccessor) : ICurrentUserService
 {
     public ClaimsPrincipal? User { get; private set; }
 
@@ -22,8 +25,11 @@ internal sealed class CurrentUserService(IOptions<IdmtOptions> idmtOptions) : IC
     public string? UserName => User?.FindFirstValue(ClaimTypes.Name);
 
     public string? TenantId =>
-        User?.FindFirstValue(idmtOptions.Value.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.ClaimOption,
-        IdmtMultiTenantStrategy.DefaultClaimType));
+        multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id;
+
+    public string? TenantIdentifier =>
+        User?.FindFirstValue(idmtOptions.Value.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.ClaimOption, IdmtMultiTenantStrategy.DefaultClaimType)) ??
+        multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier;
 
     public bool IsActive => User?.FindFirstValue("is_active") == "true";
 

@@ -131,6 +131,11 @@ public static class RegisterUser
             {
                 return Result.Failure<RegisterUserResponse>("Insufficient permissions to assign this role.", StatusCodes.Status403Forbidden);
             }
+
+            // Get the tenant ID from the current user service (from tenant context)
+            var tenantId = currentUserService.TenantId
+                ?? throw new InvalidOperationException("Tenant context is not available. Cannot register user without tenant context.");
+
             // Create user entity with basic information, no password set
             // User is active by default, but email is not confirmed until password is set
             // When the user is unregistered, we set IsActive to false (soft delete)
@@ -140,7 +145,7 @@ public static class RegisterUser
                 Email = request.Email,
                 EmailConfirmed = false, // Will be confirmed when password is set
                 IsActive = true,
-                TenantId = currentUserService.TenantId!,
+                TenantId = tenantId,
                 LastLoginAt = null,
             };
 
@@ -204,7 +209,7 @@ public static class RegisterUser
                 ? linkGenerator.GeneratePasswordResetApiLink(user.Email, token)
                 : linkGenerator.GeneratePasswordResetFormLink(user.Email, token);
 
-            logger.LogInformation("User created: {Email}. Request by {RequestingUserId}. Tenant: {TenantId}.", user.Email, currentUserService.UserId, currentUserService.TenantId);
+            logger.LogInformation("User created: {Email}. Request by {RequestingUserId}. Tenant: {TenantId}.", user.Email, currentUserService.UserId, tenantId);
 
             await emailSender.SendPasswordResetLinkAsync(user, user.Email, passwordSetupUrl);
 

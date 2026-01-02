@@ -20,13 +20,16 @@ namespace Idmt.UnitTests.Services;
 /// </summary>
 public class CurrentUserServiceTests
 {
-    private readonly Mock<IMultiTenantContextAccessor> _tenantAccessorMock;
+    private readonly Mock<IOptions<IdmtOptions>> _optionsMock;
+    private readonly Mock<IMultiTenantContextAccessor> _tenantContextAccessorMock;
     private readonly CurrentUserService _service;
 
     public CurrentUserServiceTests()
     {
-        _tenantAccessorMock = new Mock<IMultiTenantContextAccessor>();
-        _service = new CurrentUserService(_tenantAccessorMock.Object);
+        _optionsMock = new Mock<IOptions<IdmtOptions>>();
+        _optionsMock.Setup(x => x.Value).Returns(IdmtOptions.Default);
+        _tenantContextAccessorMock = new Mock<IMultiTenantContextAccessor>();
+        _service = new CurrentUserService(_optionsMock.Object, _tenantContextAccessorMock.Object);
     }
 
     [Fact]
@@ -34,15 +37,16 @@ public class CurrentUserServiceTests
     {
         var userId = Guid.NewGuid();
         var user = new System.Security.Claims.ClaimsPrincipal(
-            new System.Security.Claims.ClaimsIdentity(new[]
-            {
+            new System.Security.Claims.ClaimsIdentity(
+            [
                 new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, userId.ToString())
-            }));
+            ]));
 
         _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
 
         var result = _service.UserId;
 
+        Assert.NotNull(result);
         Assert.Equal(userId, result);
     }
 
@@ -56,6 +60,7 @@ public class CurrentUserServiceTests
 
         var result = _service.UserId;
 
+        Assert.NotNull(result);
         Assert.Equal(Guid.Empty, result);
     }
 
@@ -63,10 +68,10 @@ public class CurrentUserServiceTests
     public void IsInRole_ReturnsTrue_WhenUserHasRole()
     {
         var user = new System.Security.Claims.ClaimsPrincipal(
-            new System.Security.Claims.ClaimsIdentity(new[]
-            {
+            new System.Security.Claims.ClaimsIdentity(
+            [
                 new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "Admin")
-            }));
+            ]));
 
         _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
 
@@ -79,10 +84,10 @@ public class CurrentUserServiceTests
     public void IsInRole_ReturnsFalse_WhenUserDoesNotHaveRole()
     {
         var user = new System.Security.Claims.ClaimsPrincipal(
-            new System.Security.Claims.ClaimsIdentity(new[]
-            {
+            new System.Security.Claims.ClaimsIdentity(
+            [
                 new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "User")
-            }));
+            ]));
 
         _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
 
@@ -95,6 +100,143 @@ public class CurrentUserServiceTests
     public void IsInRole_ReturnsFalse_WhenUserNotSet()
     {
         var result = _service.IsInRole("Admin");
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void TenantIdentifier_ReturnsTenantIdentifier_WhenClaimExists()
+    {
+        const string tenantId = "tenant-123";
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+            [
+                new System.Security.Claims.Claim(IdmtMultiTenantStrategy.DefaultClaimType, tenantId)
+            ]));
+
+        _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
+
+        var result = _service.TenantIdentifier;
+
+        Assert.Equal(tenantId, result);
+    }
+
+    [Fact]
+    public void TenantIdentifier_ReturnsNull_WhenClaimDoesNotExist()
+    {
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity());
+
+        _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
+
+        var result = _service.TenantIdentifier;
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void TenantIdentifier_ReturnsIdentifierFromTenantContext_WhenClaimDoesNotExist()
+    {
+        const string tenantIdentifier = "tenant-123";
+        var tenantInfo = new IdmtTenantInfo("tenant-id-123", tenantIdentifier, "Test Tenant");
+        var tenantContext = new MultiTenantContext<IdmtTenantInfo>(tenantInfo);
+
+        _tenantContextAccessorMock.Setup(x => x.MultiTenantContext).Returns(tenantContext);
+
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity());
+
+        _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
+
+        var result = _service.TenantIdentifier;
+
+        Assert.Equal(tenantIdentifier, result);
+    }
+
+    [Fact]
+    public void TenantIdentifier_ReturnsTenantIdentifier_WhenCustomClaimTypeIsConfigured()
+    {
+        const string customClaimType = "custom_tenant_claim";
+        const string tenantId = "tenant-456";
+
+        var customOptions = new IdmtOptions
+        {
+            MultiTenant = new MultiTenantOptions
+            {
+                StrategyOptions = new Dictionary<string, string>
+                {
+                    { IdmtMultiTenantStrategy.ClaimOption, customClaimType }
+                }
+            }
+        };
+
+        var customOptionsMock = new Mock<IOptions<IdmtOptions>>();
+        customOptionsMock.Setup(x => x.Value).Returns(customOptions);
+        var customTenantContextAccessorMock = new Mock<IMultiTenantContextAccessor>();
+        var customService = new CurrentUserService(customOptionsMock.Object, customTenantContextAccessorMock.Object);
+
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+            [
+                new System.Security.Claims.Claim(customClaimType, tenantId)
+            ]));
+
+        customService.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
+
+        var result = customService.TenantIdentifier;
+
+        Assert.Equal(tenantId, result);
+    }
+
+    [Fact]
+    public void IsActive_ReturnsTrue_WhenClaimIsTrue()
+    {
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+            [
+                new System.Security.Claims.Claim("is_active", "true")
+            ]));
+
+        _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
+
+        var result = _service.IsActive;
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void IsActive_ReturnsFalse_WhenClaimIsNotTrue()
+    {
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+            [
+                new System.Security.Claims.Claim("is_active", "false")
+            ]));
+
+        _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
+
+        var result = _service.IsActive;
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void IsActive_ReturnsFalse_WhenClaimDoesNotExist()
+    {
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity());
+
+        _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
+
+        var result = _service.IsActive;
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void IsActive_ReturnsFalse_WhenUserNotSet()
+    {
+        var result = _service.IsActive;
 
         Assert.False(result);
     }
@@ -228,7 +370,7 @@ public class TenantAccessServiceExtendedTests
     {
         _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.SysSupport)).Returns(true);
 
-        var result = _service.CanManageUser(new[] { IdmtDefaultRoleTypes.SysAdmin });
+        var result = _service.CanManageUser([IdmtDefaultRoleTypes.SysAdmin]);
 
         Assert.False(result);
     }
@@ -238,7 +380,7 @@ public class TenantAccessServiceExtendedTests
     {
         _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.SysSupport)).Returns(true);
 
-        var result = _service.CanManageUser(new[] { IdmtDefaultRoleTypes.TenantAdmin });
+        var result = _service.CanManageUser([IdmtDefaultRoleTypes.TenantAdmin]);
 
         Assert.True(result);
     }
@@ -248,7 +390,7 @@ public class TenantAccessServiceExtendedTests
     {
         _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.TenantAdmin)).Returns(true);
 
-        var result = _service.CanManageUser(new[] { IdmtDefaultRoleTypes.SysSupport });
+        var result = _service.CanManageUser([IdmtDefaultRoleTypes.SysSupport]);
 
         Assert.False(result);
     }
@@ -258,7 +400,7 @@ public class TenantAccessServiceExtendedTests
     {
         _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.TenantAdmin)).Returns(true);
 
-        var result = _service.CanManageUser(new[] { "CustomRole" });
+        var result = _service.CanManageUser(["CustomRole"]);
 
         Assert.True(result);
     }

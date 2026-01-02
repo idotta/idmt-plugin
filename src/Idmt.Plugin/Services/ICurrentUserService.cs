@@ -13,6 +13,7 @@ public interface ICurrentUserService
     string? Email { get; }
     string? UserName { get; }
     string? TenantId { get; }
+    string? TenantIdentifier { get; }
 
     bool IsInRole(string role);
 

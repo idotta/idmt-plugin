@@ -98,7 +98,7 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
         }
         if (_strategies.Contains(IdmtMultiTenantStrategy.Header))
         {
-            client.DefaultRequestHeaders.TryAddWithoutValidation("__tenant__", tenantId);
+            client.DefaultRequestHeaders.TryAddWithoutValidation(IdmtMultiTenantStrategy.DefaultHeaderName, tenantId);
         }
         return client;
     }
