@@ -1,4 +1,5 @@
 using Finbuckle.MultiTenant.Abstractions;
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Authentication;

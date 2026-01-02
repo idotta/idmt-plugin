@@ -111,7 +111,7 @@ public class CurrentUserServiceTests
         var user = new System.Security.Claims.ClaimsPrincipal(
             new System.Security.Claims.ClaimsIdentity(
             [
-                new System.Security.Claims.Claim(IdmtMultiTenantStrategy.DefaultClaimType, tenantId)
+                new System.Security.Claims.Claim(IdmtMultiTenantStrategy.DefaultClaim, tenantId)
             ]));
 
         _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
@@ -165,7 +165,7 @@ public class CurrentUserServiceTests
             {
                 StrategyOptions = new Dictionary<string, string>
                 {
-                    { IdmtMultiTenantStrategy.ClaimOption, customClaimType }
+                    { IdmtMultiTenantStrategy.Claim, customClaimType }
                 }
             }
         };

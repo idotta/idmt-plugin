@@ -44,8 +44,8 @@ public class ValidateBearerTokenTenantMiddleware(
 
             // Get the tenant claim type from configuration
             var tenantClaimType = idmtOptions.Value.MultiTenant.StrategyOptions.GetValueOrDefault(
-                IdmtMultiTenantStrategy.ClaimOption,
-                IdmtMultiTenantStrategy.DefaultClaimType);
+                IdmtMultiTenantStrategy.Claim,
+                IdmtMultiTenantStrategy.DefaultClaim);
 
             // Extract tenant claim from token
             var tokenTenantClaim = context.User.FindFirst(tenantClaimType)?.Value;

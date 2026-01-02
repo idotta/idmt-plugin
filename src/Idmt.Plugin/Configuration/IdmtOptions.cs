@@ -174,16 +174,10 @@ public static class IdmtMultiTenantStrategy
     public const string Route = "route";
     public const string BasePath = "basepath";
 
-    // Strategy options keys
-
-    public const string HeaderKeyOption = "HeaderKey";
-    public const string ClaimOption = "ClaimType";
-    public const string RouteParameterOption = "RouteParameter";
-
     // Strategy options defaults
 
-    public const string DefaultHeaderName = "__tenant__";
-    public const string DefaultClaimType = "tenant";
+    public const string DefaultHeader = "__tenant__";
+    public const string DefaultClaim = "tenant";
     public const string DefaultRouteParameter = "__tenant__";
 }
 

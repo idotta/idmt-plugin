@@ -11,6 +11,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace Idmt.BasicSample.Tests;
@@ -92,13 +93,17 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
             AllowAutoRedirect = allowAutoRedirect,
         });
 
-        if (_strategies.Contains(IdmtMultiTenantStrategy.Route))
+        var idmtOptions = Services.GetRequiredService<IOptions<IdmtOptions>>().Value;
+
+        var strategies = idmtOptions.MultiTenant.Strategies;
+
+        if (strategies.Contains(IdmtMultiTenantStrategy.Route))
         {
             client.BaseAddress = new Uri($"http://localhost/{tenantId}/");
         }
-        if (_strategies.Contains(IdmtMultiTenantStrategy.Header))
+        if (strategies.Contains(IdmtMultiTenantStrategy.Header))
         {
-            client.DefaultRequestHeaders.TryAddWithoutValidation(IdmtMultiTenantStrategy.DefaultHeaderName, tenantId);
+            client.DefaultRequestHeaders.TryAddWithoutValidation(idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.Header, IdmtMultiTenantStrategy.DefaultHeader), tenantId);
         }
         return client;
     }

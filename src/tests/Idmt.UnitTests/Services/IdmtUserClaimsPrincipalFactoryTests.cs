@@ -176,7 +176,7 @@ public class IdmtUserClaimsPrincipalFactoryTests
 
         var identity = await CallGenerateClaimsAsync(user);
 
-        var tenantClaim = identity.FindFirst(IdmtMultiTenantStrategy.DefaultClaimType);
+        var tenantClaim = identity.FindFirst(IdmtMultiTenantStrategy.DefaultClaim);
         Assert.NotNull(tenantClaim);
         // The factory adds tenantInfo.Identifier, not tenantId
         Assert.Equal(tenantIdentifier, tenantClaim.Value);
@@ -196,7 +196,7 @@ public class IdmtUserClaimsPrincipalFactoryTests
             {
                 StrategyOptions = new Dictionary<string, string>
                 {
-                    { IdmtMultiTenantStrategy.ClaimOption, customClaimType }
+                    { IdmtMultiTenantStrategy.Claim, customClaimType }
                 }
             }
         };
@@ -236,7 +236,7 @@ public class IdmtUserClaimsPrincipalFactoryTests
         Assert.Equal(tenantIdentifier, tenantClaim.Value);
 
         // Verify default claim type is not present
-        var defaultTenantClaim = identity.FindFirst(IdmtMultiTenantStrategy.DefaultClaimType);
+        var defaultTenantClaim = identity.FindFirst(IdmtMultiTenantStrategy.DefaultClaim);
         Assert.Null(defaultTenantClaim);
     }
 
@@ -302,7 +302,7 @@ public class IdmtUserClaimsPrincipalFactoryTests
         Assert.NotNull(isActiveClaim);
         Assert.Equal("True", isActiveClaim.Value);
 
-        var tenantClaim = identity.FindFirst(IdmtMultiTenantStrategy.DefaultClaimType);
+        var tenantClaim = identity.FindFirst(IdmtMultiTenantStrategy.DefaultClaim);
         Assert.NotNull(tenantClaim);
         // The factory adds tenantInfo.Identifier, not tenantId
         Assert.Equal(tenantIdentifier, tenantClaim.Value);
