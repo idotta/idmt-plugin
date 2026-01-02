@@ -20,13 +20,14 @@ namespace Idmt.UnitTests.Services;
 /// </summary>
 public class CurrentUserServiceTests
 {
-    private readonly Mock<IMultiTenantContextAccessor> _tenantAccessorMock;
+    private readonly Mock<IOptions<IdmtOptions>> _optionsMock;
     private readonly CurrentUserService _service;
 
     public CurrentUserServiceTests()
     {
-        _tenantAccessorMock = new Mock<IMultiTenantContextAccessor>();
-        _service = new CurrentUserService(_tenantAccessorMock.Object);
+        _optionsMock = new Mock<IOptions<IdmtOptions>>();
+        _optionsMock.Setup(x => x.Value).Returns(IdmtOptions.Default);
+        _service = new CurrentUserService(_optionsMock.Object);
     }
 
     [Fact]
@@ -43,6 +44,7 @@ public class CurrentUserServiceTests
 
         var result = _service.UserId;
 
+        Assert.NotNull(result);
         Assert.Equal(userId, result);
     }
 
@@ -56,6 +58,7 @@ public class CurrentUserServiceTests
 
         var result = _service.UserId;
 
+        Assert.NotNull(result);
         Assert.Equal(Guid.Empty, result);
     }
 
@@ -95,6 +98,123 @@ public class CurrentUserServiceTests
     public void IsInRole_ReturnsFalse_WhenUserNotSet()
     {
         var result = _service.IsInRole("Admin");
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void TenantId_ReturnsTenantId_WhenClaimExists()
+    {
+        const string tenantId = "tenant-123";
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(new[]
+            {
+                new System.Security.Claims.Claim(IdmtMultiTenantStrategy.DefaultClaimType, tenantId)
+            }));
+
+        _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
+
+        var result = _service.TenantId;
+
+        Assert.Equal(tenantId, result);
+    }
+
+    [Fact]
+    public void TenantId_ReturnsNull_WhenClaimDoesNotExist()
+    {
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity());
+
+        _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
+
+        var result = _service.TenantId;
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void TenantId_ReturnsTenantId_WhenCustomClaimTypeIsConfigured()
+    {
+        const string customClaimType = "custom_tenant_claim";
+        const string tenantId = "tenant-456";
+
+        var customOptions = new IdmtOptions
+        {
+            MultiTenant = new MultiTenantOptions
+            {
+                StrategyOptions = new Dictionary<string, string>
+                {
+                    { IdmtMultiTenantStrategy.ClaimOption, customClaimType }
+                }
+            }
+        };
+
+        var customOptionsMock = new Mock<IOptions<IdmtOptions>>();
+        customOptionsMock.Setup(x => x.Value).Returns(customOptions);
+        var customService = new CurrentUserService(customOptionsMock.Object);
+
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(new[]
+            {
+                new System.Security.Claims.Claim(customClaimType, tenantId)
+            }));
+
+        customService.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
+
+        var result = customService.TenantId;
+
+        Assert.Equal(tenantId, result);
+    }
+
+    [Fact]
+    public void IsActive_ReturnsTrue_WhenClaimIsTrue()
+    {
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(new[]
+            {
+                new System.Security.Claims.Claim("is_active", "true")
+            }));
+
+        _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
+
+        var result = _service.IsActive;
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void IsActive_ReturnsFalse_WhenClaimIsNotTrue()
+    {
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(new[]
+            {
+                new System.Security.Claims.Claim("is_active", "false")
+            }));
+
+        _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
+
+        var result = _service.IsActive;
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void IsActive_ReturnsFalse_WhenClaimDoesNotExist()
+    {
+        var user = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity());
+
+        _service.SetCurrentUser(user, "127.0.0.1", "TestAgent/1.0");
+
+        var result = _service.IsActive;
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void IsActive_ReturnsFalse_WhenUserNotSet()
+    {
+        var result = _service.IsActive;
 
         Assert.False(result);
     }
