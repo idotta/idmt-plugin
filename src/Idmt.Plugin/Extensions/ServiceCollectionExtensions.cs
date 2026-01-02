@@ -185,18 +185,18 @@ public static class ServiceCollectionExtensions
             {
                 case IdmtMultiTenantStrategy.Header:
                     builder.WithHeaderStrategy(
-                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("HeaderName", IdmtMultiTenantStrategy.DefaultHeaderName));
+                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.HeaderKeyOption, IdmtMultiTenantStrategy.DefaultHeaderName));
                     break;
 
                 case IdmtMultiTenantStrategy.Route:
                     builder.WithRouteStrategy(
-                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("RouteParameter", IdmtMultiTenantStrategy.DefaultRouteParameter),
+                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.RouteParameterOption, IdmtMultiTenantStrategy.DefaultRouteParameter),
                         useTenantAmbientRouteValue: true);
                     break;
 
                 case IdmtMultiTenantStrategy.Claim:
                     builder.WithClaimStrategy(
-                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault("ClaimType", IdmtMultiTenantStrategy.DefaultClaimType));
+                        idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.ClaimOption, IdmtMultiTenantStrategy.DefaultClaimType));
                     break;
 
                 case IdmtMultiTenantStrategy.BasePath:
