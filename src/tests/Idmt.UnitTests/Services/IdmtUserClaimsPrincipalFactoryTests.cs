@@ -66,7 +66,7 @@ public class IdmtUserClaimsPrincipalFactoryTests
         _identityOptionsMock.Setup(x => x.Value).Returns(identityOptions);
 
         _tenantStoreMock = new Mock<IMultiTenantStore<IdmtTenantInfo>>();
-        
+
         _idmtOptionsMock = new Mock<IOptions<IdmtOptions>>();
         _idmtOptionsMock.Setup(x => x.Value).Returns(IdmtOptions.Default);
 
@@ -95,7 +95,7 @@ public class IdmtUserClaimsPrincipalFactoryTests
         const string tenantId = "tenant-id-123";
         const string tenantIdentifier = "tenant-123";
         var tenantInfo = new IdmtTenantInfo(tenantId, tenantIdentifier, "Test Tenant");
-        
+
         var user = new IdmtUser
         {
             Id = Guid.NewGuid(),
@@ -131,7 +131,7 @@ public class IdmtUserClaimsPrincipalFactoryTests
         const string tenantId = "tenant-id-123";
         const string tenantIdentifier = "tenant-123";
         var tenantInfo = new IdmtTenantInfo(tenantId, tenantIdentifier, "Test Tenant");
-        
+
         var user = new IdmtUser
         {
             Id = Guid.NewGuid(),
@@ -159,7 +159,7 @@ public class IdmtUserClaimsPrincipalFactoryTests
         const string tenantId = "tenant-id-456";
         const string tenantIdentifier = "tenant-456";
         var tenantInfo = new IdmtTenantInfo(tenantId, tenantIdentifier, "Test Tenant");
-        
+
         var user = new IdmtUser
         {
             Id = Guid.NewGuid(),
@@ -246,7 +246,7 @@ public class IdmtUserClaimsPrincipalFactoryTests
         const string tenantId = "tenant-id-123";
         const string tenantIdentifier = "tenant-123";
         var tenantInfo = new IdmtTenantInfo(tenantId, tenantIdentifier, "Test Tenant");
-        
+
         var userId = Guid.NewGuid();
         var user = new IdmtUser
         {
@@ -280,7 +280,7 @@ public class IdmtUserClaimsPrincipalFactoryTests
         const string tenantId = "tenant-id-999";
         const string tenantIdentifier = "tenant-999";
         var tenantInfo = new IdmtTenantInfo(tenantId, tenantIdentifier, "Test Tenant");
-        
+
         var user = new IdmtUser
         {
             Id = Guid.NewGuid(),

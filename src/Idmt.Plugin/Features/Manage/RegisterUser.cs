@@ -131,11 +131,11 @@ public static class RegisterUser
             {
                 return Result.Failure<RegisterUserResponse>("Insufficient permissions to assign this role.", StatusCodes.Status403Forbidden);
             }
-            
+
             // Get the tenant ID from the current user service (from tenant context)
             var tenantId = currentUserService.TenantId
                 ?? throw new InvalidOperationException("Tenant context is not available. Cannot register user without tenant context.");
-            
+
             // Create user entity with basic information, no password set
             // User is active by default, but email is not confirmed until password is set
             // When the user is unregistered, we set IsActive to false (soft delete)

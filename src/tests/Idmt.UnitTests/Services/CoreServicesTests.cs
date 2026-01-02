@@ -140,9 +140,9 @@ public class CurrentUserServiceTests
         const string tenantIdentifier = "tenant-123";
         var tenantInfo = new IdmtTenantInfo("tenant-id-123", tenantIdentifier, "Test Tenant");
         var tenantContext = new MultiTenantContext<IdmtTenantInfo>(tenantInfo);
-        
+
         _tenantContextAccessorMock.Setup(x => x.MultiTenantContext).Returns(tenantContext);
-        
+
         var user = new System.Security.Claims.ClaimsPrincipal(
             new System.Security.Claims.ClaimsIdentity());
 
