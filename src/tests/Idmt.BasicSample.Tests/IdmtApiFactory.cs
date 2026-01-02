@@ -85,9 +85,9 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
         });
     }
 
-    public HttpClient CreateClientWithTenant(string? tenantId = null, bool allowAutoRedirect = false)
+    public HttpClient CreateClientWithTenant(string? tenantIdentifier = null, bool allowAutoRedirect = false)
     {
-        tenantId ??= DefaultTenantIdentifier;
+        tenantIdentifier ??= DefaultTenantIdentifier;
         var client = CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = allowAutoRedirect,
@@ -99,11 +99,11 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
 
         if (strategies.Contains(IdmtMultiTenantStrategy.Route))
         {
-            client.BaseAddress = new Uri($"http://localhost/{tenantId}/");
+            client.BaseAddress = new Uri($"http://localhost/{tenantIdentifier}/");
         }
         if (strategies.Contains(IdmtMultiTenantStrategy.Header))
         {
-            client.DefaultRequestHeaders.TryAddWithoutValidation(idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.Header, IdmtMultiTenantStrategy.DefaultHeader), tenantId);
+            client.DefaultRequestHeaders.TryAddWithoutValidation(idmtOptions.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.Header, IdmtMultiTenantStrategy.DefaultHeader), tenantIdentifier);
         }
         return client;
     }

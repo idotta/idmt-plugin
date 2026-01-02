@@ -44,7 +44,7 @@ public static class DeleteTenant
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "An error occurred while deleting tenant with ID {TenantId}", tenantIdentifier);
+                logger.LogError(ex, "An error occurred while deleting tenant with ID {TenantIdentifier}", tenantIdentifier);
                 return Result.Failure($"An error occurred while deleting the tenant: {ex.Message}", StatusCodes.Status500InternalServerError);
             }
         }

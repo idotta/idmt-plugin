@@ -106,7 +106,7 @@ public static class RevokeTenantAccess
 
     public static RouteHandlerBuilder MapRevokeTenantAccessEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantId}", async Task<Results<Ok, NotFound, InternalServerError>> (
+        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantIdentifier}", async Task<Results<Ok, NotFound, InternalServerError>> (
             Guid userId,
             string tenantId,
             IRevokeTenantAccessHandler handler,
