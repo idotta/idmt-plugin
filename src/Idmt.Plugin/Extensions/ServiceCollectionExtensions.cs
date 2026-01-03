@@ -210,6 +210,16 @@ public static class ServiceCollectionExtensions
 
         // Enable per-tenant authentication - critical for proper multi-tenant isolation
         builder.WithPerTenantAuthentication();
+
+
+        // Isolate Cookies per Tenant
+        builder.Services.ConfigurePerTenant<CookieAuthenticationOptions, IdmtTenantInfo>(
+            IdentityConstants.ApplicationScheme, (options, tenantInfo) =>
+            {
+                var tenantIdentifier = tenantInfo?.Identifier ?? throw new InvalidOperationException("Tenant information is required to configure cookie options.");
+                // Prevents Tenant A's tab from overwriting Tenant B's session
+                options.Cookie.Name = $"{idmtOptions.Identity.Cookie.Name}.{tenantIdentifier}";
+            });
     }
 
     private static void ConfigureIdentity(IServiceCollection services, IdmtOptions idmtOptions)
@@ -261,7 +271,6 @@ public static class ServiceCollectionExtensions
         authenticationBuilder.AddIdentityCookies();
         services.ConfigureApplicationCookie(options =>
         {
-            options.Cookie.Name = idmtOptions.Identity.Cookie.Name;
             options.Cookie.HttpOnly = idmtOptions.Identity.Cookie.HttpOnly;
             options.Cookie.SecurePolicy = idmtOptions.Identity.Cookie.SecurePolicy;
             options.Cookie.SameSite = idmtOptions.Identity.Cookie.SameSite;
