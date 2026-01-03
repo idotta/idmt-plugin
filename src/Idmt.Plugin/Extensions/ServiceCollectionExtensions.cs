@@ -216,8 +216,9 @@ public static class ServiceCollectionExtensions
         builder.Services.ConfigurePerTenant<CookieAuthenticationOptions, IdmtTenantInfo>(
             IdentityConstants.ApplicationScheme, (options, tenantInfo) =>
             {
+                var tenantIdentifier = tenantInfo?.Identifier ?? throw new InvalidOperationException("Tenant information is required to configure cookie options.");
                 // Prevents Tenant A's tab from overwriting Tenant B's session
-                options.Cookie.Name = $"{idmtOptions.Identity.Cookie.Name}.{tenantInfo.Identifier}";
+                options.Cookie.Name = $"{idmtOptions.Identity.Cookie.Name}.{tenantIdentifier}";
             });
     }
 
