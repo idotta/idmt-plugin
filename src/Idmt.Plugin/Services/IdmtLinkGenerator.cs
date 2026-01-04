@@ -136,6 +136,6 @@ public sealed class IdmtLinkGenerator(
         return uri;
     }
 
-    private string GetTenantRouteParameter() => 
+    private string GetTenantRouteParameter() =>
         options.Value.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.Route, IdmtMultiTenantStrategy.DefaultRouteParameter);
 }
