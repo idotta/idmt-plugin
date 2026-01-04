@@ -31,6 +31,7 @@ public sealed class IdmtLinkGenerator(
 
         var routeValues = new RouteValueDictionary()
         {
+            [GetTenantRouteParameter()] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
             ["tenantIdentifier"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
             ["email"] = email,
             ["token"] = token,
@@ -61,6 +62,7 @@ public sealed class IdmtLinkGenerator(
 
         var queryParams = new Dictionary<string, string?>
         {
+            [GetTenantRouteParameter()] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
             ["tenantIdentifier"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
             ["email"] = email,
             ["token"] = token,
@@ -85,6 +87,7 @@ public sealed class IdmtLinkGenerator(
         // Generate password setup URL
         var routeValues = new RouteValueDictionary()
         {
+            [GetTenantRouteParameter()] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
             ["tenantIdentifier"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
             ["email"] = email,
             ["token"] = token,
@@ -118,6 +121,7 @@ public sealed class IdmtLinkGenerator(
 
         var queryParams = new Dictionary<string, string?>
         {
+            [GetTenantRouteParameter()] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
             ["tenantIdentifier"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
             ["email"] = email,
             ["token"] = token,
@@ -131,4 +135,7 @@ public sealed class IdmtLinkGenerator(
 
         return uri;
     }
+
+    private string GetTenantRouteParameter() =>
+        options.Value.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.Route, IdmtMultiTenantStrategy.DefaultRouteParameter);
 }
