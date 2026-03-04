@@ -71,6 +71,10 @@ public static class IdmtErrors
             code: "Tenant.AccessError",
             description: "An error occurred while managing tenant access");
 
+        public static Error AlreadyExists => Error.Conflict(
+            code: "Tenant.AlreadyExists",
+            description: "A tenant with this identifier already exists");
+
         public static Error AccessNotFound => Error.NotFound(
             code: "Tenant.AccessNotFound",
             description: "No tenant access record found for this user");

@@ -59,7 +59,7 @@ public static class RefreshToken
             var tokenTenantClaim = refreshTicket.Principal?.FindFirst(tenantClaimKey)?.Value;
             var currentTenant = tenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier;
 
-            if (tokenTenantClaim is not null && currentTenant is not null && tokenTenantClaim != currentTenant)
+            if (tokenTenantClaim is null || currentTenant is null || tokenTenantClaim != currentTenant)
             {
                 return IdmtErrors.Auth.Unauthorized;
             }
@@ -71,7 +71,7 @@ public static class RefreshToken
 
     public static RouteHandlerBuilder MapRefreshTokenEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/refresh", async Task<Results<Ok<AccessTokenResponse>, SignInHttpResult, ChallengeHttpResult, ValidationProblem>> (
+        return endpoints.MapPost("/refresh", async Task<Results<SignInHttpResult, ChallengeHttpResult, ValidationProblem>> (
             [FromBody] RefreshTokenRequest request,
             [FromServices] IRefreshTokenHandler handler,
             [FromServices] IValidator<RefreshTokenRequest> validator,

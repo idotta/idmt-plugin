@@ -1,3 +1,5 @@
+using ErrorOr;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -11,43 +13,40 @@ namespace Idmt.Plugin.Features.Auth;
 
 public static class Logout
 {
-
-    /// <summary>
-    /// Interface for logout operations
-    /// </summary>
     public interface ILogoutHandler
     {
-        /// <summary>
-        /// Handles user logout
-        /// </summary>
-        /// <param name="cancellationToken">Cancellation token</param>
-        Task HandleAsync(CancellationToken cancellationToken = default);
+        Task<ErrorOr<Success>> HandleAsync(CancellationToken cancellationToken = default);
     }
 
     internal sealed class LogoutHandler(ILogger<LogoutHandler> logger, SignInManager<IdmtUser> signInManager)
-    : ILogoutHandler
+        : ILogoutHandler
     {
-        public async Task HandleAsync(CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<Success>> HandleAsync(CancellationToken cancellationToken = default)
         {
             try
             {
                 await signInManager.SignOutAsync();
+                return Result.Success;
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "An error occurred during logout");
-                throw;
+                return IdmtErrors.General.Unexpected;
             }
         }
     }
 
     public static RouteHandlerBuilder MapLogoutEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/logout", async Task<NoContent> (
+        return endpoints.MapPost("/logout", async Task<Results<NoContent, ProblemHttpResult>> (
             [FromServices] ILogoutHandler logoutHandler,
             CancellationToken cancellationToken = default) =>
         {
-            await logoutHandler.HandleAsync(cancellationToken);
+            var result = await logoutHandler.HandleAsync(cancellationToken);
+            if (result.IsError)
+            {
+                return TypedResults.Problem(result.FirstError.Description, statusCode: StatusCodes.Status500InternalServerError);
+            }
             return TypedResults.NoContent();
         })
         .RequireAuthorization()

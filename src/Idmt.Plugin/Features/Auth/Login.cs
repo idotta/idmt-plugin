@@ -331,6 +331,7 @@ public static class Login
                 {
                     ErrorType.Unauthorized => TypedResults.Unauthorized(),
                     ErrorType.Forbidden => TypedResults.Forbid(),
+                    ErrorType.Validation => TypedResults.Problem(response.FirstError.Description, statusCode: StatusCodes.Status400BadRequest),
                     _ => TypedResults.Problem(response.FirstError.Description, statusCode: StatusCodes.Status500InternalServerError),
                 };
             }
@@ -372,6 +373,7 @@ public static class Login
                 {
                     ErrorType.Unauthorized => TypedResults.Unauthorized(),
                     ErrorType.Forbidden => TypedResults.Forbid(),
+                    ErrorType.Validation => TypedResults.Problem(response.FirstError.Description, statusCode: StatusCodes.Status400BadRequest),
                     _ => TypedResults.Problem(response.FirstError.Description, statusCode: StatusCodes.Status500InternalServerError),
                 };
             }

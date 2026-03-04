@@ -38,7 +38,7 @@ public static class ResetPassword
                 try
                 {
                     var user = await userManager.FindByEmailAsync(email);
-                    if (user is null)
+                    if (user is null || !user.IsActive)
                     {
                         return IdmtErrors.Password.ResetFailed;
                     }

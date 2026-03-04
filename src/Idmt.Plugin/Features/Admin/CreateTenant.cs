@@ -51,13 +51,15 @@ public static class CreateTenant
                 var existingTenant = await tenantStore.GetByIdentifierAsync(request.Identifier);
                 if (existingTenant is not null)
                 {
-                    if (!existingTenant.IsActive)
+                    if (existingTenant.IsActive)
                     {
-                        existingTenant = existingTenant with { IsActive = true };
-                        if (!await tenantStore.UpdateAsync(existingTenant))
-                        {
-                            return IdmtErrors.Tenant.UpdateFailed;
-                        }
+                        return IdmtErrors.Tenant.AlreadyExists;
+                    }
+
+                    existingTenant = existingTenant with { IsActive = true };
+                    if (!await tenantStore.UpdateAsync(existingTenant))
+                    {
+                        return IdmtErrors.Tenant.UpdateFailed;
                     }
                     resultTenant = existingTenant;
                 }
@@ -129,7 +131,7 @@ public static class CreateTenant
 
     public static RouteHandlerBuilder MapCreateTenantEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/tenants", async Task<Results<Created<CreateTenantResponse>, ValidationProblem, BadRequest, ProblemHttpResult>> (
+        return endpoints.MapPost("/tenants", async Task<Results<Created<CreateTenantResponse>, ValidationProblem, Conflict, BadRequest, ProblemHttpResult>> (
             [FromBody] CreateTenantRequest request,
             [FromServices] ICreateTenantHandler handler,
             [FromServices] IValidator<CreateTenantRequest> validator,
@@ -144,6 +146,7 @@ public static class CreateTenant
             {
                 return response.FirstError.Type switch
                 {
+                    ErrorType.Conflict => TypedResults.Conflict(),
                     ErrorType.Validation => TypedResults.BadRequest(),
                     _ => TypedResults.Problem(response.FirstError.Description, statusCode: StatusCodes.Status500InternalServerError),
                 };

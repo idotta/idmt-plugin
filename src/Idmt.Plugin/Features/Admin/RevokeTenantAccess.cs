@@ -95,13 +95,13 @@ public static class RevokeTenantAccess
 
     public static RouteHandlerBuilder MapRevokeTenantAccessEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantId}", async Task<Results<NoContent, NotFound, InternalServerError>> (
+        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantIdentifier}", async Task<Results<NoContent, NotFound, InternalServerError>> (
             Guid userId,
-            string tenantId,
+            string tenantIdentifier,
             IRevokeTenantAccessHandler handler,
             CancellationToken cancellationToken) =>
         {
-            var result = await handler.HandleAsync(userId, tenantId, cancellationToken);
+            var result = await handler.HandleAsync(userId, tenantIdentifier, cancellationToken);
             if (result.IsError)
             {
                 return result.FirstError.Type switch
