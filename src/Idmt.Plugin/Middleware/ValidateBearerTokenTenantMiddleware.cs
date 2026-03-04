@@ -1,13 +1,15 @@
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Idmt.Plugin.Middleware;
 
 public class ValidateBearerTokenTenantMiddleware(
     IMultiTenantContextAccessor tenantContextAccessor,
-    IOptions<IdmtOptions> idmtOptions) : IMiddleware
+    IOptions<IdmtOptions> idmtOptions,
+    ILogger<ValidateBearerTokenTenantMiddleware> logger) : IMiddleware
 {
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
@@ -67,9 +69,10 @@ public class ValidateBearerTokenTenantMiddleware(
 
             return true; // Validation passed
         }
-        catch
+        catch (Exception ex)
         {
-            return false; // On error, reject the request
+            logger.LogWarning(ex, "Error validating bearer token tenant");
+            return false;
         }
     }
 }

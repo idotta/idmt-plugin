@@ -35,51 +35,6 @@ public class AdminIntegrationTests : BaseIntegrationTest
 
     #endregion
 
-    #region Get System Info Tests
-
-    [Fact]
-    public async Task GetSystemInfo_returns_system_details()
-    {
-        var client = await CreateAuthenticatedClientAsync();
-
-        var response = await client.GetAsync("/admin/info");
-        await response.AssertSuccess();
-
-        var sysInfo = await response.Content.ReadFromJsonAsync<GetSystemInfo.SystemInfoResponse>();
-        Assert.NotNull(sysInfo);
-        Assert.NotEmpty(sysInfo!.ApplicationName);
-        Assert.NotEmpty(sysInfo.Version);
-        Assert.NotEmpty(sysInfo.Environment);
-        Assert.True(sysInfo.ServerTime > DateTime.MinValue);
-    }
-
-    [Fact]
-    public async Task GetSystemInfo_returns_current_tenant_info()
-    {
-        var client = await CreateAuthenticatedClientAsync();
-
-        var response = await client.GetAsync("/admin/info");
-        await response.AssertSuccess();
-
-        var sysInfo = await response.Content.ReadFromJsonAsync<GetSystemInfo.SystemInfoResponse>();
-        Assert.NotNull(sysInfo);
-        Assert.NotNull(sysInfo!.CurrentTenant);
-        var currentTenant = sysInfo.CurrentTenant!;
-        Assert.NotNull(currentTenant.Identifier);
-        Assert.NotNull(currentTenant.Name);
-    }
-
-    [Fact]
-    public async Task GetSystemInfo_requires_authentication()
-    {
-        var client = Factory.CreateClientWithTenant();
-
-        var response = await client.GetAsync("/admin/info");
-        Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.Found });
-    }
-
-    #endregion
-
     #region Create Tenant Tests (Handler-based)
 
     [Fact]
@@ -92,9 +47,8 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var request = new CreateTenant.CreateTenantRequest(tenantIdentifier, "Test Tenant", "Test Tenant Display");
         var result = await handler.HandleAsync(request);
 
-        Assert.True(result.IsSuccess);
-        Assert.NotNull(result.Value);
-        Assert.Equal(tenantIdentifier, result.Value!.Identifier);
+        Assert.False(result.IsError);
+        Assert.Equal(tenantIdentifier, result.Value.Identifier);
     }
 
     [Fact]
@@ -116,8 +70,8 @@ public class AdminIntegrationTests : BaseIntegrationTest
 
         // Reactivate by creating again
         var reactivateResult = await handler.HandleAsync(request);
-        Assert.True(reactivateResult.IsSuccess);
-        Assert.Equal(tenantId, reactivateResult.Value!.Id);
+        Assert.False(reactivateResult.IsError);
+        Assert.Equal(tenantId, reactivateResult.Value.Id);
     }
 
     #endregion
@@ -136,7 +90,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
         await createHandler.HandleAsync(request);
 
         var deleted = await deleteHandler.HandleAsync(tenantIdentifier);
-        Assert.True(deleted.IsSuccess);
+        Assert.False(deleted.IsError);
     }
 
     [Fact]
@@ -146,7 +100,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var deleteHandler = scope.ServiceProvider.GetRequiredService<DeleteTenant.IDeleteTenantHandler>();
 
         var deleted = await deleteHandler.HandleAsync($"nonexistent-{Guid.NewGuid():N}");
-        Assert.False(deleted.IsSuccess);
+        Assert.True(deleted.IsError);
     }
 
     #endregion

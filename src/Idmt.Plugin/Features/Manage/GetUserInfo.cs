@@ -52,7 +52,7 @@ public static class GetUserInfo
                 appUser.UserName ?? string.Empty,
                 role ?? string.Empty,
                 tenant.Identifier ?? string.Empty,
-                tenant.DisplayName ?? string.Empty
+                tenant.Name ?? string.Empty
             );
         }
     }

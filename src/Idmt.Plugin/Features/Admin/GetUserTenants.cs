@@ -1,5 +1,7 @@
+using ErrorOr;
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
 using Microsoft.AspNetCore.Builder;
@@ -11,20 +13,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Idmt.Plugin.Features.Admin;
 
-public sealed record TenantInfoResponse(
-    string Id,
-    string Identifier,
-    string Name,
-    string DisplayName,
-    string Plan,
-    bool IsActive
-);
-
 public static class GetUserTenants
 {
     public interface IGetUserTenantsHandler
     {
-        Task<Result<TenantInfoResponse[]>> HandleAsync(Guid userId, CancellationToken cancellationToken = default);
+        Task<ErrorOr<TenantInfoResponse[]>> HandleAsync(Guid userId, CancellationToken cancellationToken = default);
     }
 
     internal sealed class GetUserTenantsHandler(
@@ -32,7 +25,7 @@ public static class GetUserTenants
         IMultiTenantStore<IdmtTenantInfo> tenantStore,
         ILogger<GetUserTenantsHandler> logger) : IGetUserTenantsHandler
     {
-        public async Task<Result<TenantInfoResponse[]>> HandleAsync(Guid userId, CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<TenantInfoResponse[]>> HandleAsync(Guid userId, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -41,23 +34,25 @@ public static class GetUserTenants
                     .Select(ta => ta.TenantId)
                     .ToArrayAsync(cancellationToken);
 
-                var tenantTasks = tenantIds.Select(tenantStore.GetAsync);
-                var tenants = await Task.WhenAll(tenantTasks);
+                var allTenants = await tenantStore.GetAllAsync();
+                var tenantIdSet = new HashSet<string>(tenantIds.Where(id => id != null)!);
 
-                var res = tenants.Where(t => t != null).Select(t => new TenantInfoResponse(
-                    t!.Id ?? string.Empty,
-                    t.Identifier ?? string.Empty,
-                    t.Name ?? string.Empty,
-                    t.DisplayName ?? string.Empty,
-                    t.Plan ?? string.Empty,
-                    t.IsActive)).ToArray();
+                var res = allTenants
+                    .Where(t => t != null && tenantIdSet.Contains(t.Id!))
+                    .Select(t => new TenantInfoResponse(
+                        t!.Id ?? string.Empty,
+                        t.Identifier ?? string.Empty,
+                        t.Name ?? string.Empty,
+                        t.Plan ?? string.Empty,
+                        t.IsActive))
+                    .ToArray();
 
-                return Result.Success(res);
+                return res;
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "An error occurred while retrieving tenants for user {UserId}", userId);
-                return Result.Failure<TenantInfoResponse[]>($"An error occurred while retrieving tenants: {ex.Message}", StatusCodes.Status500InternalServerError);
+                return IdmtErrors.General.Unexpected;
             }
         }
     }
@@ -70,13 +65,13 @@ public static class GetUserTenants
             CancellationToken cancellationToken) =>
         {
             var result = await handler.HandleAsync(userId, cancellationToken);
-            if (!result.IsSuccess)
+            if (result.IsError)
             {
                 return TypedResults.InternalServerError();
             }
-            return TypedResults.Ok(result.Value!);
+            return TypedResults.Ok(result.Value);
         })
-        .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
+        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
         .WithSummary("Get tenants accessible by user");
     }
 }

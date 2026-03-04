@@ -1,6 +1,10 @@
+using ErrorOr;
 using Finbuckle.MultiTenant.Abstractions;
+using FluentValidation;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -31,18 +35,16 @@ public static class CreateTenant
 
     public interface ICreateTenantHandler
     {
-        Task<Result<CreateTenantResponse>> HandleAsync(CreateTenantRequest request, CancellationToken cancellationToken = default);
+        Task<ErrorOr<CreateTenantResponse>> HandleAsync(CreateTenantRequest request, CancellationToken cancellationToken = default);
     }
 
     internal sealed class CreateTenantHandler(
         IMultiTenantStore<IdmtTenantInfo> tenantStore,
-        IMultiTenantContextSetter tenantContextSetter,
-        IMultiTenantContextAccessor tenantContextAccessor,
-        IServiceProvider serviceProvider,
+        ITenantOperationService tenantOps,
         IOptions<IdmtOptions> options,
         ILogger<CreateTenantHandler> logger) : ICreateTenantHandler
     {
-        public async Task<Result<CreateTenantResponse>> HandleAsync(CreateTenantRequest request, CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<CreateTenantResponse>> HandleAsync(CreateTenantRequest request, CancellationToken cancellationToken = default)
         {
             IdmtTenantInfo resultTenant;
 
@@ -56,7 +58,7 @@ public static class CreateTenant
                         existingTenant = existingTenant with { IsActive = true };
                         if (!await tenantStore.UpdateAsync(existingTenant))
                         {
-                            return Result.Failure<CreateTenantResponse>("Failed to update tenant", StatusCodes.Status500InternalServerError);
+                            return IdmtErrors.Tenant.UpdateFailed;
                         }
                     }
                     resultTenant = existingTenant;
@@ -65,12 +67,12 @@ public static class CreateTenant
                 {
                     var tenant = new IdmtTenantInfo(request.Identifier, request.Name)
                     {
-                        DisplayName = request.DisplayName
+                        Name = request.DisplayName
                     };
 
                     if (!await tenantStore.AddAsync(tenant))
                     {
-                        return Result.Failure<CreateTenantResponse>("Failed to create tenant", StatusCodes.Status400BadRequest);
+                        return IdmtErrors.Tenant.CreationFailed;
                     }
                     resultTenant = tenant;
                 }
@@ -78,7 +80,7 @@ public static class CreateTenant
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error creating tenant with identifier {Identifier}", request.Identifier);
-                return Result.Failure<CreateTenantResponse>($"Error creating tenant: {ex.Message}", StatusCodes.Status500InternalServerError);
+                return IdmtErrors.General.Unexpected;
             }
 
             try
@@ -86,7 +88,7 @@ public static class CreateTenant
                 bool ok = await GuaranteeTenantRolesAsync(resultTenant);
                 if (!ok)
                 {
-                    return Result.Failure<CreateTenantResponse>($"Failed to guarantee tenant roles.", StatusCodes.Status500InternalServerError);
+                    return IdmtErrors.Tenant.RoleSeedFailed;
                 }
             }
             catch (Exception ex)
@@ -94,11 +96,11 @@ public static class CreateTenant
                 logger.LogError(ex, "Error seeding roles for tenant {Identifier}", request.Identifier);
             }
 
-            return Result.Success(new CreateTenantResponse(
+            return new CreateTenantResponse(
                 resultTenant.Id ?? string.Empty,
                 resultTenant.Identifier ?? string.Empty,
                 resultTenant.Name ?? string.Empty,
-                resultTenant.DisplayName ?? string.Empty), StatusCodes.Status200OK);
+                resultTenant.Name ?? string.Empty);
         }
 
         private async Task<bool> GuaranteeTenantRolesAsync(IdmtTenantInfo tenantInfo)
@@ -109,80 +111,47 @@ public static class CreateTenant
                 roles = [.. roles, .. options.Value.Identity.ExtraRoles];
             }
 
-            // Set tenant context before seeding roles to avoid NullReferenceException with multi-tenant filters
-            var previousContext = tenantContextAccessor.MultiTenantContext;
-            try
+            var result = await tenantOps.ExecuteInTenantScopeAsync(tenantInfo.Identifier!, async provider =>
             {
-                tenantContextSetter.MultiTenantContext = new MultiTenantContext<IdmtTenantInfo>(tenantInfo);
-
-                // Seed default roles
-                using var scope = serviceProvider.CreateScope();
-                var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdmtRole>>();
+                var roleManager = provider.GetRequiredService<RoleManager<IdmtRole>>();
                 foreach (var role in roles)
                 {
                     if (!await roleManager.RoleExistsAsync(role))
                     {
-                        var result = await roleManager.CreateAsync(new IdmtRole(role));
-                        if (!result.Succeeded)
+                        var createResult = await roleManager.CreateAsync(new IdmtRole(role));
+                        if (!createResult.Succeeded)
                         {
-                            return false;
+                            return IdmtErrors.Tenant.RoleSeedFailed;
                         }
                     }
                 }
-            }
-            finally
-            {
-                // Restore previous context
-                tenantContextSetter.MultiTenantContext = previousContext;
-            }
+                return Result.Success;
+            }, requireActive: false);
 
-            return true;
+            return !result.IsError;
         }
-    }
-
-    public static Dictionary<string, string[]>? Validate(this CreateTenantRequest request)
-    {
-        var errors = new Dictionary<string, string[]>();
-
-        if (string.IsNullOrEmpty(request.Identifier))
-        {
-            errors["Identifier"] = ["Identifier is required"];
-        }
-        else if (!Validators.IsValidTenantIdentifier(request.Identifier))
-        {
-            errors["Identifier"] = ["Identifier can only contain lowercase alphanumeric characters, dashes, and underscores"];
-        }
-        if (string.IsNullOrEmpty(request.Name))
-        {
-            errors["Name"] = ["Name is required"];
-        }
-        if (string.IsNullOrEmpty(request.DisplayName))
-        {
-            errors["DisplayName"] = ["Display Name is required"];
-        }
-
-        return errors.Count > 0 ? errors : null;
     }
 
     public static RouteHandlerBuilder MapCreateTenantEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/tenants", static async Task<Results<Ok<CreateTenantResponse>, Created<CreateTenantResponse>, ValidationProblem, BadRequest>> (
+        return endpoints.MapPost("/tenants", async Task<Results<Ok<CreateTenantResponse>, Created<CreateTenantResponse>, ValidationProblem, BadRequest>> (
             [FromBody] CreateTenantRequest request,
             [FromServices] ICreateTenantHandler handler,
+            [FromServices] IValidator<CreateTenantRequest> validator,
             HttpContext context) =>
         {
-            if (request.Validate() is { } validationErrors)
+            if (ValidationHelper.Validate(request, validator) is { } validationErrors)
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
             var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
-            if (!response.IsSuccess)
+            if (response.IsError)
             {
                 return TypedResults.BadRequest();
             }
             return TypedResults.Ok(response.Value);
         })
-        .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
+        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
         .WithSummary("Create Tenant")
         .WithDescription("Create a new tenant in the system or reactivate an existing inactive tenant");
     }

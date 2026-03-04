@@ -24,7 +24,7 @@ public class IdmtOptions
     /// <summary>
     /// Identity configuration options
     /// </summary>
-    public AuthOptions Identity { get; set; } = new();
+    public IdmtAuthOptions Identity { get; set; } = new();
 
     /// <summary>
     /// Multi-tenant configuration options
@@ -62,7 +62,7 @@ public class ApplicationOptions
 /// <summary>
 /// ASP.NET Core Identity configuration
 /// </summary>
-public class AuthOptions
+public class IdmtAuthOptions
 {
     public const string CookieOrBearerScheme = "CookieOrBearer";
 
@@ -75,7 +75,7 @@ public class AuthOptions
     /// <summary>
     /// Password requirements
     /// </summary>
-    public PasswordOptions Password { get; set; } = new();
+    public IdmtPasswordOptions Password { get; set; } = new();
 
     /// <summary>
     /// User requirements
@@ -90,7 +90,7 @@ public class AuthOptions
     /// <summary>
     /// Cookie configuration options
     /// </summary>
-    public CookieOptions Cookie { get; set; } = new();
+    public IdmtCookieOptions Cookie { get; set; } = new();
 
     /// <summary>
     /// Bearer token configuration options
@@ -106,13 +106,13 @@ public class AuthOptions
 /// <summary>
 /// Password configuration options
 /// </summary>
-public class PasswordOptions
+public class IdmtPasswordOptions
 {
     public bool RequireDigit { get; set; } = true;
     public bool RequireLowercase { get; set; } = true;
     public bool RequireUppercase { get; set; } = true;
     public bool RequireNonAlphanumeric { get; set; } = false;
-    public int RequiredLength { get; set; } = 6;
+    public int RequiredLength { get; set; } = 8;
     public int RequiredUniqueChars { get; set; } = 1;
 }
 
@@ -137,11 +137,11 @@ public class SignInOptions
 /// <summary>
 /// Cookie configuration options
 /// </summary>
-public class CookieOptions
+public class IdmtCookieOptions
 {
     public string Name { get; set; } = ".Idmt.Application";
     public bool HttpOnly { get; set; } = true;
-    public Microsoft.AspNetCore.Http.CookieSecurePolicy SecurePolicy { get; set; } = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
+    public Microsoft.AspNetCore.Http.CookieSecurePolicy SecurePolicy { get; set; } = Microsoft.AspNetCore.Http.CookieSecurePolicy.Always;
     public Microsoft.AspNetCore.Http.SameSiteMode SameSite { get; set; } = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
     public TimeSpan ExpireTimeSpan { get; set; } = TimeSpan.FromDays(14);
     public bool SlidingExpiration { get; set; } = true;
@@ -209,11 +209,6 @@ public class MultiTenantOptions
 /// </summary>
 public class DatabaseOptions
 {
-    /// <summary>
-    /// Connection string template with placeholder for tenant's properties
-    /// </summary>
-    public string ConnectionStringTemplate { get; set; } = string.Empty;
-
     /// <summary>
     /// Auto-migrate database on startup
     /// </summary>

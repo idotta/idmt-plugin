@@ -17,7 +17,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Idmt.Plugin.Extensions;
 
@@ -86,9 +88,11 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration,
         Action<DbContextOptionsBuilder>? configureDb = null,
-        Action<IdmtOptions>? configureOptions = null)
+        Action<IdmtOptions>? configureOptions = null,
+        CustomizeAuthentication? customizeAuthentication = null,
+        CustomizeAuthorization? customizeAuthorization = null)
     {
-        return services.AddIdmt<IdmtDbContext>(configuration, configureDb, configureOptions);
+        return services.AddIdmt<IdmtDbContext>(configuration, configureDb, configureOptions, customizeAuthentication, customizeAuthorization);
     }
 
     #region Private Configuration Methods
@@ -250,7 +254,7 @@ public static class ServiceCollectionExtensions
         })
         .AddRoles<IdmtRole>()
         .AddEntityFrameworkStores<IdmtDbContext>()
-        .AddSignInManager<BetterSignInManager>()
+        .AddSignInManager()
         .AddClaimsPrincipalFactory<IdmtUserClaimsPrincipalFactory>()
         .AddDefaultTokenProviders();
     }
@@ -263,8 +267,8 @@ public static class ServiceCollectionExtensions
         // Configure authentication with both cookie and bearer token support
         var authenticationBuilder = services.AddAuthentication(options =>
         {
-            options.DefaultScheme = AuthOptions.CookieOrBearerScheme;
-            options.DefaultChallengeScheme = AuthOptions.CookieOrBearerScheme;
+            options.DefaultScheme = IdmtAuthOptions.CookieOrBearerScheme;
+            options.DefaultChallengeScheme = IdmtAuthOptions.CookieOrBearerScheme;
         });
 
         // Cookie authentication
@@ -325,7 +329,7 @@ public static class ServiceCollectionExtensions
         });
 
         // PolicyScheme - automatically routes based on request
-        authenticationBuilder.AddPolicyScheme(AuthOptions.CookieOrBearerScheme, "Cookie or Bearer", options =>
+        authenticationBuilder.AddPolicyScheme(IdmtAuthOptions.CookieOrBearerScheme, "Cookie or Bearer", options =>
         {
             options.ForwardDefaultSelector = context =>
             {
@@ -348,34 +352,34 @@ public static class ServiceCollectionExtensions
     {
         // Configure authorization
         var authorizationBuilder = services.AddAuthorizationBuilder()
-            .SetDefaultPolicy(new AuthorizationPolicyBuilder(AuthOptions.CookieOrBearerScheme)
+            .SetDefaultPolicy(new AuthorizationPolicyBuilder(IdmtAuthOptions.CookieOrBearerScheme)
             .RequireAuthenticatedUser()
             .Build())
 
             // Cookie-only policy (rare - for web-specific features)
-            .AddPolicy(AuthOptions.CookieOnlyPolicy, policy => policy
+            .AddPolicy(IdmtAuthOptions.CookieOnlyPolicy, policy => policy
                 .RequireAuthenticatedUser()
                 .AddAuthenticationSchemes(IdentityConstants.ApplicationScheme))
 
             // Bearer-only policy (rare - for strict API endpoints)
-            .AddPolicy(AuthOptions.BearerOnlyPolicy, policy => policy
+            .AddPolicy(IdmtAuthOptions.BearerOnlyPolicy, policy => policy
                 .RequireAuthenticatedUser()
                 .AddAuthenticationSchemes(IdentityConstants.BearerScheme))
 
             // Add system admin policy
-            .AddPolicy(AuthOptions.RequireSysAdminPolicy, policy =>
+            .AddPolicy(IdmtAuthOptions.RequireSysAdminPolicy, policy =>
                 policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin)
-                    .AddAuthenticationSchemes(AuthOptions.CookieOrBearerScheme))
+                    .AddAuthenticationSchemes(IdmtAuthOptions.CookieOrBearerScheme))
 
             // Add system user policy
-            .AddPolicy(AuthOptions.RequireSysUserPolicy, policy =>
+            .AddPolicy(IdmtAuthOptions.RequireSysUserPolicy, policy =>
                 policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin, IdmtDefaultRoleTypes.SysSupport)
-                    .AddAuthenticationSchemes(AuthOptions.CookieOrBearerScheme))
+                    .AddAuthenticationSchemes(IdmtAuthOptions.CookieOrBearerScheme))
 
             // Add tenant admin policy
-            .AddPolicy(AuthOptions.RequireTenantManagerPolicy, policy =>
+            .AddPolicy(IdmtAuthOptions.RequireTenantManagerPolicy, policy =>
                 policy.RequireRole(IdmtDefaultRoleTypes.SysAdmin, IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.TenantAdmin)
-                    .AddAuthenticationSchemes(AuthOptions.CookieOrBearerScheme));
+                    .AddAuthenticationSchemes(IdmtAuthOptions.CookieOrBearerScheme));
 
         customizeAuthorization?.Invoke(authorizationBuilder);
     }
@@ -385,8 +389,15 @@ public static class ServiceCollectionExtensions
         // Register scoped services for per-request context
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ITenantAccessService, TenantAccessService>();
+        services.AddScoped<ITenantOperationService, TenantOperationService>();
         services.AddScoped<IIdmtLinkGenerator, IdmtLinkGenerator>();
         services.AddTransient<IEmailSender<IdmtUser>, IdmtEmailSender>();
+
+        // Register TimeProvider for testable time access
+        services.TryAddSingleton(TimeProvider.System);
+
+        // Register FluentValidation validators
+        services.AddValidatorsFromAssemblyContaining<IdmtOptions>(ServiceLifetime.Scoped);
 
         // Register HTTP context accessor for service access to HTTP context
         services.AddHttpContextAccessor();

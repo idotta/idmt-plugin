@@ -219,7 +219,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         // Set password
         using var publicClient = Factory.CreateClient();
         await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
+            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
             {
                 ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
                 ["email"] = email,
@@ -317,7 +317,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         // Set password
         using var publicClient = Factory.CreateClient();
         await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
+            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
             {
                 ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
                 ["email"] = email,
@@ -390,7 +390,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         // Set password and login
         using var publicClient = Factory.CreateClient();
         await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
+            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
             {
                 ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
                 ["email"] = email,
@@ -439,7 +439,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
 
         using var publicClient = Factory.CreateClient();
         await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
+            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
             {
                 ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
                 ["email"] = email,
@@ -487,7 +487,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
 
         using var publicClient = Factory.CreateClient();
         await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
+            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
             {
                 ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
                 ["email"] = email,
@@ -529,7 +529,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
 
         using var publicClient = Factory.CreateClient();
         await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
+            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
             {
                 ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
                 ["email"] = email,

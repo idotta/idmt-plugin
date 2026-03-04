@@ -1,4 +1,3 @@
-using System.Reflection;
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Features;
@@ -23,12 +22,13 @@ public delegate Task SeedDataAsync(IServiceProvider services);
 public static class ApplicationBuilderExtensions
 {
     /// <summary>
-    /// Middleware pipeline for security before calling UseIdmt()
+    /// Adds IDMT middleware to the application pipeline, including security headers.
     /// </summary>
-    /// <param name="app">The web application</param>
-    /// <returns>The web application</returns>
-    public static IApplicationBuilder UseIdmtSecurity(this WebApplication app)
+    /// <param name="app">The application builder</param>
+    /// <returns>The application builder</returns>
+    public static IApplicationBuilder UseIdmt(this IApplicationBuilder app)
     {
+        // Security headers
         app.Use(async (context, next) =>
         {
             context.Response.Headers.XContentTypeOptions = "nosniff";
@@ -38,16 +38,6 @@ public static class ApplicationBuilderExtensions
             await next();
         });
 
-        return app;
-    }
-
-    /// <summary>
-    /// Adds IDMT middleware to the application pipeline
-    /// </summary>
-    /// <param name="app">The application builder</param>
-    /// <returns>The application builder</returns>
-    public static IApplicationBuilder UseIdmt(this IApplicationBuilder app)
-    {
         // Add multi-tenant middleware - must come before authentication
         app.UseMultiTenant();
 
@@ -78,7 +68,7 @@ public static class ApplicationBuilderExtensions
         endpoints.MapAuthEndpoints();
         endpoints.MapAuthManageEndpoints();
         endpoints.MapAdminEndpoints();
-        endpoints.MapHealthChecks("/healthz").RequireAuthorization(AuthOptions.RequireSysUserPolicy);
+        endpoints.MapHealthChecks("/healthz").RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy);
         return endpoints;
     }
 
@@ -123,9 +113,8 @@ public static class ApplicationBuilderExtensions
             // NOTE: IdmtTenantStoreDbContext shares the same database/connection
             // No separate initialization needed - it accesses tables created above
         }
-        catch (Exception ex)
+        catch
         {
-            Console.Error.WriteLine($"Database initialization failed: {ex.Message}");
             throw;
         }
     }
@@ -151,9 +140,8 @@ public static class ApplicationBuilderExtensions
                 await seedAction(services);
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.Error.WriteLine($"Data seeding failed: {ex.Message}");
             throw;
         }
 
@@ -172,73 +160,15 @@ public static class ApplicationBuilderExtensions
 
     private static void VerifyUserStoreSupportsEmail(IApplicationBuilder app)
     {
-        // Check if the service is registered without resolving it to avoid circular dependencies
-        var serviceProvider = app.ApplicationServices;
-
-        // Fallback: Use reflection to access service descriptors for older .NET versions
-        var serviceDescriptors = GetServiceDescriptors(serviceProvider);
-        var userStoreDescriptor = serviceDescriptors.FirstOrDefault(sd => sd.ServiceType == typeof(IUserStore<IdmtUser>))
-            ?? throw new InvalidOperationException("No IUserStore<IdmtUser> is registered. Ensure Identity is configured before calling UseIdmt().");
-
-        // Check if the implementation type implements IUserEmailStore<IdmtUser>
-        var implementationType = userStoreDescriptor.ImplementationType;
-        if (implementationType == null)
+        using var scope = app.ApplicationServices.CreateScope();
+        var userStore = scope.ServiceProvider.GetService<IUserStore<IdmtUser>>();
+        if (userStore is null)
         {
-            // If using a factory or instance, we can't verify without resolving
-            // EntityFrameworkStores always implements IUserEmailStore, so we assume it's correct
-            return;
+            throw new InvalidOperationException("No IUserStore<IdmtUser> is registered. Ensure Identity is configured before calling UseIdmt().");
         }
-
-        // Verify the implementation type implements IUserEmailStore<IdmtUser>
-        var emailStoreType = typeof(IUserEmailStore<IdmtUser>);
-        if (!emailStoreType.IsAssignableFrom(implementationType))
+        if (userStore is not IUserEmailStore<IdmtUser>)
         {
-            throw new NotSupportedException($"Idmt.Plugin requires a user store that implements IUserEmailStore<IdmtUser> (email support). Found: {implementationType.FullName}");
+            throw new NotSupportedException("Idmt.Plugin requires a user store that supports email (IUserEmailStore<IdmtUser>).");
         }
-    }
-
-    private static IEnumerable<ServiceDescriptor> GetServiceDescriptors(IServiceProvider serviceProvider)
-    {
-        // Use reflection to access the internal CallSiteFactory which contains the service descriptors
-        // This avoids resolving services and prevents circular dependency issues
-        object? callSiteFactory = null;
-
-        var field = serviceProvider.GetType().GetField("_serviceProvider", BindingFlags.NonPublic | BindingFlags.Instance)
-            ?? serviceProvider.GetType().GetField("_callSiteFactory", BindingFlags.NonPublic | BindingFlags.Instance);
-
-        if (field != null)
-        {
-            callSiteFactory = field.GetValue(serviceProvider);
-        }
-        else
-        {
-            var property = serviceProvider.GetType().GetProperty("CallSiteFactory", BindingFlags.NonPublic | BindingFlags.Instance);
-            if (property != null)
-            {
-                callSiteFactory = property.GetValue(serviceProvider);
-            }
-        }
-
-        if (callSiteFactory == null)
-        {
-            return [];
-        }
-
-        // Access the descriptors from the call site factory
-        var descriptorsProperty = callSiteFactory.GetType().GetProperty("Descriptors", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        if (descriptorsProperty != null)
-        {
-            var descriptors = descriptorsProperty.GetValue(callSiteFactory) as IEnumerable<ServiceDescriptor>;
-            return descriptors ?? Enumerable.Empty<ServiceDescriptor>();
-        }
-
-        var descriptorsField = callSiteFactory.GetType().GetField("_descriptors", BindingFlags.NonPublic | BindingFlags.Instance);
-        if (descriptorsField != null)
-        {
-            var descriptors = descriptorsField.GetValue(callSiteFactory) as IEnumerable<ServiceDescriptor>;
-            return descriptors ?? Enumerable.Empty<ServiceDescriptor>();
-        }
-
-        return [];
     }
 }

@@ -1,5 +1,7 @@
+using ErrorOr;
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -13,14 +15,14 @@ public static class GetAllTenants
 {
     public interface IGetAllTenantsHandler
     {
-        Task<Result<TenantInfoResponse[]>> HandleAsync(CancellationToken cancellationToken = default);
+        Task<ErrorOr<TenantInfoResponse[]>> HandleAsync(CancellationToken cancellationToken = default);
     }
 
     internal sealed class GetAllTenantsHandler(
         IMultiTenantStore<IdmtTenantInfo> tenantStore,
         ILogger<GetAllTenantsHandler> logger) : IGetAllTenantsHandler
     {
-        public async Task<Result<TenantInfoResponse[]>> HandleAsync(CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<TenantInfoResponse[]>> HandleAsync(CancellationToken cancellationToken = default)
         {
             try
             {
@@ -32,16 +34,15 @@ public static class GetAllTenants
                     t!.Id ?? string.Empty,
                     t.Identifier ?? string.Empty,
                     t.Name ?? string.Empty,
-                    t.DisplayName ?? string.Empty,
                     t.Plan ?? string.Empty,
                     t.IsActive)).ToArray();
 
-                return Result.Success(res);
+                return res;
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "An error occurred while retrieving all tenants");
-                return Result.Failure<TenantInfoResponse[]>($"An error occurred while retrieving tenants: {ex.Message}", StatusCodes.Status500InternalServerError);
+                return IdmtErrors.General.Unexpected;
             }
         }
     }
@@ -53,13 +54,13 @@ public static class GetAllTenants
             CancellationToken cancellationToken) =>
         {
             var result = await handler.HandleAsync(cancellationToken);
-            if (!result.IsSuccess)
+            if (result.IsError)
             {
                 return TypedResults.InternalServerError();
             }
-            return TypedResults.Ok(result.Value!);
+            return TypedResults.Ok(result.Value);
         })
-        .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
-        .WithSummary("Get tenants accessible by user");
+        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
+        .WithSummary("Get all tenants");
     }
 }

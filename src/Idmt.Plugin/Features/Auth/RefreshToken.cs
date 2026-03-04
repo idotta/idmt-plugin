@@ -1,5 +1,9 @@
 using System.Security.Claims;
+using ErrorOr;
+using FluentValidation;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -19,7 +23,7 @@ public static class RefreshToken
 
     public interface IRefreshTokenHandler
     {
-        Task<Result<RefreshTokenResponse>> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default);
+        Task<ErrorOr<RefreshTokenResponse>> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default);
     }
 
     internal sealed class RefreshTokenHandler(
@@ -28,7 +32,7 @@ public static class RefreshToken
         SignInManager<IdmtUser> signInManager)
         : IRefreshTokenHandler
     {
-        public async Task<Result<RefreshTokenResponse>> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<RefreshTokenResponse>> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default)
         {
             var refreshTokenProtector = bearerTokenOptions.Get(IdentityConstants.BearerScheme).RefreshTokenProtector;
             var refreshTicket = refreshTokenProtector.Unprotect(request.RefreshToken);
@@ -37,24 +41,12 @@ public static class RefreshToken
                 timeProvider.GetUtcNow() >= expiresUtc ||
                 await signInManager.ValidateSecurityStampAsync(refreshTicket.Principal) is not IdmtUser user)
             {
-                return Result.Failure<RefreshTokenResponse>("Invalid refresh token", StatusCodes.Status400BadRequest);
+                return IdmtErrors.Token.Invalid;
             }
 
             ClaimsPrincipal claimsPrincipal = await signInManager.CreateUserPrincipalAsync(user);
-            return Result.Success(new RefreshTokenResponse(claimsPrincipal));
+            return new RefreshTokenResponse(claimsPrincipal);
         }
-    }
-
-    public static Dictionary<string, string[]>? Validate(this RefreshTokenRequest request)
-    {
-        if (string.IsNullOrEmpty(request.RefreshToken))
-        {
-            return new Dictionary<string, string[]>
-            {
-                ["RefreshToken"] = ["Refresh token is required."]
-            };
-        }
-        return null;
     }
 
     public static RouteHandlerBuilder MapRefreshTokenEndpoint(this IEndpointRouteBuilder endpoints)
@@ -62,22 +54,22 @@ public static class RefreshToken
         return endpoints.MapPost("/refresh", async Task<Results<Ok<AccessTokenResponse>, SignInHttpResult, ChallengeHttpResult, ValidationProblem>> (
             [FromBody] RefreshTokenRequest request,
             [FromServices] IRefreshTokenHandler handler,
+            [FromServices] IValidator<RefreshTokenRequest> validator,
             HttpContext context) =>
         {
-            if (request.Validate() is { } validationErrors)
+            if (ValidationHelper.Validate(request, validator) is { } validationErrors)
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
 
             var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
-            if (!response.IsSuccess)
+            if (response.IsError)
             {
                 return TypedResults.Challenge();
             }
-            return TypedResults.SignIn(response.Value!.ClaimsPrincipal, authenticationScheme: IdentityConstants.BearerScheme);
+            return TypedResults.SignIn(response.Value.ClaimsPrincipal, authenticationScheme: IdentityConstants.BearerScheme);
         })
         .WithSummary("Refresh token")
-        .WithDescription("Refresh JWT token using refresh token")
-        .RequireAuthorization();
+        .WithDescription("Refresh JWT token using refresh token");
     }
 }

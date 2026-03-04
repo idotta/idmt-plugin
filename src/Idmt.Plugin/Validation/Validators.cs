@@ -42,7 +42,7 @@ public static partial class Validators
     /// <param name="errors">The list of errors if the password is invalid.</param>
     /// <param name="options"></param>
     /// <returns>True if the password is valid, false otherwise.</returns>
-    public static bool IsValidNewPassword(string? password, PasswordOptions options, out string[]? errors)
+    public static bool IsValidNewPassword(string? password, IdmtPasswordOptions options, out string[]? errors)
     {
         if (string.IsNullOrWhiteSpace(password))
         {
@@ -95,22 +95,6 @@ public static partial class Validators
 
         errors = null;
         return true;
-    }
-
-    /// <summary>
-    /// Validates a GUID string.
-    /// </summary>
-    public static bool IsValidGuid(string? guidString)
-    {
-        return !string.IsNullOrWhiteSpace(guidString) && Guid.TryParse(guidString, out _);
-    }
-
-    /// <summary>
-    /// Validates a tenant ID (non-empty string).
-    /// </summary>
-    public static bool IsValidTenantId(string? tenantId)
-    {
-        return !string.IsNullOrWhiteSpace(tenantId) && tenantId.Length >= 3;
     }
 
     /// <summary>

@@ -1,5 +1,7 @@
+using ErrorOr;
 using Finbuckle.MultiTenant.Abstractions;
-using Idmt.Plugin.Configuration;
+using FluentValidation;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Authentication;
@@ -42,14 +44,14 @@ public static class Login
 
     public interface ILoginHandler
     {
-        Task<Result<LoginResponse>> HandleAsync(
+        Task<ErrorOr<LoginResponse>> HandleAsync(
             LoginRequest loginRequest,
             CancellationToken cancellationToken = default);
     }
 
     public interface ITokenLoginHandler
     {
-        Task<Result<AccessTokenResponse>> HandleAsync(
+        Task<ErrorOr<AccessTokenResponse>> HandleAsync(
             LoginRequest request,
             CancellationToken cancellationToken = default);
     }
@@ -58,9 +60,10 @@ public static class Login
         UserManager<IdmtUser> userManager,
         SignInManager<IdmtUser> signInManager,
         IMultiTenantContextAccessor multiTenantContextAccessor,
+        TimeProvider timeProvider,
         ILogger<LoginHandler> logger) : ILoginHandler
     {
-        public async Task<Result<LoginResponse>> HandleAsync(
+        public async Task<ErrorOr<LoginResponse>> HandleAsync(
             LoginRequest request,
             CancellationToken cancellationToken = default)
         {
@@ -70,7 +73,7 @@ public static class Login
                 var tenantInfo = multiTenantContextAccessor.MultiTenantContext?.TenantInfo;
                 if (tenantInfo == null || string.IsNullOrEmpty(tenantInfo.Id))
                 {
-                    return Result.Failure<LoginResponse>("Tenant not resolved", StatusCodes.Status400BadRequest);
+                    return IdmtErrors.Tenant.NotResolved;
                 }
 
                 // Find user by email or username
@@ -86,7 +89,7 @@ public static class Login
                 }
                 if (user == null)
                 {
-                    return Result.Failure<LoginResponse>("Unauthorized", StatusCodes.Status401Unauthorized);
+                    return IdmtErrors.Auth.Unauthorized;
                 }
 
                 var result = await signInManager.CheckPasswordSignInAsync(
@@ -108,14 +111,14 @@ public static class Login
 
                 if (!result.Succeeded)
                 {
-                    return Result.Failure<LoginResponse>("Unauthorized", StatusCodes.Status401Unauthorized);
+                    return IdmtErrors.Auth.Unauthorized;
                 }
 
                 // Check if user is active
                 if (!user.IsActive)
                 {
                     logger.LogWarning("Login attempt failed: User {UserId} is inactive", user.Id);
-                    return Result.Failure<LoginResponse>("User is deactivated", StatusCodes.Status403Forbidden);
+                    return IdmtErrors.Auth.UserDeactivated;
                 }
 
                 // Direct cookie sign-in (no middleware delay)
@@ -126,19 +129,19 @@ public static class Login
                     new AuthenticationProperties
                     {
                         IsPersistent = request.RememberMe,
-                        ExpiresUtc = DT.UtcNow.AddDays(30)
+                        ExpiresUtc = timeProvider.GetUtcNow().AddDays(30)
                     });
 
                 // Update last login timestamp
-                user.LastLoginAt = DT.UtcNow;
+                user.LastLoginAt = timeProvider.GetUtcNow().UtcDateTime;
                 await userManager.UpdateAsync(user);
 
-                return Result.Success(new LoginResponse { UserId = user.Id });
+                return new LoginResponse { UserId = user.Id };
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "An error occurred during login for identifier {Email} {Username}", request.Email ?? "unknown", request.Username ?? "unknown");
-                return Result.Failure<LoginResponse>("An error occurred during login", StatusCodes.Status500InternalServerError);
+                return IdmtErrors.General.Unexpected;
             }
         }
     }
@@ -151,7 +154,7 @@ public static class Login
         TimeProvider timeProvider,
         ILogger<TokenLoginHandler> logger) : ITokenLoginHandler
     {
-        public async Task<Result<AccessTokenResponse>> HandleAsync(
+        public async Task<ErrorOr<AccessTokenResponse>> HandleAsync(
             LoginRequest request,
             CancellationToken cancellationToken = default)
         {
@@ -161,7 +164,7 @@ public static class Login
                 var tenantInfo = multiTenantContextAccessor.MultiTenantContext?.TenantInfo;
                 if (tenantInfo == null || string.IsNullOrEmpty(tenantInfo.Id))
                 {
-                    return Result.Failure<AccessTokenResponse>("Tenant not resolved", StatusCodes.Status400BadRequest);
+                    return IdmtErrors.Tenant.NotResolved;
                 }
 
                 // Find user by email or username
@@ -177,7 +180,7 @@ public static class Login
                 }
                 if (user == null)
                 {
-                    return Result.Failure<AccessTokenResponse>("Unauthorized", StatusCodes.Status401Unauthorized);
+                    return IdmtErrors.Auth.Unauthorized;
                 }
 
                 var result = await signInManager.CheckPasswordSignInAsync(
@@ -199,14 +202,14 @@ public static class Login
 
                 if (!result.Succeeded)
                 {
-                    return Result.Failure<AccessTokenResponse>("Unauthorized", StatusCodes.Status401Unauthorized);
+                    return IdmtErrors.Auth.Unauthorized;
                 }
 
                 // Check if user is active
                 if (!user.IsActive)
                 {
                     logger.LogWarning("Login attempt failed: User {UserId} is inactive", user.Id);
-                    return Result.Failure<AccessTokenResponse>("User is deactivated", StatusCodes.Status403Forbidden);
+                    return IdmtErrors.Auth.UserDeactivated;
                 }
 
                 // Generate tokens using BearerToken
@@ -239,58 +242,25 @@ public static class Login
                 var refreshToken = refreshTokenProtector.Protect(refreshTicket);
 
                 // Update last login timestamp
-                user.LastLoginAt = DT.UtcNow;
+                user.LastLoginAt = timeProvider.GetUtcNow().UtcDateTime;
                 await userManager.UpdateAsync(user);
 
                 var expiresIn = (long)bearerOptions.BearerTokenExpiration.TotalSeconds;
 
-                return Result.Success(new AccessTokenResponse
+                return new AccessTokenResponse
                 {
                     AccessToken = accessToken,
                     RefreshToken = refreshToken,
                     ExpiresIn = expiresIn,
                     TokenType = "Bearer"
-                });
+                };
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "An error occurred during login for identifier {Email} {Username}", request.Email ?? request.Username ?? "unknown", request.Email ?? request.Username ?? "unknown");
-                return Result.Failure<AccessTokenResponse>("An error occurred during login", StatusCodes.Status500InternalServerError);
+                return IdmtErrors.General.Unexpected;
             }
         }
-    }
-
-    /// <summary>
-    /// Validate the login request.
-    /// </summary>
-    /// <returns>A list of validation errors or null if the request is valid.</returns>
-    public static Dictionary<string, string[]>? Validate(this LoginRequest request)
-    {
-        var errors = new Dictionary<string, string[]>();
-
-        if (request.Email is null && request.Username is null)
-        {
-            errors["Identifier"] = ["Email or Username is required."];
-        }
-        else
-        {
-            if (request.Email is not null && !Validators.IsValidEmail(request.Email))
-            {
-                errors["Email"] = ["Invalid email."];
-            }
-
-            if (request.Username is not null && !Validators.IsValidUsername(request.Username))
-            {
-                errors["Username"] = ["Invalid username."];
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Password))
-        {
-            errors["Password"] = ["Password is required."];
-        }
-
-        return errors.Count == 0 ? null : errors;
     }
 
     public static RouteHandlerBuilder MapCookieLoginEndpoint(this IEndpointRouteBuilder endpoints)
@@ -298,23 +268,24 @@ public static class Login
         return endpoints.MapPost("/login", async Task<Results<Ok<LoginResponse>, UnauthorizedHttpResult, ForbidHttpResult, ValidationProblem, ProblemHttpResult>> (
             [FromBody] LoginRequest request,
             [FromServices] ILoginHandler handler,
+            [FromServices] IValidator<LoginRequest> validator,
             HttpContext context) =>
         {
-            if (request.Validate() is { } validationErrors)
+            if (ValidationHelper.Validate(request, validator) is { } validationErrors)
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
             var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
-            if (!response.IsSuccess)
+            if (response.IsError)
             {
-                return response.StatusCode switch
+                return response.FirstError.Type switch
                 {
-                    StatusCodes.Status401Unauthorized => TypedResults.Unauthorized(),
-                    StatusCodes.Status403Forbidden => TypedResults.Forbid(),
-                    _ => TypedResults.Problem(response.ErrorMessage, statusCode: response.StatusCode),
+                    ErrorType.Unauthorized => TypedResults.Unauthorized(),
+                    ErrorType.Forbidden => TypedResults.Forbid(),
+                    _ => TypedResults.Problem(response.FirstError.Description, statusCode: StatusCodes.Status500InternalServerError),
                 };
             }
-            return TypedResults.Ok(response.Value!);
+            return TypedResults.Ok(response.Value);
         })
         .WithSummary("Login user")
         .WithDescription("Authenticate user and return cookie");
@@ -325,23 +296,24 @@ public static class Login
         return endpoints.MapPost("/token", async Task<Results<Ok<AccessTokenResponse>, UnauthorizedHttpResult, ForbidHttpResult, ValidationProblem, ProblemHttpResult>> (
             [FromBody] LoginRequest request,
             [FromServices] ITokenLoginHandler handler,
+            [FromServices] IValidator<LoginRequest> validator,
             HttpContext context) =>
         {
-            if (request.Validate() is { } validationErrors)
+            if (ValidationHelper.Validate(request, validator) is { } validationErrors)
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
             var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
-            if (!response.IsSuccess)
+            if (response.IsError)
             {
-                return response.StatusCode switch
+                return response.FirstError.Type switch
                 {
-                    StatusCodes.Status401Unauthorized => TypedResults.Unauthorized(),
-                    StatusCodes.Status403Forbidden => TypedResults.Forbid(),
-                    _ => TypedResults.Problem(response.ErrorMessage, statusCode: response.StatusCode),
+                    ErrorType.Unauthorized => TypedResults.Unauthorized(),
+                    ErrorType.Forbidden => TypedResults.Forbid(),
+                    _ => TypedResults.Problem(response.FirstError.Description, statusCode: StatusCodes.Status500InternalServerError),
                 };
             }
-            return TypedResults.Ok(response.Value!);
+            return TypedResults.Ok(response.Value);
         })
         .WithSummary("Login user")
         .WithDescription("Authenticate user and return bearer token");

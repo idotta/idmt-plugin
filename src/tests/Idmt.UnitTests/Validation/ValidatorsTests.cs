@@ -21,7 +21,7 @@ public class ValidatorsTests
     [Fact]
     public void IsValidNewPassword_ReturnsFalse_WhenPasswordIsEmpty()
     {
-        var options = new PasswordOptions();
+        var options = new IdmtPasswordOptions();
         var result = Validators.IsValidNewPassword("", options, out var errors);
 
         Assert.False(result);
@@ -32,7 +32,7 @@ public class ValidatorsTests
     [Fact]
     public void IsValidNewPassword_ValidatesLength()
     {
-        var options = new PasswordOptions { RequiredLength = 8 };
+        var options = new IdmtPasswordOptions { RequiredLength = 8 };
         var result = Validators.IsValidNewPassword("short", options, out var errors);
 
         Assert.False(result);
@@ -43,7 +43,7 @@ public class ValidatorsTests
     [Fact]
     public void IsValidNewPassword_ValidatesDigit()
     {
-        var options = new PasswordOptions { RequireDigit = true };
+        var options = new IdmtPasswordOptions { RequireDigit = true };
         var result = Validators.IsValidNewPassword("NoDigit", options, out var errors);
 
         Assert.False(result);
@@ -54,7 +54,7 @@ public class ValidatorsTests
     [Fact]
     public void IsValidNewPassword_ValidatesLowercase()
     {
-        var options = new PasswordOptions { RequireLowercase = true };
+        var options = new IdmtPasswordOptions { RequireLowercase = true };
         var result = Validators.IsValidNewPassword("NOLOWERCASE1", options, out var errors);
 
         Assert.False(result);
@@ -65,7 +65,7 @@ public class ValidatorsTests
     [Fact]
     public void IsValidNewPassword_ValidatesUppercase()
     {
-        var options = new PasswordOptions { RequireUppercase = true };
+        var options = new IdmtPasswordOptions { RequireUppercase = true };
         var result = Validators.IsValidNewPassword("nouppercase1", options, out var errors);
 
         Assert.False(result);
@@ -76,7 +76,7 @@ public class ValidatorsTests
     [Fact]
     public void IsValidNewPassword_ValidatesNonAlphanumeric()
     {
-        var options = new PasswordOptions { RequireNonAlphanumeric = true };
+        var options = new IdmtPasswordOptions { RequireNonAlphanumeric = true };
         var result = Validators.IsValidNewPassword("NoSpecialChar1", options, out var errors);
 
         Assert.False(result);
@@ -87,7 +87,7 @@ public class ValidatorsTests
     [Fact]
     public void IsValidNewPassword_ValidatesUniqueChars()
     {
-        var options = new PasswordOptions { RequiredUniqueChars = 4 };
+        var options = new IdmtPasswordOptions { RequiredUniqueChars = 4 };
         var result = Validators.IsValidNewPassword("aaaa1", options, out var errors);
 
         Assert.False(result);
@@ -98,7 +98,7 @@ public class ValidatorsTests
     [Fact]
     public void IsValidNewPassword_ReturnsTrue_WhenAllRequirementsMet()
     {
-        var options = new PasswordOptions
+        var options = new IdmtPasswordOptions
         {
             RequiredLength = 6,
             RequireDigit = true,
@@ -112,28 +112,6 @@ public class ValidatorsTests
 
         Assert.True(result);
         Assert.Null(errors);
-    }
-
-    [Theory]
-    [InlineData("d81e3678-00a8-444f-a715-171804791e84", true)]
-    [InlineData("invalid-guid", false)]
-    [InlineData("", false)]
-    [InlineData(null, false)]
-    public void IsValidGuid_ValidatesCorrectly(string? guid, bool expected)
-    {
-        var result = Validators.IsValidGuid(guid);
-        Assert.Equal(expected, result);
-    }
-
-    [Theory]
-    [InlineData("tenant1", true)]
-    [InlineData("te", false)] // Length < 3
-    [InlineData("", false)]
-    [InlineData(null, false)]
-    public void IsValidTenantId_ValidatesCorrectly(string? tenantId, bool expected)
-    {
-        var result = Validators.IsValidTenantId(tenantId);
-        Assert.Equal(expected, result);
     }
 
     [Theory]

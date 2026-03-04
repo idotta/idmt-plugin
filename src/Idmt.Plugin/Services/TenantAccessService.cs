@@ -6,7 +6,8 @@ namespace Idmt.Plugin.Services;
 
 internal sealed class TenantAccessService(
     IdmtDbContext dbContext,
-    ICurrentUserService currentUserService) : ITenantAccessService
+    ICurrentUserService currentUserService,
+    TimeProvider timeProvider) : ITenantAccessService
 {
     public async Task<bool> CanAccessTenantAsync(Guid userId, string tenantId)
     {
@@ -15,7 +16,7 @@ internal sealed class TenantAccessService(
                 ta.UserId == userId &&
                 ta.TenantId == tenantId &&
                 ta.IsActive &&
-                (ta.ExpiresAt == null || ta.ExpiresAt > DT.UtcNow));
+                (ta.ExpiresAt == null || ta.ExpiresAt > timeProvider.GetUtcNow().UtcDateTime));
     }
 
     public bool CanAssignRole(string role)

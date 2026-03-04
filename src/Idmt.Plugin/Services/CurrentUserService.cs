@@ -16,7 +16,7 @@ internal sealed class CurrentUserService(
     public string? UserAgent { get; private set; }
 
     public Guid? UserId =>
-        Guid.TryParse(User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString(), out var userId) ? userId : null;
+        Guid.TryParse(User?.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) ? userId : null;
 
     public string? UserIdAsString => User?.FindFirstValue(ClaimTypes.NameIdentifier);
 

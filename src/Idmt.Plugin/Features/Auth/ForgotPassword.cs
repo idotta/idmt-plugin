@@ -1,3 +1,6 @@
+using ErrorOr;
+using FluentValidation;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
@@ -14,11 +17,11 @@ public static class ForgotPassword
 {
     public sealed record ForgotPasswordRequest(string Email);
 
-    public sealed record ForgotPasswordResponse(string? ResetToken = null, string? ResetUrl = null);
+    public sealed record ForgotPasswordResponse;
 
     public interface IForgotPasswordHandler
     {
-        Task<Result<ForgotPasswordResponse>> HandleAsync(
+        Task<ErrorOr<ForgotPasswordResponse>> HandleAsync(
             bool useApiLinks,
             ForgotPasswordRequest request,
             CancellationToken cancellationToken = default);
@@ -29,7 +32,7 @@ public static class ForgotPassword
         IEmailSender<IdmtUser> emailSender,
         IIdmtLinkGenerator linkGenerator) : IForgotPasswordHandler
     {
-        public async Task<Result<ForgotPasswordResponse>> HandleAsync(
+        public async Task<ErrorOr<ForgotPasswordResponse>> HandleAsync(
             bool useApiLinks,
             ForgotPasswordRequest request,
             CancellationToken cancellationToken = default)
@@ -40,7 +43,7 @@ public static class ForgotPassword
                 if (user == null || !user.IsActive)
                 {
                     // Don't reveal whether user exists or not for security
-                    return Result.Success(new ForgotPasswordResponse(null, null), StatusCodes.Status200OK);
+                    return new ForgotPasswordResponse();
                 }
 
                 // Generate password reset token
@@ -54,43 +57,32 @@ public static class ForgotPassword
                 // Send email with reset code
                 await emailSender.SendPasswordResetCodeAsync(user, request.Email, resetUrl);
 
-                return Result.Success(new ForgotPasswordResponse(token, resetUrl), StatusCodes.Status200OK);
+                return new ForgotPasswordResponse();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return Result.Failure<ForgotPasswordResponse>(ex.Message, StatusCodes.Status500InternalServerError);
+                return IdmtErrors.General.Unexpected;
             }
         }
-    }
-
-    public static Dictionary<string, string[]>? Validate(this ForgotPasswordRequest request)
-    {
-        var errors = new Dictionary<string, string[]>();
-
-        if (!Validators.IsValidEmail(request.Email))
-        {
-            errors["Email"] = ["Invalid email address."];
-        }
-
-        return errors.Count == 0 ? null : errors;
     }
 
     public static RouteHandlerBuilder MapForgotPasswordEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/forgotPassword", async Task<Results<Ok, ValidationProblem, StatusCodeHttpResult>> (
+        return endpoints.MapPost("/forgot-password", async Task<Results<Ok, ValidationProblem, StatusCodeHttpResult>> (
             [FromQuery] bool useApiLinks,
             [FromBody] ForgotPasswordRequest request,
             [FromServices] IForgotPasswordHandler handler,
+            [FromServices] IValidator<ForgotPasswordRequest> validator,
             HttpContext context) =>
         {
-            if (request.Validate() is { } validationErrors)
+            if (ValidationHelper.Validate(request, validator) is { } validationErrors)
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
             var result = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
-            if (!result.IsSuccess)
+            if (result.IsError)
             {
-                return TypedResults.StatusCode(result.StatusCode);
+                return TypedResults.StatusCode(StatusCodes.Status500InternalServerError);
             }
             return TypedResults.Ok();
         })

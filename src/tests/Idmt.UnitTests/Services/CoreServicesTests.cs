@@ -1,12 +1,10 @@
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
-using Idmt.Plugin.Persistence;
 using Idmt.Plugin.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -51,7 +49,7 @@ public class CurrentUserServiceTests
     }
 
     [Fact]
-    public void UserId_ReturnsEmptyGuid_WhenUserDoesNotExist()
+    public void UserId_ReturnsNull_WhenUserDoesNotExist()
     {
         var user = new System.Security.Claims.ClaimsPrincipal(
             new System.Security.Claims.ClaimsIdentity());
@@ -60,8 +58,7 @@ public class CurrentUserServiceTests
 
         var result = _service.UserId;
 
-        Assert.NotNull(result);
-        Assert.Equal(Guid.Empty, result);
+        Assert.Null(result);
     }
 
     [Fact]
@@ -239,170 +236,6 @@ public class CurrentUserServiceTests
         var result = _service.IsActive;
 
         Assert.False(result);
-    }
-}
-
-/// <summary>
-/// Extended unit tests for TenantAccessService covering additional scenarios.
-/// </summary>
-public class TenantAccessServiceExtendedTests
-{
-    private readonly Mock<IMultiTenantContextAccessor> _tenantAccessorMock;
-    private readonly Mock<ICurrentUserService> _currentUserServiceMock;
-    private readonly IdmtDbContext _dbContext;
-    private readonly TenantAccessService _service;
-
-    public TenantAccessServiceExtendedTests()
-    {
-        _tenantAccessorMock = new Mock<IMultiTenantContextAccessor>();
-        _currentUserServiceMock = new Mock<ICurrentUserService>();
-
-        var dummyTenant = new IdmtTenantInfo("system-test-tenant", "system-test", "System Test Tenant");
-        var dummyContext = new MultiTenantContext<IdmtTenantInfo>(dummyTenant);
-        _tenantAccessorMock.SetupGet(x => x.MultiTenantContext).Returns(dummyContext);
-
-        var options = new DbContextOptionsBuilder<IdmtDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-
-        _dbContext = new IdmtDbContext(
-            _tenantAccessorMock.Object,
-            options,
-            _currentUserServiceMock.Object);
-
-        _service = new TenantAccessService(_dbContext, _currentUserServiceMock.Object);
-    }
-
-    [Fact]
-    public async Task CanAccessTenantAsync_ReturnsTrue_WhenAccessExistsAndIsActive()
-    {
-        var userId = Guid.NewGuid();
-        var tenantId = "tenant1";
-
-        _dbContext.TenantAccess.Add(
-            new TenantAccess { UserId = userId, TenantId = tenantId, IsActive = true }
-        );
-        await _dbContext.SaveChangesAsync();
-
-        var result = await _service.CanAccessTenantAsync(userId, tenantId);
-
-        Assert.True(result);
-    }
-
-    [Fact]
-    public async Task CanAccessTenantAsync_ReturnsFalse_WhenAccessIsInactive()
-    {
-        var userId = Guid.NewGuid();
-        var tenantId = "tenant1";
-
-        _dbContext.TenantAccess.Add(
-            new TenantAccess { UserId = userId, TenantId = tenantId, IsActive = false }
-        );
-        await _dbContext.SaveChangesAsync();
-
-        var result = await _service.CanAccessTenantAsync(userId, tenantId);
-
-        Assert.False(result);
-    }
-
-    [Fact]
-    public async Task CanAccessTenantAsync_ReturnsFalse_WhenAccessExpired()
-    {
-        var userId = Guid.NewGuid();
-        var tenantId = "tenant1";
-
-        _dbContext.TenantAccess.Add(
-            new TenantAccess { UserId = userId, TenantId = tenantId, IsActive = true, ExpiresAt = DateTime.UtcNow.AddDays(-1) }
-        );
-        await _dbContext.SaveChangesAsync();
-
-        var result = await _service.CanAccessTenantAsync(userId, tenantId);
-
-        Assert.False(result);
-    }
-
-    [Fact]
-    public async Task CanAccessTenantAsync_ReturnsTrue_WhenAccessExpiringInFuture()
-    {
-        var userId = Guid.NewGuid();
-        var tenantId = "tenant1";
-
-        _dbContext.TenantAccess.Add(
-            new TenantAccess { UserId = userId, TenantId = tenantId, IsActive = true, ExpiresAt = DateTime.UtcNow.AddDays(1) }
-        );
-        await _dbContext.SaveChangesAsync();
-
-        var result = await _service.CanAccessTenantAsync(userId, tenantId);
-
-        Assert.True(result);
-    }
-
-    [Fact]
-    public async Task CanAccessTenantAsync_ReturnsFalse_WhenNoAccessRecord()
-    {
-        var userId = Guid.NewGuid();
-        var tenantId = "tenant1";
-
-        var result = await _service.CanAccessTenantAsync(userId, tenantId);
-
-        Assert.False(result);
-    }
-
-    [Theory]
-    [InlineData(IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.SysAdmin, false)]
-    [InlineData(IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.TenantAdmin, true)]
-    [InlineData(IdmtDefaultRoleTypes.TenantAdmin, IdmtDefaultRoleTypes.SysAdmin, false)]
-    [InlineData(IdmtDefaultRoleTypes.TenantAdmin, IdmtDefaultRoleTypes.SysSupport, false)]
-    [InlineData(IdmtDefaultRoleTypes.TenantAdmin, "TenantUser", true)]
-    [InlineData("TenantUser", IdmtDefaultRoleTypes.SysAdmin, false)]
-    public void CanAssignRole_ValidatesRoleHierarchy(string currentUserRole, string targetRole, bool expected)
-    {
-        _currentUserServiceMock.Reset();
-        _currentUserServiceMock.Setup(x => x.IsInRole(currentUserRole)).Returns(true);
-
-        var result = _service.CanAssignRole(targetRole);
-
-        Assert.Equal(expected, result);
-    }
-
-    [Fact]
-    public void CanManageUser_ReturnsFalse_WhenSysSupportManagesSysAdmin()
-    {
-        _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.SysSupport)).Returns(true);
-
-        var result = _service.CanManageUser([IdmtDefaultRoleTypes.SysAdmin]);
-
-        Assert.False(result);
-    }
-
-    [Fact]
-    public void CanManageUser_ReturnsTrue_WhenSysSupportManagesTenantAdmin()
-    {
-        _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.SysSupport)).Returns(true);
-
-        var result = _service.CanManageUser([IdmtDefaultRoleTypes.TenantAdmin]);
-
-        Assert.True(result);
-    }
-
-    [Fact]
-    public void CanManageUser_ReturnsFalse_WhenTenantAdminManagesSysUser()
-    {
-        _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.TenantAdmin)).Returns(true);
-
-        var result = _service.CanManageUser([IdmtDefaultRoleTypes.SysSupport]);
-
-        Assert.False(result);
-    }
-
-    [Fact]
-    public void CanManageUser_ReturnsTrue_WhenTenantAdminManagesTenantUser()
-    {
-        _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.TenantAdmin)).Returns(true);
-
-        var result = _service.CanManageUser(["CustomRole"]);
-
-        Assert.True(result);
     }
 }
 

@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using ErrorOr;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
 using Microsoft.AspNetCore.Builder;
@@ -17,7 +19,7 @@ public static class UnregisterUser
 {
     public interface IUnregisterUserHandler
     {
-        Task<Result> HandleAsync(Guid userId, CancellationToken cancellationToken = default);
+        Task<ErrorOr<Success>> HandleAsync(Guid userId, CancellationToken cancellationToken = default);
     }
 
     internal sealed class UnregisterUserHandler(
@@ -26,7 +28,7 @@ public static class UnregisterUser
         UserManager<IdmtUser> userManager,
         ITenantAccessService tenantAccessService) : IUnregisterUserHandler
     {
-        public async Task<Result> HandleAsync(Guid userId, CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<Success>> HandleAsync(Guid userId, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -34,14 +36,14 @@ public static class UnregisterUser
                 var appUser = await userManager.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
                 if (appUser is null)
                 {
-                    return Result.Failure("User not found", StatusCodes.Status404NotFound);
+                    return IdmtErrors.User.NotFound;
                 }
 
                 var userRoles = await userManager.GetRolesAsync(appUser);
 
                 if (!tenantAccessService.CanManageUser(userRoles))
                 {
-                    return Result.Failure("Insufficient permissions to delete this user.", StatusCodes.Status403Forbidden);
+                    return IdmtErrors.User.InsufficientPermissions;
                 }
 
                 var result = await userManager.DeleteAsync(appUser);
@@ -50,16 +52,16 @@ public static class UnregisterUser
                 {
                     var errors = string.Join("\n", result.Errors.Select(e => e.Description));
                     logger.LogError("Failed to unregister user {UserId}: {Errors}", userId, errors);
-                    return Result.Failure(errors, StatusCodes.Status400BadRequest);
+                    return IdmtErrors.User.DeletionFailed;
                 }
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Exception occurred while unregistering user {UserId}", userId);
-                return Result.Failure($"An error occurred while unregistering the user: {ex.Message}", StatusCodes.Status500InternalServerError);
+                return IdmtErrors.General.Unexpected;
             }
 
-            return Result.Success();
+            return Result.Success;
         }
     }
 
@@ -72,19 +74,19 @@ public static class UnregisterUser
             HttpContext context) =>
         {
             var result = await handler.HandleAsync(userId, cancellationToken: context.RequestAborted);
-            if (!result.IsSuccess)
+            if (result.IsError)
             {
-                return result.StatusCode switch
+                return result.FirstError.Type switch
                 {
-                    StatusCodes.Status404NotFound => TypedResults.NotFound(),
-                    StatusCodes.Status403Forbidden => TypedResults.Forbid(),
-                    StatusCodes.Status400BadRequest => TypedResults.BadRequest(),
+                    ErrorType.NotFound => TypedResults.NotFound(),
+                    ErrorType.Forbidden => TypedResults.Forbid(),
+                    ErrorType.Failure => TypedResults.BadRequest(),
                     _ => TypedResults.InternalServerError(),
                 };
             }
             return TypedResults.Ok();
         })
-        .RequireAuthorization(AuthOptions.RequireTenantManagerPolicy)
+        .RequireAuthorization(IdmtAuthOptions.RequireTenantManagerPolicy)
         .WithSummary("Delete user")
         .WithDescription("Delete a user within the same tenant (Admin/System only)");
     }

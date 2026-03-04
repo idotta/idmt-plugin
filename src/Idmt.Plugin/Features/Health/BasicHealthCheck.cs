@@ -5,7 +5,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Idmt.Plugin.Features.Health;
 
-public class BasicHealthCheck(IdmtDbContext dbContext, IMultiTenantContextAccessor tenantAccessor) : IHealthCheck
+public class BasicHealthCheck(IdmtDbContext dbContext, IMultiTenantContextAccessor tenantAccessor, TimeProvider timeProvider) : IHealthCheck
 {
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
@@ -29,7 +29,7 @@ public class BasicHealthCheck(IdmtDbContext dbContext, IMultiTenantContextAccess
                     { "database_connected", canConnect },
                     { "current_tenant", currentTenant?.Id ?? "No tenant" },
                     { "tenant_user_count", userCount },
-                    { "timestamp", DT.UtcNow }
+                    { "timestamp", timeProvider.GetUtcNow().UtcDateTime }
                 });
         }
         catch (Exception ex)
@@ -38,7 +38,7 @@ public class BasicHealthCheck(IdmtDbContext dbContext, IMultiTenantContextAccess
                 new Dictionary<string, object>
                 {
                     { "error", ex.Message },
-                    { "timestamp", DT.UtcNow }
+                    { "timestamp", timeProvider.GetUtcNow().UtcDateTime }
                 });
         }
     }

@@ -14,30 +14,36 @@ public class IdmtDbContext
     : MultiTenantIdentityDbContext<IdmtUser, IdmtRole, Guid>
 {
     private readonly ICurrentUserService _currentUserService;
+    private readonly TimeProvider _timeProvider;
 
     public IdmtDbContext(
-        IMultiTenantContextAccessor multiTenantContextAccessor, ICurrentUserService currentUserService)
+        IMultiTenantContextAccessor multiTenantContextAccessor, ICurrentUserService currentUserService, TimeProvider timeProvider)
         : base(multiTenantContextAccessor)
     {
         _currentUserService = currentUserService;
+        _timeProvider = timeProvider;
     }
 
     public IdmtDbContext(
         IMultiTenantContextAccessor multiTenantContextAccessor,
         DbContextOptions<IdmtDbContext> options,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        TimeProvider timeProvider)
         : base(multiTenantContextAccessor, options)
     {
         _currentUserService = currentUserService;
+        _timeProvider = timeProvider;
     }
 
     protected IdmtDbContext(
         IMultiTenantContextAccessor multiTenantContextAccessor,
         DbContextOptions options,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        TimeProvider timeProvider)
         : base(multiTenantContextAccessor, options)
     {
         _currentUserService = currentUserService;
+        _timeProvider = timeProvider;
     }
 
     /// <summary>
@@ -101,7 +107,6 @@ public class IdmtDbContext
 
             // Property configurations for custom properties
             entity.Property(ti => ti.Name).HasMaxLength(200);
-            entity.Property(ti => ti.DisplayName).HasMaxLength(200);
             entity.Property(ti => ti.Plan).HasMaxLength(100);
             entity.Property(ti => ti.IsActive).IsRequired().HasDefaultValue(true);
 
@@ -128,7 +133,7 @@ public class IdmtDbContext
                     Resource = entry.Entity.GetName(),
                     ResourceId = entry.Entity.GetId(),
                     Success = true,
-                    Timestamp = DT.UtcNow,
+                    Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
                     IpAddress = _currentUserService.IpAddress,
                     UserAgent = _currentUserService.UserAgent,
                 });
@@ -143,7 +148,7 @@ public class IdmtDbContext
                     Resource = entry.Entity.GetName(),
                     ResourceId = entry.Entity.GetId(),
                     Success = true,
-                    Timestamp = DT.UtcNow,
+                    Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
                     IpAddress = _currentUserService.IpAddress,
                     UserAgent = _currentUserService.UserAgent,
                 });
@@ -162,7 +167,7 @@ public class IdmtDbContext
                     ResourceId = entry.Entity.GetId(),
                     Details = details,
                     Success = true,
-                    Timestamp = DT.UtcNow,
+                    Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
                     IpAddress = _currentUserService.IpAddress,
                     UserAgent = _currentUserService.UserAgent,
                 });
@@ -173,5 +178,5 @@ public class IdmtDbContext
     }
 
     public override int SaveChanges() =>
-        SaveChangesAsync(CancellationToken.None).GetAwaiter().GetResult();
+        throw new NotSupportedException("Use SaveChangesAsync. Sync SaveChanges is not supported in IdmtDbContext.");
 }

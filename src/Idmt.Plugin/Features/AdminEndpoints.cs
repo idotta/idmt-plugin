@@ -17,7 +17,6 @@ public static class AdminEndpoints
         admin.MapGetUserTenantsEndpoint();
         admin.MapGrantTenantAccessEndpoint();
         admin.MapRevokeTenantAccessEndpoint();
-        admin.MapGetSystemInfoEndpoint();
         admin.MapGetAllTenantsEndpoint();
     }
 }

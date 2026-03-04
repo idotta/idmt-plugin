@@ -1,7 +1,10 @@
+using ErrorOr;
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
+using Idmt.Plugin.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -17,14 +20,15 @@ public static class RevokeTenantAccess
 {
     public interface IRevokeTenantAccessHandler
     {
-        Task<Result> HandleAsync(Guid userId, string tenantIdentifier, CancellationToken cancellationToken = default);
+        Task<ErrorOr<Success>> HandleAsync(Guid userId, string tenantIdentifier, CancellationToken cancellationToken = default);
     }
 
     internal sealed class RevokeTenantAccessHandler(
         IServiceProvider serviceProvider,
+        ITenantOperationService tenantOps,
         ILogger<RevokeTenantAccessHandler> logger) : IRevokeTenantAccessHandler
     {
-        public async Task<Result> HandleAsync(Guid userId, string tenantIdentifier, CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<Success>> HandleAsync(Guid userId, string tenantIdentifier, CancellationToken cancellationToken = default)
         {
             IdmtUser? user;
             using (var scope = serviceProvider.CreateScope())
@@ -40,13 +44,13 @@ public static class RevokeTenantAccess
                     user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
                     if (user is null)
                     {
-                        return Result.Failure("User not found", StatusCodes.Status404NotFound);
+                        return IdmtErrors.User.NotFound;
                     }
 
                     var targetTenant = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
                     if (targetTenant is null)
                     {
-                        return Result.Failure("Tenant not found", StatusCodes.Status404NotFound);
+                        return IdmtErrors.Tenant.NotFound;
                     }
 
                     var tenantAccess = await dbContext.TenantAccess
@@ -61,46 +65,29 @@ public static class RevokeTenantAccess
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Error revoking tenant access for user {UserId} and tenant {TenantIdentifier}", userId, tenantIdentifier);
-                    return Result.Failure("An error occurred while revoking tenant access", StatusCodes.Status500InternalServerError);
+                    return IdmtErrors.Tenant.AccessError;
                 }
             }
 
-            using (var scope = serviceProvider.CreateScope())
+            return await tenantOps.ExecuteInTenantScopeAsync(tenantIdentifier, async sp =>
             {
-                var sp = scope.ServiceProvider;
-
-                var tenantStore = sp.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
-                var tenantInfo = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
-                if (tenantInfo is null)
-                {
-                    return Result.Failure("Tenant not found", StatusCodes.Status404NotFound);
-                }
-                // Set Tenant Context BEFORE resolving DbContext/Managers
-                var tenantContextSetter = sp.GetRequiredService<IMultiTenantContextSetter>();
-                var tenantContext = new MultiTenantContext<IdmtTenantInfo>(tenantInfo);
-                tenantContextSetter.MultiTenantContext = tenantContext;
-
                 var userManager = sp.GetRequiredService<UserManager<IdmtUser>>();
                 try
                 {
                     var targetUser = await userManager.Users.FirstOrDefaultAsync(u => u.Email == user.Email && u.UserName == user.UserName, cancellationToken);
-                    if (targetUser is null)
-                    {
-                        return Result.Success();
-                    }
-                    else
+                    if (targetUser is not null)
                     {
                         targetUser.IsActive = false;
                         await userManager.UpdateAsync(targetUser);
                     }
-                    return Result.Success();
+                    return Result.Success;
                 }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Error deactivating user {UserId} in tenant {TenantIdentifier}", userId, tenantIdentifier);
-                    return Result.Failure("An error occurred while deactivating user", StatusCodes.Status500InternalServerError);
+                    return IdmtErrors.Tenant.AccessError;
                 }
-            }
+            }, requireActive: false);
         }
     }
 
@@ -113,17 +100,17 @@ public static class RevokeTenantAccess
             CancellationToken cancellationToken) =>
         {
             var result = await handler.HandleAsync(userId, tenantId, cancellationToken);
-            if (!result.IsSuccess)
+            if (result.IsError)
             {
-                return result.StatusCode switch
+                return result.FirstError.Type switch
                 {
-                    StatusCodes.Status404NotFound => TypedResults.NotFound(),
+                    ErrorType.NotFound => TypedResults.NotFound(),
                     _ => TypedResults.InternalServerError(),
                 };
             }
             return TypedResults.Ok();
         })
-        .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
+        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
         .WithSummary("Revoke user access from a tenant");
     }
 }

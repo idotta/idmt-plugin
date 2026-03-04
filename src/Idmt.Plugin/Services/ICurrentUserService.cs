@@ -14,6 +14,7 @@ public interface ICurrentUserService
     string? UserName { get; }
     string? TenantId { get; }
     string? TenantIdentifier { get; }
+    bool IsActive { get; }
 
     bool IsInRole(string role);
 

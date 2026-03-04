@@ -7,20 +7,37 @@ namespace Idmt.Plugin.Models;
 /// Implements ITenantInfo interface from Finbuckle.MultiTenant.
 /// Identifier must be at least 3 characters long.
 /// </summary>
-public record IdmtTenantInfo : TenantInfo, IAuditable
+public record IdmtTenantInfo : ITenantInfo, IAuditable
 {
-    public IdmtTenantInfo(string id, string identifier, string name) : base(id, identifier, name)
+    public IdmtTenantInfo(string id, string identifier, string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(id);
+        ArgumentException.ThrowIfNullOrEmpty(identifier);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        if (identifier.Length < 3)
+        {
+            throw new ArgumentException("Identifier must be at least 3 characters long.", nameof(identifier));
+        }
+
+        Id = id;
+        Identifier = identifier;
+        Name = name;
+    }
+
+    public IdmtTenantInfo(string identifier, string name) : this(Guid.CreateVersion7().ToString(), identifier, name)
     {
     }
 
-    public IdmtTenantInfo(string identifier, string name) : base(Guid.CreateVersion7().ToString(), identifier, name)
-    {
-    }
+    /// <inheritdoc/>
+    public string Id { get; init; }
+
+    /// <inheritdoc/>
+    public string Identifier { get; init; }
 
     /// <summary>
     /// Human-readable display name for the tenant.
     /// </summary>
-    public string? DisplayName { get; init; }
+    public string? Name { get; init; }
 
     /// <summary>
     /// The tenant's subscription or feature plan, if applicable.
@@ -54,7 +71,7 @@ public record IdmtTenantInfo : TenantInfo, IAuditable
 
     public string GetId() => Id ?? string.Empty;
 
-    public string GetName() => nameof(IdmtTenantInfo);
+    public string GetName() => Name ?? Identifier;
 
     public string? GetTenantId() => Id;
 }

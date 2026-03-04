@@ -11,7 +11,7 @@ namespace Idmt.BasicSample.Tests;
 
 /// <summary>
 /// Integration tests for Authentication endpoints.
-/// Covers: /auth/login, /auth/token, /auth/logout, /auth/refresh, /auth/confirmEmail, /auth/resendConfirmationEmail, /auth/forgotPassword, /auth/resetPassword
+/// Covers: /auth/login, /auth/token, /auth/logout, /auth/refresh, /auth/confirm-email, /auth/resend-confirmation-email, /auth/forgot-password, /auth/reset-password
 /// </summary>
 public class AuthIntegrationTests : BaseIntegrationTest
 {
@@ -277,7 +277,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         using var publicClient = Factory.CreateClient();
 
         var resetResponse = await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
+            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
             {
                 ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
                 ["email"] = newEmail,
@@ -298,7 +298,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
         tenantClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
 
-        var resendResponse = await tenantClient.PostAsJsonAsync($"/auth/resendConfirmationEmail?useApiLinks=true", new
+        var resendResponse = await tenantClient.PostAsJsonAsync($"/auth/resend-confirmation-email?useApiLinks=true", new
         {
             Email = newEmail
         });
@@ -317,7 +317,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
 
         // // Now confirm email using the email confirmation token
         // var confirmResponse = await publicClient.GetAsync(
-        //     $"/auth/confirmEmail?tenantIdentifier={IdmtApiFactory.DefaultTenantIdentifier}&email={newEmail}&token={Uri.EscapeDataString(confirmToken)}");
+        //     $"/auth/confirm-email?tenantIdentifier={IdmtApiFactory.DefaultTenantIdentifier}&email={newEmail}&token={Uri.EscapeDataString(confirmToken)}");
 
         // await confirmResponse.AssertSuccess();
         // var result = await confirmResponse.Content.ReadFromJsonAsync<ConfirmEmail.ConfirmEmailResponse>();
@@ -332,7 +332,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         using var publicClient = Factory.CreateClient();
 
         var confirmResponse = await publicClient.GetAsync(
-            $"/auth/confirmEmail?tenantIdentifier={IdmtApiFactory.DefaultTenantIdentifier}&email={newEmail}&token=invalid-token");
+            $"/auth/confirm-email?tenantIdentifier={IdmtApiFactory.DefaultTenantIdentifier}&email={newEmail}&token=invalid-token");
 
         Assert.False(confirmResponse.IsSuccessStatusCode);
     }
@@ -344,7 +344,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         using var publicClient = Factory.CreateClient();
 
         var confirmResponse = await publicClient.GetAsync(
-            $"/auth/confirmEmail?tenantIdentifier=nonexistent-tenant&email={newEmail}&token=some-token");
+            $"/auth/confirm-email?tenantIdentifier=nonexistent-tenant&email={newEmail}&token=some-token");
 
         Assert.False(confirmResponse.IsSuccessStatusCode);
     }
@@ -355,7 +355,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         using var publicClient = Factory.CreateClient();
 
         var confirmResponse = await publicClient.GetAsync(
-            $"/auth/confirmEmail?tenantIdentifier={IdmtApiFactory.DefaultTenantIdentifier}&email=&token=some-token");
+            $"/auth/confirm-email?tenantIdentifier={IdmtApiFactory.DefaultTenantIdentifier}&email=&token=some-token");
 
         Assert.False(confirmResponse.IsSuccessStatusCode);
     }
@@ -367,7 +367,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         using var publicClient = Factory.CreateClient();
 
         var confirmResponse = await publicClient.GetAsync(
-            $"/auth/confirmEmail?tenantIdentifier={IdmtApiFactory.DefaultTenantIdentifier}&email={newEmail}&token=");
+            $"/auth/confirm-email?tenantIdentifier={IdmtApiFactory.DefaultTenantIdentifier}&email={newEmail}&token=");
 
         Assert.False(confirmResponse.IsSuccessStatusCode);
     }
@@ -393,7 +393,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
 
         // Resend confirmation email
         using var publicClient = Factory.CreateClientWithTenant();
-        var resendResponse = await publicClient.PostAsJsonAsync($"/auth/resendConfirmationEmail?useApiLinks=true", new
+        var resendResponse = await publicClient.PostAsJsonAsync($"/auth/resend-confirmation-email?useApiLinks=true", new
         {
             Email = newEmail
         });
@@ -423,7 +423,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
 
         // Resend confirmation email
         using var publicClient = Factory.CreateClientWithTenant();
-        var resendResponse = await publicClient.PostAsJsonAsync($"/auth/resendConfirmationEmail?useApiLinks=false", new
+        var resendResponse = await publicClient.PostAsJsonAsync($"/auth/resend-confirmation-email?useApiLinks=false", new
         {
             Email = newEmail
         });
@@ -442,7 +442,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
     {
         using var publicClient = Factory.CreateClientWithTenant();
 
-        var resendResponse = await publicClient.PostAsJsonAsync($"/auth/resendConfirmationEmail?useApiLinks=false", new
+        var resendResponse = await publicClient.PostAsJsonAsync($"/auth/resend-confirmation-email?useApiLinks=false", new
         {
             Email = "not-an-email"
         });
@@ -454,7 +454,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
     {
         using var publicClient = Factory.CreateClientWithTenant();
 
-        var resendResponse = await publicClient.PostAsJsonAsync($"/auth/resendConfirmationEmail?useApiLinks=false", new
+        var resendResponse = await publicClient.PostAsJsonAsync($"/auth/resend-confirmation-email?useApiLinks=false", new
         {
             Email = "nonexistent@example.com"
         });
@@ -485,7 +485,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         using var publicClient = Factory.CreateClient();
         var setupToken = (await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>())!.PasswordSetupToken;
         await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
+            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
             {
                 ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
                 ["email"] = email,
@@ -497,7 +497,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
 
         // Request forgot password
         using var tenantClient = Factory.CreateClientWithTenant();
-        var forgotResponse = await tenantClient.PostAsJsonAsync("/auth/forgotPassword?useApiLinks=false", new { Email = email });
+        var forgotResponse = await tenantClient.PostAsJsonAsync("/auth/forgot-password?useApiLinks=false", new { Email = email });
         await forgotResponse.AssertSuccess();
 
         // Verify email was sent
@@ -513,7 +513,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
     {
         using var client = Factory.CreateClientWithTenant();
 
-        var response = await client.PostAsJsonAsync("/auth/forgotPassword?useApiLinks=false", new { Email = "invalid-email" });
+        var response = await client.PostAsJsonAsync("/auth/forgot-password?useApiLinks=false", new { Email = "invalid-email" });
         Assert.False(response.IsSuccessStatusCode);
     }
 
@@ -522,7 +522,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
     {
         using var client = Factory.CreateClientWithTenant();
 
-        var response = await client.PostAsJsonAsync("/auth/forgotPassword?useApiLinks=false", new { Email = "nonexistent@example.com" });
+        var response = await client.PostAsJsonAsync("/auth/forgot-password?useApiLinks=false", new { Email = "nonexistent@example.com" });
         // Should succeed for security (don't leak user existence)
         Assert.True(response.IsSuccessStatusCode);
     }
@@ -549,7 +549,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         // Reset password with token
         using var publicClient = Factory.CreateClient();
         var resetResponse = await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
+            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
             {
                 ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
                 ["email"] = email,
@@ -579,7 +579,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         using var publicClient = Factory.CreateClient();
         const string newPassword = "NewPassword1!";
         await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
+            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
             {
                 ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
                 ["email"] = email,
@@ -605,7 +605,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         using var publicClient = Factory.CreateClient();
 
         var resetResponse = await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
+            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
             {
                 ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
                 ["email"] = email,
@@ -634,7 +634,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         // Try reset with weak password
         using var publicClient = Factory.CreateClient();
         var resetResponse = await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/resetPassword", new Dictionary<string, string?>
+            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
             {
                 ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
                 ["email"] = email,
