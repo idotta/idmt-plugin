@@ -13,6 +13,8 @@ public class CreateTenantRequestValidator : AbstractValidator<CreateTenant.Creat
             .WithMessage("Identifier can only contain lowercase alphanumeric characters, dashes, and underscores");
 
         RuleFor(x => x.Name).NotEmpty()
-            .WithMessage("Name is required");
+            .WithMessage("Name is required")
+            .MaximumLength(200)
+            .WithMessage("Name must not exceed 200 characters");
     }
 }

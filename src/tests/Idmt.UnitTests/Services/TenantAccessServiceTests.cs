@@ -3,6 +3,7 @@ using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
 using Idmt.Plugin.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace Idmt.UnitTests.Services;
@@ -32,7 +33,8 @@ public class TenantAccessServiceTests
             _tenantAccessorMock.Object,
             options,
             _currentUserServiceMock.Object,
-            TimeProvider.System);
+            TimeProvider.System,
+            NullLogger<IdmtDbContext>.Instance);
 
         _service = new TenantAccessService(
             _dbContext,

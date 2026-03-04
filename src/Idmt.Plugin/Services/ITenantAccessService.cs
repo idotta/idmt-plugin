@@ -10,8 +10,9 @@ public interface ITenantAccessService
     /// </summary>
     /// <param name="userId">The ID of the user.</param>
     /// <param name="tenantId">The id of the tenant.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True if the user can access the tenant, false otherwise.</returns>
-    Task<bool> CanAccessTenantAsync(Guid userId, string tenantId);
+    Task<bool> CanAccessTenantAsync(Guid userId, string tenantId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Checks if the current user can assign the specified role.

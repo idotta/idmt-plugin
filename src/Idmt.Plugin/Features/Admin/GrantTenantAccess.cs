@@ -29,11 +29,17 @@ public static class GrantTenantAccess
     internal sealed class GrantTenantAccessHandler(
         IServiceProvider serviceProvider,
         ITenantOperationService tenantOps,
+        TimeProvider timeProvider,
         ILogger<GrantTenantAccessHandler> logger
         ) : IGrantTenantAccessHandler
     {
         public async Task<ErrorOr<Success>> HandleAsync(Guid userId, string tenantIdentifier, DateTime? expiresAt = null, CancellationToken cancellationToken = default)
         {
+            if (expiresAt.HasValue && expiresAt.Value <= timeProvider.GetUtcNow().UtcDateTime)
+            {
+                return Error.Validation("ExpiresAt", "Expiration date must be in the future");
+            }
+
             IdmtUser? user = null;
             IdmtTenantInfo? targetTenant = null;
             IList<string> userRoles = [];

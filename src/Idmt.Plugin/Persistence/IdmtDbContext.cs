@@ -5,6 +5,7 @@ using Idmt.Plugin.Constants;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Idmt.Plugin.Persistence;
 
@@ -16,35 +17,41 @@ public class IdmtDbContext
 {
     private readonly ICurrentUserService _currentUserService;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<IdmtDbContext> _logger;
 
     public IdmtDbContext(
-        IMultiTenantContextAccessor multiTenantContextAccessor, ICurrentUserService currentUserService, TimeProvider timeProvider)
+        IMultiTenantContextAccessor multiTenantContextAccessor, ICurrentUserService currentUserService, TimeProvider timeProvider, ILogger<IdmtDbContext> logger)
         : base(multiTenantContextAccessor)
     {
         _currentUserService = currentUserService;
         _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     public IdmtDbContext(
         IMultiTenantContextAccessor multiTenantContextAccessor,
         DbContextOptions<IdmtDbContext> options,
         ICurrentUserService currentUserService,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ILogger<IdmtDbContext> logger)
         : base(multiTenantContextAccessor, options)
     {
         _currentUserService = currentUserService;
         _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     protected IdmtDbContext(
         IMultiTenantContextAccessor multiTenantContextAccessor,
         DbContextOptions options,
         ICurrentUserService currentUserService,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ILogger<IdmtDbContext> logger)
         : base(multiTenantContextAccessor, options)
     {
         _currentUserService = currentUserService;
         _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     /// <summary>
@@ -120,59 +127,66 @@ public class IdmtDbContext
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        var entries = ChangeTracker.Entries<IAuditable>().ToArray();
-
-        foreach (var entry in entries)
+        try
         {
-            if (entry.State == EntityState.Added)
+            var entries = ChangeTracker.Entries<IAuditable>().ToArray();
+
+            foreach (var entry in entries)
             {
-                AuditLogs.Add(new IdmtAuditLog
+                if (entry.State == EntityState.Added)
                 {
-                    UserId = _currentUserService.UserId,
-                    TenantId = entry.Entity.GetTenantId(),
-                    Action = AuditAction.Created.ToString(),
-                    Resource = entry.Entity.GetName(),
-                    ResourceId = entry.Entity.GetId(),
-                    Success = true,
-                    Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
-                    IpAddress = _currentUserService.IpAddress,
-                    UserAgent = _currentUserService.UserAgent,
-                });
-            }
-            else if (entry.State == EntityState.Deleted)
-            {
-                AuditLogs.Add(new IdmtAuditLog
+                    AuditLogs.Add(new IdmtAuditLog
+                    {
+                        UserId = _currentUserService.UserId,
+                        TenantId = entry.Entity.GetTenantId(),
+                        Action = AuditAction.Created.ToString(),
+                        Resource = entry.Entity.GetName(),
+                        ResourceId = entry.Entity.GetId(),
+                        Success = true,
+                        Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
+                        IpAddress = _currentUserService.IpAddress,
+                        UserAgent = _currentUserService.UserAgent,
+                    });
+                }
+                else if (entry.State == EntityState.Deleted)
                 {
-                    UserId = _currentUserService.UserId,
-                    TenantId = entry.Entity.GetTenantId(),
-                    Action = AuditAction.Deleted.ToString(),
-                    Resource = entry.Entity.GetName(),
-                    ResourceId = entry.Entity.GetId(),
-                    Success = true,
-                    Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
-                    IpAddress = _currentUserService.IpAddress,
-                    UserAgent = _currentUserService.UserAgent,
-                });
-            }
-            else if (entry.State == EntityState.Modified)
-            {
-                string details = string.Join("\n", entry.Properties
-                    .Where(prop => prop.IsModified)
-                    .Select(prop => prop.Metadata.Name));
-                AuditLogs.Add(new IdmtAuditLog
+                    AuditLogs.Add(new IdmtAuditLog
+                    {
+                        UserId = _currentUserService.UserId,
+                        TenantId = entry.Entity.GetTenantId(),
+                        Action = AuditAction.Deleted.ToString(),
+                        Resource = entry.Entity.GetName(),
+                        ResourceId = entry.Entity.GetId(),
+                        Success = true,
+                        Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
+                        IpAddress = _currentUserService.IpAddress,
+                        UserAgent = _currentUserService.UserAgent,
+                    });
+                }
+                else if (entry.State == EntityState.Modified)
                 {
-                    UserId = _currentUserService.UserId,
-                    TenantId = entry.Entity.GetTenantId(),
-                    Action = AuditAction.Modified.ToString(),
-                    Resource = entry.Entity.GetName(),
-                    ResourceId = entry.Entity.GetId(),
-                    Details = details,
-                    Success = true,
-                    Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
-                    IpAddress = _currentUserService.IpAddress,
-                    UserAgent = _currentUserService.UserAgent,
-                });
+                    string details = string.Join("\n", entry.Properties
+                        .Where(prop => prop.IsModified)
+                        .Select(prop => prop.Metadata.Name));
+                    AuditLogs.Add(new IdmtAuditLog
+                    {
+                        UserId = _currentUserService.UserId,
+                        TenantId = entry.Entity.GetTenantId(),
+                        Action = AuditAction.Modified.ToString(),
+                        Resource = entry.Entity.GetName(),
+                        ResourceId = entry.Entity.GetId(),
+                        Details = details,
+                        Success = true,
+                        Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
+                        IpAddress = _currentUserService.IpAddress,
+                        UserAgent = _currentUserService.UserAgent,
+                    });
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Audit logging failed during SaveChangesAsync");
         }
 
         return base.SaveChangesAsync(cancellationToken);

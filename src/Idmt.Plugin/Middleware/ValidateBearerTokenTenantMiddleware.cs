@@ -39,9 +39,11 @@ public class ValidateBearerTokenTenantMiddleware(
         try
         {
             var currentTenant = tenantContextAccessor.MultiTenantContext?.TenantInfo;
-            if (currentTenant == null)
+            if (currentTenant is null)
             {
-                return true; // No tenant context resolved, allow the request
+                logger.LogWarning("Bearer token authentication used but no tenant context was resolved. Rejecting request.");
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return false;
             }
 
             // Get the tenant claim type from configuration

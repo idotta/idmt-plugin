@@ -76,6 +76,11 @@ public static class Login
                     return IdmtErrors.Tenant.NotResolved;
                 }
 
+                if (tenantInfo is not IdmtTenantInfo idmtTenant || !idmtTenant.IsActive)
+                {
+                    return IdmtErrors.Tenant.Inactive;
+                }
+
                 // Find user by email or username
                 // EF Core multi-tenant filtering automatically ensures user belongs to the current tenant
                 IdmtUser? user = null;
@@ -183,6 +188,11 @@ public static class Login
                 if (tenantInfo == null || string.IsNullOrEmpty(tenantInfo.Id))
                 {
                     return IdmtErrors.Tenant.NotResolved;
+                }
+
+                if (tenantInfo is not IdmtTenantInfo idmtTenant || !idmtTenant.IsActive)
+                {
+                    return IdmtErrors.Tenant.Inactive;
                 }
 
                 // Find user by email or username

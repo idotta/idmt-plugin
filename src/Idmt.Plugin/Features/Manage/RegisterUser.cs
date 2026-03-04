@@ -62,8 +62,11 @@ public static class RegisterUser
             }
 
             // Get the tenant ID from the current user service (from tenant context)
-            var tenantId = currentUserService.TenantId
-                ?? throw new InvalidOperationException("Tenant context is not available. Cannot register user without tenant context.");
+            var tenantId = currentUserService.TenantId;
+            if (tenantId is null)
+            {
+                return IdmtErrors.Tenant.NotResolved;
+            }
 
             var user = new IdmtUser
             {
