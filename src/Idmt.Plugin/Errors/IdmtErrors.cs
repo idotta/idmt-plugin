@@ -18,9 +18,19 @@ public static class IdmtErrors
             code: "Auth.UserDeactivated",
             description: "User is deactivated");
 
+        public static Error TwoFactorRequired => Error.Custom(
+            type: 42, 
+            code: "Auth.TwoFactorRequired", 
+            description: "Two-factor authentication is required");
+
         public static Error InvalidCredentials => Error.Unauthorized(
             code: "Auth.InvalidCredentials",
             description: "Invalid credentials");
+
+        public static Error LockedOut => Error.Custom(
+            type: 43,
+            code: "Auth.LockedOut",
+            description: "Account is locked out due to too many failed attempts");
     }
 
     public static class Tenant
@@ -60,6 +70,10 @@ public static class IdmtErrors
         public static Error AccessError => Error.Failure(
             code: "Tenant.AccessError",
             description: "An error occurred while managing tenant access");
+
+        public static Error AccessNotFound => Error.NotFound(
+            code: "Tenant.AccessNotFound",
+            description: "No tenant access record found for this user");
     }
 
     public static class User

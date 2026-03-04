@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using ErrorOr;
 using Finbuckle.MultiTenant.Abstractions;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -18,39 +20,41 @@ public static class GetUserInfo
         string UserName,
         string Role,
         string TenantIdentifier,
-        string TenantDisplayName
+        string TenantName
     );
 
     public interface IGetUserInfoHandler
     {
-        Task<GetUserInfoResponse?> HandleAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default);
+        Task<ErrorOr<GetUserInfoResponse>> HandleAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default);
     }
 
     internal sealed class GetUserInfoHandler(UserManager<IdmtUser> userManager, IMultiTenantStore<IdmtTenantInfo> tenantStore) : IGetUserInfoHandler
     {
-        public async Task<GetUserInfoResponse?> HandleAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<GetUserInfoResponse>> HandleAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default)
         {
             var userEmail = user.FindFirstValue(ClaimTypes.Email);
             if (string.IsNullOrEmpty(userEmail))
             {
-                return null;
+                return IdmtErrors.User.ClaimsNotFound;
             }
 
             var appUser = await userManager.FindByEmailAsync(userEmail);
             if (appUser == null || !appUser.IsActive)
             {
-                return null;
+                return IdmtErrors.User.NotFound;
             }
 
-            // Fail fast
-            var role = (await userManager.GetRolesAsync(appUser)).FirstOrDefault() ?? throw new InvalidOperationException("User has no role assigned");
-            var tenant = await tenantStore.GetAsync(appUser.TenantId) ?? throw new InvalidOperationException("Tenant not found");
+            var role = (await userManager.GetRolesAsync(appUser)).FirstOrDefault();
+            if (role is null) return IdmtErrors.User.NoRolesAssigned;
+
+            var tenant = await tenantStore.GetAsync(appUser.TenantId);
+            if (tenant is null) return IdmtErrors.Tenant.NotFound;
 
             return new GetUserInfoResponse(
                 appUser.Id.ToString(),
                 appUser.Email ?? string.Empty,
                 appUser.UserName ?? string.Empty,
-                role ?? string.Empty,
+                role,
                 tenant.Identifier ?? string.Empty,
                 tenant.Name ?? string.Empty
             );
@@ -59,17 +63,22 @@ public static class GetUserInfo
 
     public static RouteHandlerBuilder MapGetUserInfoEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapGet("/info", async Task<Results<Ok<GetUserInfoResponse>, NotFound>> (
+        return endpoints.MapGet("/info", async Task<Results<Ok<GetUserInfoResponse>, NotFound, BadRequest, ProblemHttpResult>> (
             ClaimsPrincipal user,
             [FromServices] IGetUserInfoHandler handler,
             HttpContext context) =>
         {
             var result = await handler.HandleAsync(user, cancellationToken: context.RequestAborted);
-            if (result == null)
+            if (result.IsError)
             {
-                return TypedResults.NotFound();
+                return result.FirstError.Type switch
+                {
+                    ErrorType.NotFound => TypedResults.NotFound(),
+                    ErrorType.Validation => TypedResults.BadRequest(),
+                    _ => TypedResults.Problem(result.FirstError.Description, statusCode: StatusCodes.Status500InternalServerError),
+                };
             }
-            return TypedResults.Ok(result);
+            return TypedResults.Ok(result.Value);
         })
         .WithSummary("Get user info")
         .WithDescription("Get current user authentication info")

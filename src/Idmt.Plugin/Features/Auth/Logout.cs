@@ -50,6 +50,7 @@ public static class Logout
             await logoutHandler.HandleAsync(cancellationToken);
             return TypedResults.NoContent();
         })
+        .RequireAuthorization()
         .WithSummary("Logout user")
         .WithDescription("Logout user and invalidate bearer token or cookie");
     }

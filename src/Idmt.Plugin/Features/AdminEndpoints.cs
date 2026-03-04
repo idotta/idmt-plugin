@@ -1,3 +1,4 @@
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Features.Admin;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -10,6 +11,7 @@ public static class AdminEndpoints
     public static void MapAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var admin = endpoints.MapGroup("/admin")
+            .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
             .WithTags("Admin");
 
         admin.MapCreateTenantEndpoint();

@@ -89,6 +89,7 @@ public class TenantAccessServiceTests
     }
 
     [Theory]
+    [InlineData(IdmtDefaultRoleTypes.SysAdmin, "AnyRole", true)]
     [InlineData(IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.SysAdmin, false)]
     [InlineData(IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.TenantAdmin, true)]
     [InlineData(IdmtDefaultRoleTypes.TenantAdmin, IdmtDefaultRoleTypes.SysAdmin, false)]
@@ -106,6 +107,17 @@ public class TenantAccessServiceTests
         var result = _service.CanAssignRole(targetRole);
 
         Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void CanManageUser_ReturnsTrue_WhenSysAdminManagesAnyUser()
+    {
+        _currentUserServiceMock.Reset();
+        _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.SysAdmin)).Returns(true);
+
+        var result = _service.CanManageUser([IdmtDefaultRoleTypes.SysAdmin]);
+
+        Assert.True(result);
     }
 
     [Fact]

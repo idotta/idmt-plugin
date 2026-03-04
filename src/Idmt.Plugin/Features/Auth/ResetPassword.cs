@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Idmt.Plugin.Features.Auth;
@@ -25,7 +26,9 @@ public static class ResetPassword
         Task<ErrorOr<Success>> HandleAsync(string tenantIdentifier, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default);
     }
 
-    internal sealed class ResetPasswordHandler(ITenantOperationService tenantOps) : IResetPasswordHandler
+    internal sealed class ResetPasswordHandler(
+        ITenantOperationService tenantOps,
+        ILogger<ResetPasswordHandler> logger) : IResetPasswordHandler
     {
         public async Task<ErrorOr<Success>> HandleAsync(string tenantIdentifier, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default)
         {
@@ -55,8 +58,10 @@ public static class ResetPassword
 
                     return Result.Success;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    logger.LogError(ex, "An error occurred during password reset for {Email}",
+                        email.Length > 3 ? string.Concat(email.AsSpan(0, 3), "***") : "***");
                     return IdmtErrors.General.Unexpected;
                 }
             });

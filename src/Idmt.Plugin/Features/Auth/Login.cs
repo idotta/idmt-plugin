@@ -87,7 +87,7 @@ public static class Login
                 {
                     user = await userManager.FindByNameAsync(request.Username);
                 }
-                if (user == null)
+                if (user is null || !user.IsActive)
                 {
                     return IdmtErrors.Auth.Unauthorized;
                 }
@@ -99,26 +99,40 @@ public static class Login
 
                 if (result.RequiresTwoFactor)
                 {
+                    if (await userManager.IsLockedOutAsync(user))
+                    {
+                        return IdmtErrors.Auth.LockedOut;
+                    }
+
                     if (!string.IsNullOrEmpty(request.TwoFactorCode))
                     {
-                        result = await signInManager.TwoFactorAuthenticatorSignInAsync(request.TwoFactorCode, request.RememberMe, request.RememberMe);
+                        var isValid = await userManager.VerifyTwoFactorTokenAsync(
+                            user, userManager.Options.Tokens.AuthenticatorTokenProvider, request.TwoFactorCode);
+                        if (!isValid)
+                        {
+                            await userManager.AccessFailedAsync(user);
+                            return IdmtErrors.Auth.Unauthorized;
+                        }
                     }
                     else if (!string.IsNullOrEmpty(request.TwoFactorRecoveryCode))
                     {
-                        result = await signInManager.TwoFactorRecoveryCodeSignInAsync(request.TwoFactorRecoveryCode);
+                        var redeemResult = await userManager.RedeemTwoFactorRecoveryCodeAsync(user, request.TwoFactorRecoveryCode);
+                        if (!redeemResult.Succeeded)
+                        {
+                            await userManager.AccessFailedAsync(user);
+                            return IdmtErrors.Auth.Unauthorized;
+                        }
                     }
-                }
+                    else
+                    {
+                        return IdmtErrors.Auth.TwoFactorRequired;
+                    }
 
-                if (!result.Succeeded)
+                    await userManager.ResetAccessFailedCountAsync(user);
+                }
+                else if (!result.Succeeded)
                 {
                     return IdmtErrors.Auth.Unauthorized;
-                }
-
-                // Check if user is active
-                if (!user.IsActive)
-                {
-                    logger.LogWarning("Login attempt failed: User {UserId} is inactive", user.Id);
-                    return IdmtErrors.Auth.UserDeactivated;
                 }
 
                 // Direct cookie sign-in (no middleware delay)
@@ -134,7 +148,11 @@ public static class Login
 
                 // Update last login timestamp
                 user.LastLoginAt = timeProvider.GetUtcNow().UtcDateTime;
-                await userManager.UpdateAsync(user);
+                var loginUpdateResult = await userManager.UpdateAsync(user);
+                if (!loginUpdateResult.Succeeded)
+                {
+                    logger.LogWarning("Failed to update LastLoginAt for user {UserId}", user.Id);
+                }
 
                 return new LoginResponse { UserId = user.Id };
             }
@@ -178,7 +196,7 @@ public static class Login
                 {
                     user = await userManager.FindByNameAsync(request.Username);
                 }
-                if (user == null)
+                if (user == null || !user.IsActive)
                 {
                     return IdmtErrors.Auth.Unauthorized;
                 }
@@ -190,26 +208,40 @@ public static class Login
 
                 if (result.RequiresTwoFactor)
                 {
+                    if (await userManager.IsLockedOutAsync(user))
+                    {
+                        return IdmtErrors.Auth.LockedOut;
+                    }
+
                     if (!string.IsNullOrEmpty(request.TwoFactorCode))
                     {
-                        result = await signInManager.TwoFactorAuthenticatorSignInAsync(request.TwoFactorCode, request.RememberMe, request.RememberMe);
+                        var isValid = await userManager.VerifyTwoFactorTokenAsync(
+                            user, userManager.Options.Tokens.AuthenticatorTokenProvider, request.TwoFactorCode);
+                        if (!isValid)
+                        {
+                            await userManager.AccessFailedAsync(user);
+                            return IdmtErrors.Auth.Unauthorized;
+                        }
                     }
                     else if (!string.IsNullOrEmpty(request.TwoFactorRecoveryCode))
                     {
-                        result = await signInManager.TwoFactorRecoveryCodeSignInAsync(request.TwoFactorRecoveryCode);
+                        var redeemResult = await userManager.RedeemTwoFactorRecoveryCodeAsync(user, request.TwoFactorRecoveryCode);
+                        if (!redeemResult.Succeeded)
+                        {
+                            await userManager.AccessFailedAsync(user);
+                            return IdmtErrors.Auth.Unauthorized;
+                        }
                     }
-                }
+                    else
+                    {
+                        return IdmtErrors.Auth.TwoFactorRequired;
+                    }
 
-                if (!result.Succeeded)
+                    await userManager.ResetAccessFailedCountAsync(user);
+                }
+                else if (!result.Succeeded)
                 {
                     return IdmtErrors.Auth.Unauthorized;
-                }
-
-                // Check if user is active
-                if (!user.IsActive)
-                {
-                    logger.LogWarning("Login attempt failed: User {UserId} is inactive", user.Id);
-                    return IdmtErrors.Auth.UserDeactivated;
                 }
 
                 // Generate tokens using BearerToken
@@ -243,7 +275,11 @@ public static class Login
 
                 // Update last login timestamp
                 user.LastLoginAt = timeProvider.GetUtcNow().UtcDateTime;
-                await userManager.UpdateAsync(user);
+                var tokenLoginUpdateResult = await userManager.UpdateAsync(user);
+                if (!tokenLoginUpdateResult.Succeeded)
+                {
+                    logger.LogWarning("Failed to update LastLoginAt for user {UserId}", user.Id);
+                }
 
                 var expiresIn = (long)bearerOptions.BearerTokenExpiration.TotalSeconds;
 
@@ -257,7 +293,7 @@ public static class Login
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "An error occurred during login for identifier {Email} {Username}", request.Email ?? request.Username ?? "unknown", request.Email ?? request.Username ?? "unknown");
+                logger.LogError(ex, "An error occurred during login for identifier {Email} {Username}", request.Email ?? "unknown", request.Username ?? "unknown");
                 return IdmtErrors.General.Unexpected;
             }
         }
@@ -278,6 +314,19 @@ public static class Login
             var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
             if (response.IsError)
             {
+                if (response.FirstError.Code == "Auth.LockedOut")
+                {
+                    return TypedResults.Problem(
+                        response.FirstError.Description,
+                        statusCode: StatusCodes.Status429TooManyRequests);
+                }
+                if (response.FirstError.Code == "Auth.TwoFactorRequired")
+                {
+                    return TypedResults.Problem(
+                        response.FirstError.Description,
+                        statusCode: StatusCodes.Status422UnprocessableEntity,
+                        title: response.FirstError.Code);
+                }
                 return response.FirstError.Type switch
                 {
                     ErrorType.Unauthorized => TypedResults.Unauthorized(),
@@ -306,6 +355,19 @@ public static class Login
             var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
             if (response.IsError)
             {
+                if (response.FirstError.Code == "Auth.LockedOut")
+                {
+                    return TypedResults.Problem(
+                        response.FirstError.Description,
+                        statusCode: StatusCodes.Status429TooManyRequests);
+                }
+                if (response.FirstError.Code == "Auth.TwoFactorRequired")
+                {
+                    return TypedResults.Problem(
+                        response.FirstError.Description,
+                        statusCode: StatusCodes.Status422UnprocessableEntity,
+                        title: response.FirstError.Code);
+                }
                 return response.FirstError.Type switch
                 {
                     ErrorType.Unauthorized => TypedResults.Unauthorized(),

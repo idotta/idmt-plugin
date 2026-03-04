@@ -72,6 +72,7 @@ public class ValidateBearerTokenTenantMiddleware(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Error validating bearer token tenant");
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return false;
         }
     }

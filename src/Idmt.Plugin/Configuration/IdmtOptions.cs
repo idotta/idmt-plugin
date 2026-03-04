@@ -191,7 +191,7 @@ public class MultiTenantOptions
     /// </summary>
     public const string DefaultTenantIdentifier = "system-tenant";
 
-    public string DefaultTenantDisplayName { get; set; } = "System Tenant";
+    public string DefaultTenantName { get; set; } = "System Tenant";
 
     /// <summary>
     /// Tenant resolution strategy (header, subdomain, etc.)

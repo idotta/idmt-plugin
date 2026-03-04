@@ -44,7 +44,6 @@ public static class RegisterUser
         ILogger<RegisterHandler> logger,
         UserManager<IdmtUser> userManager,
         RoleManager<IdmtRole> roleManager,
-        IUserStore<IdmtUser> userStore,
         ICurrentUserService currentUserService,
         ITenantAccessService tenantAccessService,
         IdmtDbContext dbContext,
@@ -95,11 +94,6 @@ public static class RegisterUser
                     return IdmtErrors.User.CreationFailed;
                 }
 
-                await userStore.SetUserNameAsync(user, request.Username ?? request.Email, cancellationToken);
-                IUserEmailStore<IdmtUser> emailStore = userStore as IUserEmailStore<IdmtUser>
-                    ?? throw new NotSupportedException("The user store does not support email functionality.");
-                await emailStore.SetEmailAsync(user, request.Email, cancellationToken);
-
                 var roleResult = await userManager.AddToRoleAsync(user, request.Role);
                 if (!roleResult.Succeeded)
                 {
@@ -120,12 +114,12 @@ public static class RegisterUser
             var token = await userManager.GeneratePasswordResetTokenAsync(user);
 
             var passwordSetupUrl = useApiLinks
-                ? linkGenerator.GeneratePasswordResetApiLink(user.Email, token)
-                : linkGenerator.GeneratePasswordResetFormLink(user.Email, token);
+                ? linkGenerator.GeneratePasswordResetApiLink(user.Email ?? request.Email, token)
+                : linkGenerator.GeneratePasswordResetFormLink(user.Email ?? request.Email, token);
 
             logger.LogInformation("User created: {Email}. Request by {RequestingUserId}. Tenant: {TenantId}.", user.Email, currentUserService.UserId, tenantId);
 
-            await emailSender.SendPasswordResetLinkAsync(user, user.Email, passwordSetupUrl);
+            await emailSender.SendPasswordResetLinkAsync(user, user.Email ?? request.Email, passwordSetupUrl);
 
             return new RegisterUserResponse
             {

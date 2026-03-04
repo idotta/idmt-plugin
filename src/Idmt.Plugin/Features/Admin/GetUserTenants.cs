@@ -1,5 +1,4 @@
 using ErrorOr;
-using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
@@ -22,32 +21,30 @@ public static class GetUserTenants
 
     internal sealed class GetUserTenantsHandler(
         IdmtDbContext dbContext,
-        IMultiTenantStore<IdmtTenantInfo> tenantStore,
+        TimeProvider timeProvider,
         ILogger<GetUserTenantsHandler> logger) : IGetUserTenantsHandler
     {
         public async Task<ErrorOr<TenantInfoResponse[]>> HandleAsync(Guid userId, CancellationToken cancellationToken = default)
         {
             try
             {
-                var tenantIds = await dbContext.TenantAccess
-                    .Where(ta => ta.UserId == userId && ta.IsActive)
-                    .Select(ta => ta.TenantId)
+                var now = timeProvider.GetUtcNow().UtcDateTime;
+
+                var results = await dbContext.TenantAccess
+                    .Where(ta => ta.UserId == userId && ta.IsActive &&
+                                 (ta.ExpiresAt == null || ta.ExpiresAt > now))
+                    .Join(dbContext.Set<IdmtTenantInfo>(),
+                        ta => ta.TenantId,
+                        ti => ti.Id,
+                        (ta, ti) => new TenantInfoResponse(
+                            ti.Id ?? string.Empty,
+                            ti.Identifier ?? string.Empty,
+                            ti.Name ?? string.Empty,
+                            ti.Plan ?? string.Empty,
+                            ti.IsActive))
                     .ToArrayAsync(cancellationToken);
 
-                var allTenants = await tenantStore.GetAllAsync();
-                var tenantIdSet = new HashSet<string>(tenantIds.Where(id => id != null)!);
-
-                var res = allTenants
-                    .Where(t => t != null && tenantIdSet.Contains(t.Id!))
-                    .Select(t => new TenantInfoResponse(
-                        t!.Id ?? string.Empty,
-                        t.Identifier ?? string.Empty,
-                        t.Name ?? string.Empty,
-                        t.Plan ?? string.Empty,
-                        t.IsActive))
-                    .ToArray();
-
-                return res;
+                return results;
             }
             catch (Exception ex)
             {
@@ -71,7 +68,6 @@ public static class GetUserTenants
             }
             return TypedResults.Ok(result.Value);
         })
-        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
         .WithSummary("Get tenants accessible by user");
     }
 }

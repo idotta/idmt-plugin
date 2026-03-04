@@ -55,11 +55,13 @@ public static class RevokeTenantAccess
 
                     var tenantAccess = await dbContext.TenantAccess
                         .FirstOrDefaultAsync(ta => ta.UserId == userId && ta.TenantId == targetTenant.Id, cancellationToken);
-                    if (tenantAccess is not null)
+                    if (tenantAccess is null)
                     {
-                        tenantAccess.IsActive = false;
-                        dbContext.TenantAccess.Update(tenantAccess);
+                        return IdmtErrors.Tenant.AccessNotFound;
                     }
+
+                    tenantAccess.IsActive = false;
+                    dbContext.TenantAccess.Update(tenantAccess);
                     await dbContext.SaveChangesAsync(cancellationToken);
                 }
                 catch (Exception ex)
@@ -93,7 +95,7 @@ public static class RevokeTenantAccess
 
     public static RouteHandlerBuilder MapRevokeTenantAccessEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantId}", async Task<Results<Ok, NotFound, InternalServerError>> (
+        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantId}", async Task<Results<NoContent, NotFound, InternalServerError>> (
             Guid userId,
             string tenantId,
             IRevokeTenantAccessHandler handler,
@@ -108,9 +110,8 @@ public static class RevokeTenantAccess
                     _ => TypedResults.InternalServerError(),
                 };
             }
-            return TypedResults.Ok();
+            return TypedResults.NoContent();
         })
-        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
         .WithSummary("Revoke user access from a tenant");
     }
 }

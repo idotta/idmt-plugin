@@ -22,7 +22,7 @@ public class IdmtTenantStoreDbContext : EFCoreStoreDbContext<IdmtTenantInfo>
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // IdmtDbContext owns all table configurations
-        // This keeps migrations simple: only run dotnet ef migrations with IdmtDbContext
+        base.OnModelCreating(modelBuilder);
+        // IdmtDbContext owns all table configurations for migrations
     }
 }

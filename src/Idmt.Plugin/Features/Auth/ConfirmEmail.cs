@@ -78,9 +78,12 @@ public static class ConfirmEmail
 
             if (result.IsError)
             {
-                return result.FirstError.Type == ErrorType.NotFound
-                    ? TypedResults.BadRequest()
-                    : TypedResults.InternalServerError();
+                return result.FirstError.Type switch
+                {
+                    ErrorType.NotFound => TypedResults.BadRequest(),
+                    ErrorType.Failure => TypedResults.BadRequest(),
+                    _ => TypedResults.InternalServerError(),
+                };
             }
             return TypedResults.Ok();
         })

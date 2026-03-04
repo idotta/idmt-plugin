@@ -5,6 +5,7 @@ using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
@@ -30,7 +31,8 @@ public static class ForgotPassword
     internal sealed class ForgotPasswordHandler(
         UserManager<IdmtUser> userManager,
         IEmailSender<IdmtUser> emailSender,
-        IIdmtLinkGenerator linkGenerator) : IForgotPasswordHandler
+        IIdmtLinkGenerator linkGenerator,
+        ILogger<ForgotPasswordHandler> logger) : IForgotPasswordHandler
     {
         public async Task<ErrorOr<ForgotPasswordResponse>> HandleAsync(
             bool useApiLinks,
@@ -59,8 +61,10 @@ public static class ForgotPassword
 
                 return new ForgotPasswordResponse();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                logger.LogError(ex, "An error occurred during forgot password for {Email}",
+                    request.Email.Length > 3 ? string.Concat(request.Email.AsSpan(0, 3), "***") : "***");
                 return IdmtErrors.General.Unexpected;
             }
         }

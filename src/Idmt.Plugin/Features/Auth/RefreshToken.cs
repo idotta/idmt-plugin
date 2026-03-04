@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using ErrorOr;
+using Finbuckle.MultiTenant.Abstractions;
 using FluentValidation;
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Validation;
@@ -29,7 +31,9 @@ public static class RefreshToken
     internal sealed class RefreshTokenHandler(
         IOptionsMonitor<BearerTokenOptions> bearerTokenOptions,
         TimeProvider timeProvider,
-        SignInManager<IdmtUser> signInManager)
+        SignInManager<IdmtUser> signInManager,
+        IMultiTenantContextAccessor<IdmtTenantInfo> tenantContextAccessor,
+        IOptions<IdmtOptions> idmtOptions)
         : IRefreshTokenHandler
     {
         public async Task<ErrorOr<RefreshTokenResponse>> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default)
@@ -42,6 +46,22 @@ public static class RefreshToken
                 await signInManager.ValidateSecurityStampAsync(refreshTicket.Principal) is not IdmtUser user)
             {
                 return IdmtErrors.Token.Invalid;
+            }
+
+            if (!user.IsActive)
+            {
+                return IdmtErrors.Auth.Unauthorized;
+            }
+
+            // Validate tenant context matches refresh token
+            var tenantClaimKey = idmtOptions.Value.MultiTenant.StrategyOptions.GetValueOrDefault(
+                IdmtMultiTenantStrategy.Claim, IdmtMultiTenantStrategy.DefaultClaim);
+            var tokenTenantClaim = refreshTicket.Principal?.FindFirst(tenantClaimKey)?.Value;
+            var currentTenant = tenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier;
+
+            if (tokenTenantClaim is not null && currentTenant is not null && tokenTenantClaim != currentTenant)
+            {
+                return IdmtErrors.Auth.Unauthorized;
             }
 
             ClaimsPrincipal claimsPrincipal = await signInManager.CreateUserPrincipalAsync(user);

@@ -28,8 +28,8 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
         using var scope = Factory.Services.CreateScope();
         var handler = scope.ServiceProvider.GetRequiredService<CreateTenant.ICreateTenantHandler>();
 
-        await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantA, TenantA, "Tenant A"));
-        await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantB, TenantB, "Tenant B"));
+        await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantA, TenantA));
+        await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantB, TenantB));
     }
 
     private async Task CreateUserInTenantAsync(string tenantIdentifier, string email, string password, string role = IdmtDefaultRoleTypes.TenantAdmin)

@@ -41,9 +41,9 @@ public static class GrantTenantAccess
             {
                 var sp = scope.ServiceProvider;
 
+                var dbContext = sp.GetRequiredService<IdmtDbContext>();
                 try
                 {
-                    var dbContext = sp.GetRequiredService<IdmtDbContext>();
                     var userManager = sp.GetRequiredService<UserManager<IdmtUser>>();
                     var tenantStore = sp.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
 
@@ -57,6 +57,11 @@ public static class GrantTenantAccess
                     if (targetTenant is null)
                     {
                         return IdmtErrors.Tenant.NotFound;
+                    }
+
+                    if (!targetTenant.IsActive)
+                    {
+                        return IdmtErrors.Tenant.Inactive;
                     }
 
                     userRoles = await userManager.GetRolesAsync(user);
@@ -85,62 +90,79 @@ public static class GrantTenantAccess
                         };
                         dbContext.TenantAccess.Add(tenantAccess);
                     }
-                    await dbContext.SaveChangesAsync(cancellationToken);
                 }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Error granting tenant access to user {UserId} for tenant {TenantIdentifier}", userId, tenantIdentifier);
                     return IdmtErrors.Tenant.AccessError;
                 }
-            }
 
-            return await tenantOps.ExecuteInTenantScopeAsync(tenantIdentifier, async sp =>
-            {
-                try
+                // Execute tenant-scope operation BEFORE persisting TenantAccess to prevent orphaned records
+                var tenantResult = await tenantOps.ExecuteInTenantScopeAsync(tenantIdentifier, async tsp =>
                 {
-                    var targetUserManager = sp.GetRequiredService<UserManager<IdmtUser>>();
-
-                    var targetUser = await targetUserManager.Users
-                        .FirstOrDefaultAsync(u => u.Email == user.Email && u.UserName == user.UserName, cancellationToken);
-
-                    if (targetUser is null)
+                    try
                     {
-                        // Create new user record for the target tenant
-                        // SecurityStamp is copied to enable cross-tenant token validation
-                        targetUser = new IdmtUser
+                        var targetUserManager = tsp.GetRequiredService<UserManager<IdmtUser>>();
+
+                        var targetUser = await targetUserManager.Users
+                            .FirstOrDefaultAsync(u => u.Email == user.Email && u.UserName == user.UserName, cancellationToken);
+
+                        if (targetUser is null)
                         {
-                            UserName = user.UserName,
-                            Email = user.Email,
-                            EmailConfirmed = user.EmailConfirmed,
-                            PasswordHash = user.PasswordHash,
-                            SecurityStamp = user.SecurityStamp,
-                            ConcurrencyStamp = user.ConcurrencyStamp,
-                            PhoneNumber = user.PhoneNumber,
-                            PhoneNumberConfirmed = user.PhoneNumberConfirmed,
-                            TwoFactorEnabled = user.TwoFactorEnabled,
-                            LockoutEnd = user.LockoutEnd,
-                            LockoutEnabled = user.LockoutEnabled,
-                            AccessFailedCount = user.AccessFailedCount,
-                            IsActive = true
-                        };
+                            targetUser = new IdmtUser
+                            {
+                                UserName = user.UserName,
+                                Email = user.Email,
+                                EmailConfirmed = user.EmailConfirmed,
+                                PasswordHash = user.PasswordHash,
+                                SecurityStamp = user.SecurityStamp,
+                                ConcurrencyStamp = user.ConcurrencyStamp,
+                                PhoneNumber = user.PhoneNumber,
+                                PhoneNumberConfirmed = user.PhoneNumberConfirmed,
+                                TwoFactorEnabled = user.TwoFactorEnabled,
+                                LockoutEnd = user.LockoutEnd,
+                                LockoutEnabled = user.LockoutEnabled,
+                                AccessFailedCount = user.AccessFailedCount,
+                                IsActive = true
+                            };
 
-                        await targetUserManager.CreateAsync(targetUser);
-                        await targetUserManager.AddToRolesAsync(targetUser, userRoles);
+                            var createResult = await targetUserManager.CreateAsync(targetUser);
+                            if (!createResult.Succeeded)
+                            {
+                                logger.LogError("Failed to create user in target tenant: {Errors}", string.Join(", ", createResult.Errors.Select(e => e.Description)));
+                                return IdmtErrors.Tenant.AccessError;
+                            }
+                            var roleResult = await targetUserManager.AddToRolesAsync(targetUser, userRoles);
+                            if (!roleResult.Succeeded)
+                            {
+                                logger.LogError("Failed to assign roles in target tenant: {Errors}", string.Join(", ", roleResult.Errors.Select(e => e.Description)));
+                                return IdmtErrors.Tenant.AccessError;
+                            }
+                        }
+                        else
+                        {
+                            targetUser.IsActive = true;
+                            await targetUserManager.UpdateAsync(targetUser);
+                        }
+
+                        return Result.Success;
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        targetUser.IsActive = true;
-                        await targetUserManager.UpdateAsync(targetUser);
+                        logger.LogError(ex, "Error granting tenant access to user {UserId} in tenant {TenantIdentifier}", userId, tenantIdentifier);
+                        return IdmtErrors.Tenant.AccessError;
                     }
+                });
 
-                    return Result.Success;
-                }
-                catch (Exception ex)
+                if (tenantResult.IsError)
                 {
-                    logger.LogError(ex, "Error granting tenant access to user {UserId} in tenant {TenantIdentifier}", userId, tenantIdentifier);
-                    return IdmtErrors.Tenant.AccessError;
+                    return tenantResult;
                 }
-            });
+
+                // Tenant-scope operation succeeded — now persist the TenantAccess record
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return Result.Success;
+            }
         }
     }
 
@@ -165,7 +187,6 @@ public static class GrantTenantAccess
             }
             return TypedResults.Ok();
         })
-        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
         .WithSummary("Grant user access to a tenant");
     }
 }

@@ -52,12 +52,6 @@ public class IdmtLinkGeneratorTests
     }
 
     [Fact]
-    public void Constructor_ShouldInitialize()
-    {
-        Assert.NotNull(_service);
-    }
-
-    [Fact]
     public void GenerateConfirmEmailApiLink_UsesLinkGenerator()
     {
         const string email = "user@example.com";

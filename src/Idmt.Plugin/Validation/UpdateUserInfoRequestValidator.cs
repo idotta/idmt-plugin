@@ -9,19 +9,19 @@ public class UpdateUserInfoRequestValidator : AbstractValidator<UpdateUserInfo.U
 {
     public UpdateUserInfoRequestValidator(IOptions<IdmtOptions> options)
     {
-        When(x => !string.IsNullOrEmpty(x.NewPassword), () =>
+        When(x => !string.IsNullOrWhiteSpace(x.NewPassword), () =>
         {
             RuleFor(x => x.OldPassword).NotEmpty()
                 .WithMessage("Old password is required to change password");
         });
 
-        When(x => x.NewEmail is not null, () =>
+        When(x => !string.IsNullOrWhiteSpace(x.NewEmail), () =>
         {
             RuleFor(x => x.NewEmail).Must(Validators.IsValidEmail)
                 .WithMessage("New email is not valid");
         });
 
-        When(x => x.NewPassword is not null, () =>
+        When(x => !string.IsNullOrWhiteSpace(x.NewPassword), () =>
         {
             RuleFor(x => x.NewPassword).Must(password =>
                 Validators.IsValidNewPassword(password, options.Value.Identity.Password, out _))

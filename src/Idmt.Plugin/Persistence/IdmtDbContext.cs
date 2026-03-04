@@ -1,6 +1,7 @@
 using Finbuckle.MultiTenant.Abstractions;
 using Finbuckle.MultiTenant.EntityFrameworkCore.Extensions;
 using Finbuckle.MultiTenant.Identity.EntityFrameworkCore;
+using Idmt.Plugin.Constants;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
 using Microsoft.EntityFrameworkCore;
@@ -129,7 +130,7 @@ public class IdmtDbContext
                 {
                     UserId = _currentUserService.UserId,
                     TenantId = entry.Entity.GetTenantId(),
-                    Action = "Created",
+                    Action = AuditAction.Created.ToString(),
                     Resource = entry.Entity.GetName(),
                     ResourceId = entry.Entity.GetId(),
                     Success = true,
@@ -144,7 +145,7 @@ public class IdmtDbContext
                 {
                     UserId = _currentUserService.UserId,
                     TenantId = entry.Entity.GetTenantId(),
-                    Action = "Deleted",
+                    Action = AuditAction.Deleted.ToString(),
                     Resource = entry.Entity.GetName(),
                     ResourceId = entry.Entity.GetId(),
                     Success = true,
@@ -162,7 +163,7 @@ public class IdmtDbContext
                 {
                     UserId = _currentUserService.UserId,
                     TenantId = entry.Entity.GetTenantId(),
-                    Action = "Modified",
+                    Action = AuditAction.Modified.ToString(),
                     Resource = entry.Entity.GetName(),
                     ResourceId = entry.Entity.GetId(),
                     Details = details,

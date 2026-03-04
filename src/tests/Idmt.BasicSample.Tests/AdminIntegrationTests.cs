@@ -44,7 +44,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var handler = scope.ServiceProvider.GetRequiredService<CreateTenant.ICreateTenantHandler>();
 
         var tenantIdentifier = $"tenant-{Guid.NewGuid():N}";
-        var request = new CreateTenant.CreateTenantRequest(tenantIdentifier, "Test Tenant", "Test Tenant Display");
+        var request = new CreateTenant.CreateTenantRequest(tenantIdentifier, "Test Tenant");
         var result = await handler.HandleAsync(request);
 
         Assert.False(result.IsError);
@@ -61,7 +61,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var tenantIdentifier = $"tenant-{Guid.NewGuid():N}";
 
         // Create initial tenant
-        var request = new CreateTenant.CreateTenantRequest(tenantIdentifier, "Test Tenant", "Test Display");
+        var request = new CreateTenant.CreateTenantRequest(tenantIdentifier, "Test Tenant");
         var result = await handler.HandleAsync(request);
         var tenantId = result.Value!.Id;
 
@@ -86,7 +86,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var deleteHandler = scope.ServiceProvider.GetRequiredService<DeleteTenant.IDeleteTenantHandler>();
 
         var tenantIdentifier = $"tenant-{Guid.NewGuid():N}";
-        var request = new CreateTenant.CreateTenantRequest(tenantIdentifier, "Test Tenant", "Test Display");
+        var request = new CreateTenant.CreateTenantRequest(tenantIdentifier, "Test Tenant");
         await createHandler.HandleAsync(request);
 
         var deleted = await deleteHandler.HandleAsync(tenantIdentifier);
@@ -232,7 +232,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
     #region Revoke Tenant Access Tests
 
     [Fact]
-    public async Task RevokeTenantAccess_with_valid_data_succeeds()
+    public async Task RevokeTenantAccess_with_valid_data_returns_no_content()
     {
         var sysClient = await CreateAuthenticatedClientAsync();
         var email = $"revoke-{Guid.NewGuid():N}@example.com";
@@ -253,7 +253,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
 
         // Revoke access
         var revokeResponse = await sysClient.DeleteAsync($"/admin/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
-        await revokeResponse.AssertSuccess();
+        Assert.Equal(HttpStatusCode.NoContent, revokeResponse.StatusCode);
     }
 
     [Fact]
@@ -281,7 +281,8 @@ public class AdminIntegrationTests : BaseIntegrationTest
         Assert.Contains(tenantsBeforeRevoke!, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
 
         // Revoke access
-        await sysClient.DeleteAsync($"/admin/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
+        var revokeResp = await sysClient.DeleteAsync($"/admin/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
+        Assert.Equal(HttpStatusCode.NoContent, revokeResp.StatusCode);
 
         // Verify access is removed
         var tenantsAfterRevoke = await sysClient.GetFromJsonAsync<TenantInfoResponse[]>($"/admin/users/{userId}/tenants");
@@ -365,13 +366,16 @@ public class AdminIntegrationTests : BaseIntegrationTest
     }
 
     [Fact]
-    public async Task GetUserTenants_with_nonexistent_user_succeeds_empty()
+    public async Task GetUserTenants_with_nonexistent_user_returns_ok_empty()
     {
         var sysClient = await CreateAuthenticatedClientAsync();
 
         var response = await sysClient.GetAsync($"/admin/users/{Guid.NewGuid()}/tenants");
-        // May return 200 with empty or 404
-        Assert.True(response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var tenants = await response.Content.ReadFromJsonAsync<TenantInfoResponse[]>();
+        Assert.NotNull(tenants);
+        Assert.Empty(tenants!);
     }
 
     [Fact]
@@ -380,6 +384,31 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var client = Factory.CreateClientWithTenant();
 
         var response = await client.GetAsync($"/admin/users/{Guid.NewGuid()}/tenants");
+        Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
+    }
+
+    #endregion
+
+    #region Get All Tenants Tests
+
+    [Fact]
+    public async Task GetAllTenants_returns_ok_with_tenant_list()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+
+        var response = await sysClient.GetAsync("/admin/tenants");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var tenants = await response.Content.ReadFromJsonAsync<TenantInfoResponse[]>();
+        Assert.NotNull(tenants);
+    }
+
+    [Fact]
+    public async Task GetAllTenants_requires_authorization()
+    {
+        var client = Factory.CreateClientWithTenant();
+
+        var response = await client.GetAsync("/admin/tenants");
         Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
     }
 

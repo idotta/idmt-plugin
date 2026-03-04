@@ -55,27 +55,25 @@ public static class ServiceCollectionExtensions
         // 2. Configure Database Contexts
         ConfigureDatabase<TDbContext>(services, configureDb, idmtOptions);
 
-        // 3. Configure MultiTenant
-        // ConfigureMultiTenant(services, idmtOptions);
-
-        // 4. Configure Identity
+        // 3. Configure Identity
         ConfigureIdentity(services, idmtOptions);
 
-        // 5. Configure Authentication
+        // 4. Configure Authentication
         ConfigureAuthentication(services, idmtOptions, customizeAuthentication);
 
-        // 6. Configure Authorization
+        // 5. Configure Authorization
         ConfigureAuthorization(services, customizeAuthorization);
 
+        // 6. Configure MultiTenant
         ConfigureMultiTenant(services, idmtOptions);
 
-        // 6. Register Application Services
+        // 7. Register Application Services
         RegisterApplicationServices(services);
 
-        // 7. Register Feature Handlers
+        // 8. Register Feature Handlers
         RegisterFeatures(services);
 
-        // 8. Register Middleware
+        // 9. Register Middleware
         RegisterMiddleware(services);
 
         return services;

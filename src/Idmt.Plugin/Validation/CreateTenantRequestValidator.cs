@@ -14,8 +14,5 @@ public class CreateTenantRequestValidator : AbstractValidator<CreateTenant.Creat
 
         RuleFor(x => x.Name).NotEmpty()
             .WithMessage("Name is required");
-
-        RuleFor(x => x.DisplayName).NotEmpty()
-            .WithMessage("Display Name is required");
     }
 }

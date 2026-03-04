@@ -22,15 +22,13 @@ public static class CreateTenant
 {
     public sealed record CreateTenantRequest(
         string Identifier,
-        string Name,
-        string DisplayName
+        string Name
     );
 
     public sealed record CreateTenantResponse(
         string Id,
         string Identifier,
-        string Name,
-        string DisplayName
+        string Name
     );
 
     public interface ICreateTenantHandler
@@ -65,10 +63,7 @@ public static class CreateTenant
                 }
                 else
                 {
-                    var tenant = new IdmtTenantInfo(request.Identifier, request.Name)
-                    {
-                        Name = request.DisplayName
-                    };
+                    var tenant = new IdmtTenantInfo(request.Identifier, request.Name);
 
                     if (!await tenantStore.AddAsync(tenant))
                     {
@@ -94,12 +89,12 @@ public static class CreateTenant
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error seeding roles for tenant {Identifier}", request.Identifier);
+                return IdmtErrors.Tenant.RoleSeedFailed;
             }
 
             return new CreateTenantResponse(
                 resultTenant.Id ?? string.Empty,
                 resultTenant.Identifier ?? string.Empty,
-                resultTenant.Name ?? string.Empty,
                 resultTenant.Name ?? string.Empty);
         }
 
@@ -134,7 +129,7 @@ public static class CreateTenant
 
     public static RouteHandlerBuilder MapCreateTenantEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/tenants", async Task<Results<Ok<CreateTenantResponse>, Created<CreateTenantResponse>, ValidationProblem, BadRequest>> (
+        return endpoints.MapPost("/tenants", async Task<Results<Created<CreateTenantResponse>, ValidationProblem, BadRequest, ProblemHttpResult>> (
             [FromBody] CreateTenantRequest request,
             [FromServices] ICreateTenantHandler handler,
             [FromServices] IValidator<CreateTenantRequest> validator,
@@ -147,11 +142,14 @@ public static class CreateTenant
             var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
             if (response.IsError)
             {
-                return TypedResults.BadRequest();
+                return response.FirstError.Type switch
+                {
+                    ErrorType.Validation => TypedResults.BadRequest(),
+                    _ => TypedResults.Problem(response.FirstError.Description, statusCode: StatusCodes.Status500InternalServerError),
+                };
             }
-            return TypedResults.Ok(response.Value);
+            return TypedResults.Created($"/admin/tenants/{response.Value.Identifier}", response.Value);
         })
-        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
         .WithSummary("Create Tenant")
         .WithDescription("Create a new tenant in the system or reactivate an existing inactive tenant");
     }

@@ -4,8 +4,7 @@ using Microsoft.AspNetCore.Http;
 namespace Idmt.Plugin.Middleware;
 
 /// <summary>
-/// Middleware for setting current user and validating tenant isolation on bearer tokens.
-/// Ensures that users cannot use tokens from one tenant to access another tenant's resources.
+/// Middleware for setting current user context from the authenticated HTTP request.
 /// </summary>
 public class CurrentUserMiddleware(ICurrentUserService currentUserService) : IMiddleware
 {

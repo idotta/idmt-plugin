@@ -88,35 +88,28 @@ public static class ApplicationBuilderExtensions
         var options = services.GetRequiredService<IOptions<IdmtOptions>>();
         var context = services.GetRequiredService<IdmtDbContext>();
 
-        try
-        {
-            var shouldMigrate = autoMigrate || options.Value.Database.AutoMigrate;
+        var shouldMigrate = autoMigrate || options.Value.Database.AutoMigrate;
 
-            if (shouldMigrate)
+        if (shouldMigrate)
+        {
+            // Try to migrate, fall back to EnsureCreated if migrations not supported
+            try
             {
-                // Try to migrate, fall back to EnsureCreated if migrations not supported
-                try
-                {
-                    await context.Database.MigrateAsync();
-                }
-                catch (InvalidOperationException)
-                {
-                    // Migrations not supported (e.g., in-memory database)
-                    await context.Database.EnsureCreatedAsync();
-                }
+                await context.Database.MigrateAsync();
             }
-            else
+            catch (InvalidOperationException)
             {
+                // Migrations not supported (e.g., in-memory database)
                 await context.Database.EnsureCreatedAsync();
             }
-
-            // NOTE: IdmtTenantStoreDbContext shares the same database/connection
-            // No separate initialization needed - it accesses tables created above
         }
-        catch
+        else
         {
-            throw;
+            await context.Database.EnsureCreatedAsync();
         }
+
+        // NOTE: IdmtTenantStoreDbContext shares the same database/connection
+        // No separate initialization needed - it accesses tables created above
     }
 
     /// <summary>
@@ -129,20 +122,13 @@ public static class ApplicationBuilderExtensions
     {
         using var scope = app.ApplicationServices.CreateScope();
         var services = scope.ServiceProvider;
-        try
-        {
-            // Run default seeding
-            await SeedDefaultDataAsync(services);
+        // Run default seeding
+        await SeedDefaultDataAsync(services);
 
-            // Run custom seeding if provided
-            if (seedAction != null)
-            {
-                await seedAction(services);
-            }
-        }
-        catch
+        // Run custom seeding if provided
+        if (seedAction != null)
         {
-            throw;
+            await seedAction(services);
         }
 
         return app;
@@ -154,8 +140,7 @@ public static class ApplicationBuilderExtensions
         var createTenantHandler = services.GetRequiredService<CreateTenant.ICreateTenantHandler>();
         await createTenantHandler.HandleAsync(new CreateTenant.CreateTenantRequest(
             MultiTenantOptions.DefaultTenantIdentifier,
-            MultiTenantOptions.DefaultTenantIdentifier,
-            options.Value.MultiTenant.DefaultTenantDisplayName));
+            options.Value.MultiTenant.DefaultTenantName));
     }
 
     private static void VerifyUserStoreSupportsEmail(IApplicationBuilder app)

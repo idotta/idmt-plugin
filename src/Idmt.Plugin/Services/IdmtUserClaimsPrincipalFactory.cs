@@ -37,7 +37,7 @@ internal sealed class IdmtUserClaimsPrincipalFactory(
             return identity;
         }
 
-        identity.AddClaim(new Claim(claimKey, tenantInfo.Identifier));
+        identity.AddClaim(new Claim(claimKey, tenantInfo.Identifier ?? string.Empty));
 
         return identity;
     }

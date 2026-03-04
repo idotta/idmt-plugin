@@ -58,6 +58,8 @@ public static class UpdateUserInfo
             await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
             try
             {
+                bool hasChanges = false;
+
                 // Update username if provided
                 if (!string.IsNullOrWhiteSpace(request.NewUsername) && request.NewUsername != appUser.UserName)
                 {
@@ -68,6 +70,7 @@ public static class UpdateUserInfo
                         await transaction.RollbackAsync(cancellationToken);
                         return IdmtErrors.User.UpdateFailed;
                     }
+                    hasChanges = true;
                 }
 
                 // Update email if provided
@@ -76,19 +79,18 @@ public static class UpdateUserInfo
                     // Generate email change token
                     var token = await userManager.GenerateChangeEmailTokenAsync(appUser, request.NewEmail);
                     var result = await userManager.ChangeEmailAsync(appUser, request.NewEmail, token);
-                    appUser.EmailConfirmed = false;
-                    await userManager.UpdateAsync(appUser);
-
                     if (!result.Succeeded)
                     {
                         logger.LogError("Failed to change email: {ErrorMessage}", result.Errors.Select(e => e.Description));
                         await transaction.RollbackAsync(cancellationToken);
                         return IdmtErrors.User.UpdateFailed;
                     }
+                    appUser.EmailConfirmed = false;
+                    hasChanges = true;
                 }
 
                 // Update password if provided
-                if (!string.IsNullOrEmpty(request.OldPassword) && !string.IsNullOrWhiteSpace(request.NewPassword))
+                if (!string.IsNullOrWhiteSpace(request.OldPassword) && !string.IsNullOrWhiteSpace(request.NewPassword))
                 {
                     var changePasswordResult = await userManager.ChangePasswordAsync(appUser, request.OldPassword, request.NewPassword);
                     if (!changePasswordResult.Succeeded)
@@ -97,9 +99,19 @@ public static class UpdateUserInfo
                         await transaction.RollbackAsync(cancellationToken);
                         return IdmtErrors.Password.ResetFailed;
                     }
+                    hasChanges = true;
                 }
 
-                await userManager.UpdateAsync(appUser);
+                if (hasChanges)
+                {
+                    var updateResult = await userManager.UpdateAsync(appUser);
+                    if (!updateResult.Succeeded)
+                    {
+                        logger.LogError("Failed to update user: {Errors}", string.Join(", ", updateResult.Errors.Select(e => e.Description)));
+                        await transaction.RollbackAsync(cancellationToken);
+                        return IdmtErrors.User.UpdateFailed;
+                    }
+                }
 
                 await transaction.CommitAsync(cancellationToken);
 
@@ -108,7 +120,7 @@ public static class UpdateUserInfo
             catch (Exception ex)
             {
                 await transaction.RollbackAsync(cancellationToken);
-                logger.LogError(ex, "Exception occurred during user registration. Transaction rolled back.");
+                logger.LogError(ex, "Exception occurred during user info update. Transaction rolled back.");
                 return IdmtErrors.General.Unexpected;
             }
         }
@@ -136,6 +148,7 @@ public static class UpdateUserInfo
                     ErrorType.NotFound => TypedResults.NotFound(),
                     ErrorType.Forbidden => TypedResults.Forbid(),
                     ErrorType.Validation => TypedResults.BadRequest(),
+                    ErrorType.Failure => TypedResults.BadRequest(),
                     _ => TypedResults.InternalServerError(),
                 };
             }
