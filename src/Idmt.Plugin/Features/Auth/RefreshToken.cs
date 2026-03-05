@@ -5,6 +5,7 @@ using FluentValidation;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Builder;
@@ -33,7 +34,8 @@ public static class RefreshToken
         TimeProvider timeProvider,
         SignInManager<IdmtUser> signInManager,
         IMultiTenantContextAccessor<IdmtTenantInfo> tenantContextAccessor,
-        IOptions<IdmtOptions> idmtOptions)
+        IOptions<IdmtOptions> idmtOptions,
+        ITokenRevocationService tokenRevocationService)
         : IRefreshTokenHandler
     {
         public async Task<ErrorOr<RefreshTokenResponse>> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default)
@@ -62,6 +64,16 @@ public static class RefreshToken
             if (tokenTenantClaim is null || currentTenant is null || tokenTenantClaim != currentTenant)
             {
                 return IdmtErrors.Auth.Unauthorized;
+            }
+
+            // Check if this token has been revoked
+            var issuedAt = refreshTicket.Properties.IssuedUtc?.UtcDateTime
+                ?? (expiresUtc - idmtOptions.Value.Identity.Bearer.RefreshTokenExpiration).UtcDateTime;
+            var tenantId = tenantContextAccessor.MultiTenantContext?.TenantInfo?.Id;
+
+            if (tenantId is not null && await tokenRevocationService.IsTokenRevokedAsync(user.Id, tenantId, issuedAt, cancellationToken))
+            {
+                return IdmtErrors.Token.Revoked;
             }
 
             ClaimsPrincipal claimsPrincipal = await signInManager.CreateUserPrincipalAsync(user);

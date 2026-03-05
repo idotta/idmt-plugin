@@ -1,6 +1,5 @@
 using ErrorOr;
 using Finbuckle.MultiTenant.Abstractions;
-using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
@@ -166,7 +165,51 @@ public static class GrantTenantAccess
                 }
 
                 // Tenant-scope operation succeeded — now persist the TenantAccess record
-                await dbContext.SaveChangesAsync(cancellationToken);
+                try
+                {
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex,
+                        "Failed to save TenantAccess record for user {UserId} in tenant {TenantIdentifier}. " +
+                        "Executing compensating action to deactivate user in target tenant.",
+                        userId, tenantIdentifier);
+
+                    // Compensating action: deactivate the user in the target tenant
+                    await tenantOps.ExecuteInTenantScopeAsync(tenantIdentifier, async tsp =>
+                    {
+                        try
+                        {
+                            var compensationUserManager = tsp.GetRequiredService<UserManager<IdmtUser>>();
+                            var orphanedUser = await compensationUserManager.Users
+                                .FirstOrDefaultAsync(u => u.Email == user!.Email && u.UserName == user.UserName, cancellationToken);
+
+                            if (orphanedUser is not null)
+                            {
+                                orphanedUser.IsActive = false;
+                                await compensationUserManager.UpdateAsync(orphanedUser);
+                                logger.LogWarning(
+                                    "Compensating action completed: deactivated user {Email} in tenant {TenantIdentifier} " +
+                                    "after TenantAccess save failure.",
+                                    user!.Email, tenantIdentifier);
+                            }
+
+                            return Result.Success;
+                        }
+                        catch (Exception compensationEx)
+                        {
+                            logger.LogCritical(compensationEx,
+                                "CRITICAL: Compensating action failed for user {UserId} in tenant {TenantIdentifier}. " +
+                                "Manual intervention required: user exists in target tenant without a TenantAccess record.",
+                                userId, tenantIdentifier);
+                            return IdmtErrors.Tenant.AccessError;
+                        }
+                    });
+
+                    return IdmtErrors.Tenant.AccessError;
+                }
+
                 return Result.Success;
             }
         }

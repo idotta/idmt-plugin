@@ -22,7 +22,6 @@ public static class ResendConfirmationEmail
     public interface IResendConfirmationEmailHandler
     {
         Task<ErrorOr<Success>> HandleAsync(
-            bool useApiLinks,
             ResendConfirmationEmailRequest request,
             CancellationToken cancellationToken = default);
     }
@@ -35,7 +34,6 @@ public static class ResendConfirmationEmail
         ) : IResendConfirmationEmailHandler
     {
         public async Task<ErrorOr<Success>> HandleAsync(
-            bool useApiLinks,
             ResendConfirmationEmailRequest request,
             CancellationToken cancellationToken = default)
         {
@@ -56,9 +54,7 @@ public static class ResendConfirmationEmail
                 // Generate email confirmation token
                 string token = await userManager.GenerateEmailConfirmationTokenAsync(user);
 
-                string confirmEmailUrl = useApiLinks
-                    ? linkGenerator.GenerateConfirmEmailApiLink(request.Email, token)
-                    : linkGenerator.GenerateConfirmEmailFormLink(request.Email, token);
+                string confirmEmailUrl = linkGenerator.GenerateConfirmEmailLink(request.Email, token);
 
                 await emailSender.SendConfirmationLinkAsync(user, request.Email, HtmlEncoder.Default.Encode(confirmEmailUrl));
 
@@ -66,7 +62,7 @@ public static class ResendConfirmationEmail
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error resending confirmation email to {Email}", request.Email);
+                logger.LogError(ex, "Error resending confirmation email to {Email}", PiiMasker.MaskEmail(request.Email));
                 return IdmtErrors.General.Unexpected;
             }
         }
@@ -75,7 +71,6 @@ public static class ResendConfirmationEmail
     public static RouteHandlerBuilder MapResendConfirmationEmailEndpoint(this IEndpointRouteBuilder endpoints)
     {
         return endpoints.MapPost("/resend-confirmation-email", async Task<Results<Ok, ValidationProblem, InternalServerError>> (
-            [FromQuery] bool useApiLinks,
             [FromBody] ResendConfirmationEmailRequest request,
             [FromServices] IResendConfirmationEmailHandler handler,
             [FromServices] IValidator<ResendConfirmationEmailRequest> validator,
@@ -86,7 +81,7 @@ public static class ResendConfirmationEmail
                 return TypedResults.ValidationProblem(validationErrors);
             }
 
-            var result = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
+            var result = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
             if (result.IsError)
             {
                 return TypedResults.InternalServerError();

@@ -9,6 +9,8 @@ public class CreateTenantRequestValidator : AbstractValidator<CreateTenant.Creat
     {
         RuleFor(x => x.Identifier).NotEmpty()
             .WithMessage("Identifier is required")
+            .MinimumLength(3)
+            .WithMessage("Identifier must be at least 3 characters")
             .Must(Validators.IsValidTenantIdentifier)
             .WithMessage("Identifier can only contain lowercase alphanumeric characters, dashes, and underscores");
 

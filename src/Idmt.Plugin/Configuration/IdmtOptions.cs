@@ -35,6 +35,27 @@ public class IdmtOptions
     /// Database configuration options
     /// </summary>
     public DatabaseOptions Database { get; set; } = new();
+
+}
+
+/// <summary>
+/// Controls how email confirmation links behave.
+/// </summary>
+public enum EmailConfirmationMode
+{
+    /// <summary>
+    /// Email link points to GET /auth/confirm-email on the server, which confirms
+    /// the email directly (like Microsoft's reference implementation).
+    /// No client-side form needed for email confirmation.
+    /// </summary>
+    ServerConfirm,
+
+    /// <summary>
+    /// Email link points to ClientUrl/ConfirmEmailFormPath on the client app.
+    /// The client reads the token from the URL and calls POST /auth/confirm-email.
+    /// Default for SPA/mobile apps.
+    /// </summary>
+    ClientForm
 }
 
 /// <summary>
@@ -42,8 +63,12 @@ public class IdmtOptions
 /// </summary>
 public class ApplicationOptions
 {
-    public const string PasswordResetEndpointName = "ResetPassword";
-    public const string ConfirmEmailEndpointName = "ConfirmEmail";
+    /// <summary>
+    /// URI prefix applied to all IDMT endpoint groups (/auth, /manage, /admin, /health).
+    /// Defaults to "/api/v1". Set to "" to restore the legacy unprefixed behavior.
+    /// Examples: "/api/v1", "/v2", "/api/v2", ""
+    /// </summary>
+    public string ApiPrefix { get; set; } = "/api/v1";
 
     /// <summary>
     /// Base URL of the client application, if any (e.g. "https://myapp.com")
@@ -57,6 +82,13 @@ public class ApplicationOptions
 
     public string ResetPasswordFormPath { get; set; } = "/reset-password";
     public string ConfirmEmailFormPath { get; set; } = "/confirm-email";
+
+    /// <summary>
+    /// Controls how email confirmation links are generated.
+    /// ServerConfirm: link hits GET /auth/confirm-email which confirms directly.
+    /// ClientForm: link points to ClientUrl/ConfirmEmailFormPath for SPA handling.
+    /// </summary>
+    public EmailConfirmationMode EmailConfirmationMode { get; set; } = EmailConfirmationMode.ClientForm;
 }
 
 /// <summary>
@@ -130,7 +162,7 @@ public class UserOptions
 /// </summary>
 public class SignInOptions
 {
-    public bool RequireConfirmedEmail { get; set; } = false;
+    public bool RequireConfirmedEmail { get; set; } = true;
     public bool RequireConfirmedPhoneNumber { get; set; } = false;
 }
 

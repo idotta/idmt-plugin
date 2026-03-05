@@ -28,14 +28,11 @@ public static class RegisterUser
     public sealed record RegisterUserResponse
     {
         public string? UserId { get; init; }
-        public string? PasswordSetupToken { get; init; }
-        public string? PasswordSetupUrl { get; init; }
     }
 
     public interface IRegisterUserHandler
     {
         Task<ErrorOr<RegisterUserResponse>> HandleAsync(
-            bool useApiLinks,
             RegisterUserRequest request,
             CancellationToken cancellationToken = default);
     }
@@ -51,7 +48,6 @@ public static class RegisterUser
         IEmailSender<IdmtUser> emailSender) : IRegisterUserHandler
     {
         public async Task<ErrorOr<RegisterUserResponse>> HandleAsync(
-            bool useApiLinks,
             RegisterUserRequest request,
             CancellationToken cancellationToken = default)
         {
@@ -116,19 +112,15 @@ public static class RegisterUser
 
             var token = await userManager.GeneratePasswordResetTokenAsync(user);
 
-            var passwordSetupUrl = useApiLinks
-                ? linkGenerator.GeneratePasswordResetApiLink(user.Email ?? request.Email, token)
-                : linkGenerator.GeneratePasswordResetFormLink(user.Email ?? request.Email, token);
+            var passwordSetupUrl = linkGenerator.GeneratePasswordResetLink(user.Email ?? request.Email, token);
 
-            logger.LogInformation("User created: {Email}. Request by {RequestingUserId}. Tenant: {TenantId}.", user.Email, currentUserService.UserId, tenantId);
+            logger.LogInformation("User created: {Email}. Request by {RequestingUserId}. Tenant: {TenantId}.", PiiMasker.MaskEmail(user.Email), currentUserService.UserId, tenantId);
 
             await emailSender.SendPasswordResetLinkAsync(user, user.Email ?? request.Email, passwordSetupUrl);
 
             return new RegisterUserResponse
             {
                 UserId = user.GetId(),
-                PasswordSetupToken = token,
-                PasswordSetupUrl = passwordSetupUrl
             };
         }
     }
@@ -136,7 +128,6 @@ public static class RegisterUser
     public static RouteHandlerBuilder MapRegisterUserEndpoint(this IEndpointRouteBuilder endpoints)
     {
         return endpoints.MapPost("/users", async Task<Results<Ok<RegisterUserResponse>, ValidationProblem, ForbidHttpResult, BadRequest, InternalServerError>> (
-            [FromQuery] bool useApiLinks,
             [FromBody] RegisterUserRequest request,
             [FromServices] IRegisterUserHandler handler,
             [FromServices] IValidator<RegisterUserRequest> validator,
@@ -147,7 +138,7 @@ public static class RegisterUser
                 return TypedResults.ValidationProblem(validationErrors);
             }
 
-            var response = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
+            var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
             if (response.IsError)
             {
                 return response.FirstError.Type switch

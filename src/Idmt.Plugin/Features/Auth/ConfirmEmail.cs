@@ -51,7 +51,7 @@ public static class ConfirmEmail
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "Error confirming email for {Email} in tenant {TenantIdentifier}", request.Email, request.TenantIdentifier);
+                    logger.LogError(ex, "Error confirming email for {Email} in tenant {TenantIdentifier}", PiiMasker.MaskEmail(request.Email), request.TenantIdentifier);
                     return IdmtErrors.General.Unexpected;
                 }
             });
@@ -60,21 +60,30 @@ public static class ConfirmEmail
 
     public static RouteHandlerBuilder MapConfirmEmailEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapGet("/confirm-email", async Task<Results<Ok, ValidationProblem, BadRequest, InternalServerError>> (
-            [FromQuery] string tenantIdentifier,
-            [FromQuery] string email,
-            [FromQuery] string token,
+        return endpoints.MapPost("/confirm-email", async Task<Results<Ok, ValidationProblem, BadRequest, InternalServerError>> (
+            [FromBody] ConfirmEmailRequest request,
             [FromServices] IConfirmEmailHandler handler,
             [FromServices] IValidator<ConfirmEmailRequest> validator,
             HttpContext context) =>
         {
-            var request = new ConfirmEmailRequest(tenantIdentifier, email, token);
             if (ValidationHelper.Validate(request, validator) is { } validationErrors)
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
 
-            var result = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
+            // Decode Base64URL-encoded token
+            string decodedToken;
+            try
+            {
+                decodedToken = Base64Service.DecodeBase64UrlToken(request.Token);
+            }
+            catch (FormatException)
+            {
+                return TypedResults.BadRequest();
+            }
+
+            var decodedRequest = request with { Token = decodedToken };
+            var result = await handler.HandleAsync(decodedRequest, cancellationToken: context.RequestAborted);
 
             if (result.IsError)
             {
@@ -87,8 +96,43 @@ public static class ConfirmEmail
             }
             return TypedResults.Ok();
         })
-        .WithName(ApplicationOptions.ConfirmEmailEndpointName)
+        .WithName(IdmtEndpointNames.ConfirmEmail)
         .WithSummary("Confirm email")
         .WithDescription("Confirm user email address");
+    }
+
+    public static RouteHandlerBuilder MapConfirmEmailDirectEndpoint(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapGet("/confirm-email", async Task<Results<Ok, BadRequest>> (
+            [FromQuery] string tenantIdentifier,
+            [FromQuery] string email,
+            [FromQuery] string token,
+            [FromServices] IConfirmEmailHandler handler,
+            HttpContext context) =>
+        {
+            // Decode Base64URL-encoded token
+            string decodedToken;
+            try
+            {
+                decodedToken = Base64Service.DecodeBase64UrlToken(token);
+            }
+            catch (FormatException)
+            {
+                return TypedResults.BadRequest();
+            }
+
+            var request = new ConfirmEmailRequest(tenantIdentifier, email, decodedToken);
+            var result = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
+
+            if (result.IsError)
+            {
+                return TypedResults.BadRequest();
+            }
+
+            return TypedResults.Ok();
+        })
+        .WithName(IdmtEndpointNames.ConfirmEmailDirect)
+        .WithSummary("Confirm email directly")
+        .WithDescription("Directly confirms user email address via GET link from email");
     }
 }

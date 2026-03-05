@@ -1,5 +1,4 @@
 using ErrorOr;
-using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
@@ -14,9 +13,15 @@ namespace Idmt.Plugin.Features.Admin;
 
 public static class GetUserTenants
 {
+    private const int MaxPageSize = 100;
+
     public interface IGetUserTenantsHandler
     {
-        Task<ErrorOr<TenantInfoResponse[]>> HandleAsync(Guid userId, CancellationToken cancellationToken = default);
+        Task<ErrorOr<PaginatedResponse<TenantInfoResponse>>> HandleAsync(
+            Guid userId,
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken = default);
     }
 
     internal sealed class GetUserTenantsHandler(
@@ -24,27 +29,47 @@ public static class GetUserTenants
         TimeProvider timeProvider,
         ILogger<GetUserTenantsHandler> logger) : IGetUserTenantsHandler
     {
-        public async Task<ErrorOr<TenantInfoResponse[]>> HandleAsync(Guid userId, CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<PaginatedResponse<TenantInfoResponse>>> HandleAsync(
+            Guid userId,
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken = default)
         {
             try
             {
                 var now = timeProvider.GetUtcNow().UtcDateTime;
 
-                var results = await dbContext.TenantAccess
+                // Base query: join TenantAccess with TenantInfo, ordered deterministically.
+                var query = dbContext.TenantAccess
                     .Where(ta => ta.UserId == userId && ta.IsActive &&
                                  (ta.ExpiresAt == null || ta.ExpiresAt > now))
                     .Join(dbContext.Set<IdmtTenantInfo>(),
                         ta => ta.TenantId,
                         ti => ti.Id,
-                        (ta, ti) => new TenantInfoResponse(
-                            ti.Id ?? string.Empty,
-                            ti.Identifier ?? string.Empty,
-                            ti.Name ?? string.Empty,
-                            ti.Plan ?? string.Empty,
-                            ti.IsActive))
-                    .ToArrayAsync(cancellationToken);
+                        (ta, ti) => ti)
+                    .OrderBy(ti => ti.Name);
 
-                return results;
+                var totalCount = await query.CountAsync(cancellationToken);
+
+                var items = await query
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(ti => new TenantInfoResponse(
+                        ti.Id ?? string.Empty,
+                        ti.Identifier ?? string.Empty,
+                        ti.Name ?? string.Empty,
+                        ti.Plan ?? string.Empty,
+                        ti.IsActive))
+                    .ToListAsync(cancellationToken);
+
+                var response = new PaginatedResponse<TenantInfoResponse>(
+                    items,
+                    totalCount,
+                    page,
+                    pageSize,
+                    HasMore: (page - 1) * pageSize + items.Count < totalCount);
+
+                return response;
             }
             catch (Exception ex)
             {
@@ -56,12 +81,17 @@ public static class GetUserTenants
 
     public static RouteHandlerBuilder MapGetUserTenantsEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapGet("/users/{userId:guid}/tenants", async Task<Results<Ok<TenantInfoResponse[]>, InternalServerError>> (
+        return endpoints.MapGet("/users/{userId:guid}/tenants", async Task<Results<Ok<PaginatedResponse<TenantInfoResponse>>, InternalServerError>> (
             Guid userId,
             IGetUserTenantsHandler handler,
-            CancellationToken cancellationToken) =>
+            CancellationToken cancellationToken,
+            [Microsoft.AspNetCore.Mvc.FromQuery] int page = 1,
+            [Microsoft.AspNetCore.Mvc.FromQuery] int pageSize = 25) =>
         {
-            var result = await handler.HandleAsync(userId, cancellationToken);
+            page = Math.Max(1, page);
+            pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+
+            var result = await handler.HandleAsync(userId, page, pageSize, cancellationToken);
             if (result.IsError)
             {
                 return TypedResults.InternalServerError();

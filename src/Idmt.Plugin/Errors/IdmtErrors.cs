@@ -39,7 +39,7 @@ public static class IdmtErrors
             code: "Tenant.NotFound",
             description: "Tenant not found");
 
-        public static Error Inactive => Error.Validation(
+        public static Error Inactive => Error.Forbidden(
             code: "Tenant.Inactive",
             description: "Tenant is not active");
 
@@ -124,6 +124,10 @@ public static class IdmtErrors
         public static Error Invalid => Error.Validation(
             code: "Token.Invalid",
             description: "Invalid token");
+
+        public static Error Revoked => Error.Unauthorized(
+            code: "Token.Revoked",
+            description: "Token has been revoked");
     }
 
     public static class Email

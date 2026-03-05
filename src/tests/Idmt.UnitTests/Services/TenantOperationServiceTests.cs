@@ -1,6 +1,5 @@
 using ErrorOr;
 using Finbuckle.MultiTenant.Abstractions;
-using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;

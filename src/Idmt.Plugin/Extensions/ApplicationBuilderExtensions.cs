@@ -56,19 +56,30 @@ public static class ApplicationBuilderExtensions
     }
 
     /// <summary>
-    /// Maps the IDMT endpoints. In case of route or basepath strategy, it's up
-    /// to the caller to pass an adequate endpoint route builder.
+    /// Maps the IDMT endpoints under the configured API prefix. In case of route or
+    /// basepath strategy, it's up to the caller to pass an adequate endpoint route builder.
     /// For example, if using the route strategy, the caller should pass the
     /// endpoint route builder for the tenant, e.g. `/{__tenant__?}`.
+    ///
+    /// The API prefix (e.g. "/api/v1") is read from
+    /// <see cref="ApplicationOptions.ApiPrefix"/> and defaults to "/api/v1".
+    /// Set it to an empty string to restore the legacy unprefixed behavior.
     /// </summary>
     /// <param name="endpoints">The endpoint route builder</param>
     /// <returns>The endpoint route builder</returns>
     public static IEndpointRouteBuilder MapIdmtEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapAuthEndpoints();
-        endpoints.MapAuthManageEndpoints();
-        endpoints.MapAdminEndpoints();
-        endpoints.MapHealthChecks("/healthz").RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy);
+        var options = endpoints.ServiceProvider.GetRequiredService<IOptions<IdmtOptions>>();
+        var apiPrefix = options.Value.Application.ApiPrefix ?? string.Empty;
+
+        // Wrap all endpoint groups under the versioned prefix.
+        // When apiPrefix is "" the group is effectively a pass-through.
+        var prefixed = endpoints.MapGroup(apiPrefix);
+
+        prefixed.MapAuthEndpoints();
+        prefixed.MapAuthManageEndpoints();
+        prefixed.MapAdminEndpoints();
+        prefixed.MapHealthChecks("/healthz").RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy);
         return endpoints;
     }
 

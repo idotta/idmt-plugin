@@ -45,6 +45,7 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
         var configSettings = new Dictionary<string, string?>
         {
             { "Idmt:Application:ClientUrl", "http://localhost" },
+            { "Idmt:Application:ApiPrefix", "" },
         };
         // Add strategies as indexed array for proper deserialization
         for (int i = 0; i < _strategies.Length; i++)

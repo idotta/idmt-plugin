@@ -1,6 +1,7 @@
 using ErrorOr;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -18,13 +19,22 @@ public static class Logout
         Task<ErrorOr<Success>> HandleAsync(CancellationToken cancellationToken = default);
     }
 
-    internal sealed class LogoutHandler(ILogger<LogoutHandler> logger, SignInManager<IdmtUser> signInManager)
+    internal sealed class LogoutHandler(
+        ILogger<LogoutHandler> logger,
+        SignInManager<IdmtUser> signInManager,
+        ICurrentUserService currentUserService,
+        ITokenRevocationService tokenRevocationService)
         : ILogoutHandler
     {
         public async Task<ErrorOr<Success>> HandleAsync(CancellationToken cancellationToken = default)
         {
             try
             {
+                if (currentUserService.UserId is { } userId && currentUserService.TenantId is { } tenantId)
+                {
+                    await tokenRevocationService.RevokeUserTokensAsync(userId, tenantId, cancellationToken);
+                }
+
                 await signInManager.SignOutAsync();
                 return Result.Success;
             }

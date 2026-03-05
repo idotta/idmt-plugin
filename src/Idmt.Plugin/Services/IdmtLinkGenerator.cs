@@ -1,7 +1,9 @@
+using System.Text;
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -9,10 +11,8 @@ namespace Idmt.Plugin.Services;
 
 public interface IIdmtLinkGenerator
 {
-    string GenerateConfirmEmailApiLink(string email, string token);
-    string GenerateConfirmEmailFormLink(string email, string token);
-    string GeneratePasswordResetApiLink(string email, string token);
-    string GeneratePasswordResetFormLink(string email, string token);
+    string GenerateConfirmEmailLink(string email, string token);
+    string GeneratePasswordResetLink(string email, string token);
 }
 
 public sealed class IdmtLinkGenerator(
@@ -22,39 +22,74 @@ public sealed class IdmtLinkGenerator(
     IOptions<IdmtOptions> options,
     ILogger<IdmtLinkGenerator> logger) : IIdmtLinkGenerator
 {
-    public string GenerateConfirmEmailApiLink(string email, string token)
+    public string GenerateConfirmEmailLink(string email, string token)
     {
-        if (httpContextAccessor.HttpContext is null)
+        var httpContext = httpContextAccessor.HttpContext
+            ?? throw new InvalidOperationException("No HTTP context was found.");
+
+        var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+        var tenantIdentifier = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty;
+        var mode = options.Value.Application.EmailConfirmationMode;
+
+        string url;
+        if (mode == EmailConfirmationMode.ServerConfirm)
         {
-            throw new InvalidOperationException("No HTTP context was found.");
+            var routeValues = new RouteValueDictionary
+            {
+                ["tenantIdentifier"] = tenantIdentifier,
+                ["email"] = email,
+                ["token"] = encodedToken,
+            };
+
+            // Add route strategy parameter if route strategy is active
+            AddTenantRouteParameter(routeValues, tenantIdentifier);
+
+            url = linkGenerator.GetUriByName(httpContext, IdmtEndpointNames.ConfirmEmailDirect, routeValues)
+                ?? throw new NotSupportedException($"Could not find endpoint named '{IdmtEndpointNames.ConfirmEmailDirect}'.");
+        }
+        else
+        {
+            url = BuildClientFormUrl(
+                options.Value.Application.ClientUrl,
+                options.Value.Application.ConfirmEmailFormPath,
+                tenantIdentifier,
+                email,
+                encodedToken);
         }
 
-        var routeValues = new RouteValueDictionary()
-        {
-            [GetTenantRouteParameter()] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
-            ["tenantIdentifier"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
-            ["email"] = email,
-            ["token"] = token,
-        };
+        logger.LogInformation("Confirm email link generated for {Email}. Tenant: {TenantId}.",
+            PiiMasker.MaskEmail(email),
+            multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty);
 
-        var confirmEmailUrl = linkGenerator.GetUriByName(httpContextAccessor.HttpContext, ApplicationOptions.ConfirmEmailEndpointName, routeValues)
-            ?? throw new NotSupportedException($"Could not find endpoint named '{ApplicationOptions.ConfirmEmailEndpointName}'.");
-
-        logger.LogInformation("Confirm email link generated for {Email}. Tenant: {TenantId}.", email, multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty);
-
-        return confirmEmailUrl;
+        return url;
     }
 
-    public string GenerateConfirmEmailFormLink(string email, string token)
+    public string GeneratePasswordResetLink(string email, string token)
     {
         if (httpContextAccessor.HttpContext is null)
         {
             throw new InvalidOperationException("No HTTP context was found.");
         }
 
-        var clientUrl = options.Value.Application.ClientUrl;
-        var confirmEmailFormPath = options.Value.Application.ConfirmEmailFormPath;
+        var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+        var tenantIdentifier = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty;
 
+        var url = BuildClientFormUrl(
+            options.Value.Application.ClientUrl,
+            options.Value.Application.ResetPasswordFormPath,
+            tenantIdentifier,
+            email,
+            encodedToken);
+
+        logger.LogInformation("Password reset link generated for {Email}. Tenant: {TenantId}.",
+            PiiMasker.MaskEmail(email),
+            multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty);
+
+        return url;
+    }
+
+    private static string BuildClientFormUrl(string? clientUrl, string formPath, string tenantIdentifier, string email, string encodedToken)
+    {
         if (string.IsNullOrEmpty(clientUrl))
         {
             throw new InvalidOperationException("Client URL is not configured.");
@@ -62,80 +97,25 @@ public sealed class IdmtLinkGenerator(
 
         var queryParams = new Dictionary<string, string?>
         {
-            [GetTenantRouteParameter()] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
-            ["tenantIdentifier"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
+            ["tenantIdentifier"] = tenantIdentifier,
             ["email"] = email,
-            ["token"] = token,
+            ["token"] = encodedToken,
         };
 
-        var uri = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
-            $"{clientUrl.TrimEnd('/')}/{confirmEmailFormPath.TrimStart('/')}",
+        return QueryHelpers.AddQueryString(
+            $"{clientUrl.TrimEnd('/')}/{formPath.TrimStart('/')}",
             queryParams);
-
-        logger.LogInformation("Confirm email link generated for {Email}. Tenant: {TenantId}.", email, multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty);
-
-        return uri;
     }
 
-    public string GeneratePasswordResetApiLink(string email, string token)
+    private void AddTenantRouteParameter(RouteValueDictionary routeValues, string tenantIdentifier)
     {
-        if (httpContextAccessor.HttpContext is null)
+        var routeParam = options.Value.MultiTenant.StrategyOptions
+            .GetValueOrDefault(IdmtMultiTenantStrategy.Route, IdmtMultiTenantStrategy.DefaultRouteParameter);
+
+        // Only add if different from "tenantIdentifier" to avoid duplication
+        if (!string.Equals(routeParam, "tenantIdentifier", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("No HTTP context was found.");
+            routeValues[routeParam] = tenantIdentifier;
         }
-
-        // Generate password setup URL
-        var routeValues = new RouteValueDictionary()
-        {
-            [GetTenantRouteParameter()] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
-            ["tenantIdentifier"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
-            ["email"] = email,
-            ["token"] = token,
-        };
-
-        var passwordSetupUrl = linkGenerator.GetUriByName(
-            httpContextAccessor.HttpContext,
-            ApplicationOptions.PasswordResetEndpointName,
-            routeValues)
-            ?? throw new NotSupportedException($"Could not find endpoint named '{ApplicationOptions.PasswordResetEndpointName}'.");
-
-        logger.LogInformation("Password reset link generated for {Email}. Tenant: {TenantId}.", email, multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty);
-
-        return passwordSetupUrl;
     }
-
-    public string GeneratePasswordResetFormLink(string email, string token)
-    {
-        if (httpContextAccessor.HttpContext is null)
-        {
-            throw new InvalidOperationException("No HTTP context was found.");
-        }
-
-        var clientUrl = options.Value.Application.ClientUrl;
-        var resetPasswordFormPath = options.Value.Application.ResetPasswordFormPath;
-
-        if (string.IsNullOrEmpty(clientUrl))
-        {
-            throw new InvalidOperationException("Client URL is not configured.");
-        }
-
-        var queryParams = new Dictionary<string, string?>
-        {
-            [GetTenantRouteParameter()] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
-            ["tenantIdentifier"] = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty,
-            ["email"] = email,
-            ["token"] = token,
-        };
-
-        var uri = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
-            $"{clientUrl.TrimEnd('/')}/{resetPasswordFormPath.TrimStart('/')}",
-            queryParams);
-
-        logger.LogInformation("Password reset link generated for {Email}. Tenant: {TenantId}.", email, multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty);
-
-        return uri;
-    }
-
-    private string GetTenantRouteParameter() =>
-        options.Value.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.Route, IdmtMultiTenantStrategy.DefaultRouteParameter);
 }

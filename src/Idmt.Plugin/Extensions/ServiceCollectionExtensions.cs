@@ -20,7 +20,6 @@ using Microsoft.Extensions.Configuration;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-
 namespace Idmt.Plugin.Extensions;
 
 public delegate void CustomizeAuthentication(AuthenticationBuilder authenticationBuilder);
@@ -388,6 +387,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ITenantAccessService, TenantAccessService>();
         services.AddScoped<ITenantOperationService, TenantOperationService>();
+        services.AddScoped<ITokenRevocationService, TokenRevocationService>();
         services.AddScoped<IIdmtLinkGenerator, IdmtLinkGenerator>();
         services.AddTransient<IEmailSender<IdmtUser>, IdmtEmailSender>();
 

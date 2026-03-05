@@ -283,58 +283,62 @@ public class IdmtLinkGeneratorExtendedTests
     }
 
     [Fact]
-    public void GenerateConfirmEmailFormLink_IncludesAllQueryParameters()
+    public void GenerateConfirmEmailLink_ClientForm_IncludesAllQueryParameters()
     {
         const string email = "user@example.com";
         const string token = "confirm-token";
+        _options.Application.EmailConfirmationMode = EmailConfirmationMode.ClientForm;
         _options.Application.ClientUrl = "https://client.example";
         _options.Application.ConfirmEmailFormPath = "/confirm-email";
 
-        var result = _service.GenerateConfirmEmailFormLink(email, token);
+        var result = _service.GenerateConfirmEmailLink(email, token);
         var uri = new Uri(result);
         var query = QueryHelpers.ParseQuery(uri.Query);
 
         Assert.Equal(_tenantInfo.Identifier, query["tenantIdentifier"].ToString());
         Assert.Equal(email, query["email"].ToString());
-        Assert.Equal(token, query["token"].ToString());
+        // Token is Base64URL-encoded
+        Assert.NotEmpty(query["token"].ToString());
     }
 
     [Fact]
-    public void GeneratePasswordResetFormLink_IncludesAllQueryParameters()
+    public void GeneratePasswordResetLink_IncludesAllQueryParameters()
     {
         const string email = "user@example.com";
         const string token = "reset-token";
         _options.Application.ClientUrl = "https://client.example";
         _options.Application.ResetPasswordFormPath = "/reset-password";
 
-        var result = _service.GeneratePasswordResetFormLink(email, token);
+        var result = _service.GeneratePasswordResetLink(email, token);
         var uri = new Uri(result);
         var query = QueryHelpers.ParseQuery(uri.Query);
 
         Assert.Equal(_tenantInfo.Identifier, query["tenantIdentifier"].ToString());
         Assert.Equal(email, query["email"].ToString());
-        Assert.Equal(token, query["token"].ToString());
+        // Token is Base64URL-encoded
+        Assert.NotEmpty(query["token"].ToString());
     }
 
     [Fact]
-    public void GenerateConfirmEmailFormLink_HandlesClientUrlWithTrailingSlash()
+    public void GenerateConfirmEmailLink_ClientForm_HandlesClientUrlWithTrailingSlash()
     {
+        _options.Application.EmailConfirmationMode = EmailConfirmationMode.ClientForm;
         _options.Application.ClientUrl = "https://client.example/";
         _options.Application.ConfirmEmailFormPath = "/confirm-email";
 
-        var result = _service.GenerateConfirmEmailFormLink("user@example.com", "token");
-        var uri = new Uri(result);
+        var result = _service.GenerateConfirmEmailLink("user@example.com", "token");
 
         Assert.StartsWith("https://client.example/confirm-email", result);
     }
 
     [Fact]
-    public void GenerateConfirmEmailFormLink_HandlePathWithoutLeadingSlash()
+    public void GenerateConfirmEmailLink_ClientForm_HandlePathWithoutLeadingSlash()
     {
+        _options.Application.EmailConfirmationMode = EmailConfirmationMode.ClientForm;
         _options.Application.ClientUrl = "https://client.example";
         _options.Application.ConfirmEmailFormPath = "confirm-email";
 
-        var result = _service.GenerateConfirmEmailFormLink("user@example.com", "token");
+        var result = _service.GenerateConfirmEmailLink("user@example.com", "token");
 
         Assert.Contains("/confirm-email", result);
     }

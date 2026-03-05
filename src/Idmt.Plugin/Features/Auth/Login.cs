@@ -3,6 +3,7 @@ using Finbuckle.MultiTenant.Abstractions;
 using FluentValidation;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.BearerToken;
@@ -163,7 +164,7 @@ public static class Login
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "An error occurred during login for identifier {Email} {Username}", request.Email ?? "unknown", request.Username ?? "unknown");
+                logger.LogError(ex, "An error occurred during login for identifier {Email} {Username}", PiiMasker.MaskEmail(request.Email), request.Username ?? "unknown");
                 return IdmtErrors.General.Unexpected;
             }
         }
@@ -303,7 +304,7 @@ public static class Login
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "An error occurred during login for identifier {Email} {Username}", request.Email ?? "unknown", request.Username ?? "unknown");
+                logger.LogError(ex, "An error occurred during login for identifier {Email} {Username}", PiiMasker.MaskEmail(request.Email), request.Username ?? "unknown");
                 return IdmtErrors.General.Unexpected;
             }
         }

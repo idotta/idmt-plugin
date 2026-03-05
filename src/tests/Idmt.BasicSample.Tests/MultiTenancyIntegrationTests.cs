@@ -296,21 +296,21 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
         using var adminClientA = Factory.CreateClientWithTenant(TenantA);
         var admin = await CreateAdminForTenantAsync(adminClientA, TenantA, initialAdminEmail, initialAdminPassword);
 
-        var registerResponse = await admin.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var registerResponse = await admin.PostAsJsonAsync("/manage/users", new
         {
             Email = emailA,
             Username = usernameA,
             Role = IdmtDefaultRoleTypes.TenantAdmin
         });
         await registerResponse.AssertSuccess();
-        var registerResult = await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>();
 
         // 2. Set Password
         const string setupPassword = "SetupPassword1!";
+        var setupToken = await GeneratePasswordResetTokenAsync(emailA, TenantA);
         using var publicClient = Factory.CreateClient();
         var resetResponse = await publicClient.PostAsJsonAsync(
-            $"/auth/reset-password?tenantIdentifier={TenantA}&email={emailA}&token={Uri.EscapeDataString(registerResult!.PasswordSetupToken!)}",
-            new { NewPassword = setupPassword });
+            "/auth/reset-password",
+            new { TenantIdentifier = TenantA, Email = emailA, Token = EncodeToken(setupToken), NewPassword = setupPassword });
         await resetResponse.AssertSuccess();
 
         // 3. Login in Tenant A (Success)

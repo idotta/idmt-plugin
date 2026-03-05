@@ -17,9 +17,9 @@ public static class AuthEndpoints
         auth.MapTokenLoginEndpoint();
         auth.MapRefreshTokenEndpoint();
         auth.MapConfirmEmailEndpoint();
+        auth.MapConfirmEmailDirectEndpoint();
         auth.MapResendConfirmationEmailEndpoint();
         auth.MapForgotPasswordEndpoint();
         auth.MapResetPasswordEndpoint();
-        auth.MapResetPasswordRedirectEndpoint();
     }
 }

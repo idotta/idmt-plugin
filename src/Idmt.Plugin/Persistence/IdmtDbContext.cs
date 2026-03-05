@@ -64,6 +64,11 @@ public class IdmtDbContext
     /// </summary>
     public DbSet<TenantAccess> TenantAccess { get; set; } = null!;
 
+    /// <summary>
+    /// Revoked refresh token records for token revocation tracking.
+    /// </summary>
+    public DbSet<RevokedToken> RevokedTokens { get; set; } = null!;
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -100,6 +105,14 @@ public class IdmtDbContext
             entity.HasIndex(ta => new { ta.UserId, ta.TenantId });
             entity.HasIndex(ta => ta.TenantId);
             entity.HasIndex(ta => ta.IsActive);
+        });
+
+        // Configure revoked tokens
+        builder.Entity<RevokedToken>(entity =>
+        {
+            entity.HasKey(rt => rt.TokenId);
+            entity.Property(rt => rt.TokenId).HasMaxLength(128);
+            entity.HasIndex(rt => rt.ExpiresAt);
         });
 
         // Configure TenantInfo - IdmtTenantStoreDbContext accesses this table but doesn't configure it
@@ -186,7 +199,7 @@ public class IdmtDbContext
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Audit logging failed during SaveChangesAsync");
+            _logger.LogWarning(ex, "Audit logging failed during SaveChangesAsync");
         }
 
         return base.SaveChangesAsync(cancellationToken);

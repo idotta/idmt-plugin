@@ -4,8 +4,6 @@ using System.Net.Http.Json;
 using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Features.Manage;
 using Idmt.Plugin.Models;
-using Microsoft.AspNetCore.WebUtilities;
-
 namespace Idmt.BasicSample.Tests;
 
 /// <summary>
@@ -24,7 +22,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var sysClient = await CreateAuthenticatedClientAsync();
         var newEmail = $"user-{Guid.NewGuid():N}@example.com";
 
-        var response = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var response = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = newEmail,
             Username = $"user{Guid.NewGuid():N}",
@@ -35,16 +33,15 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var result = await response.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>();
         Assert.NotNull(result);
         Assert.NotNull(result!.UserId);
-        Assert.NotNull(result.PasswordSetupToken);
     }
 
     [Fact]
-    public async Task RegisterUser_returns_setup_token()
+    public async Task RegisterUser_returns_user_id()
     {
         var sysClient = await CreateAuthenticatedClientAsync();
         var newEmail = $"token-{Guid.NewGuid():N}@example.com";
 
-        var response = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var response = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = newEmail,
             Username = $"token{Guid.NewGuid():N}",
@@ -52,7 +49,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         });
 
         var result = await response.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>();
-        Assert.False(string.IsNullOrWhiteSpace(result!.PasswordSetupToken));
+        Assert.False(string.IsNullOrWhiteSpace(result!.UserId));
     }
 
     [Fact]
@@ -62,7 +59,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var email = $"duplicate-{Guid.NewGuid():N}@example.com";
 
         // Register first user
-        await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
             Username = $"user1{Guid.NewGuid():N}",
@@ -70,7 +67,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         });
 
         // Try to register with same email
-        var response = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var response = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
             Username = $"user2{Guid.NewGuid():N}",
@@ -87,7 +84,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var username = $"dupuser{Guid.NewGuid():N}";
 
         // Register first user
-        await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = $"email1-{Guid.NewGuid():N}@example.com",
             Username = username,
@@ -95,7 +92,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         });
 
         // Try to register with same username
-        var response = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var response = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = $"email2-{Guid.NewGuid():N}@example.com",
             Username = username,
@@ -110,7 +107,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
     {
         var sysClient = await CreateAuthenticatedClientAsync();
 
-        var response = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var response = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = "not-an-email",
             Username = $"user{Guid.NewGuid():N}",
@@ -125,7 +122,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
     {
         var sysClient = await CreateAuthenticatedClientAsync();
 
-        var response = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var response = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = "",
             Username = $"user{Guid.NewGuid():N}",
@@ -140,7 +137,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
     {
         var sysClient = await CreateAuthenticatedClientAsync();
 
-        var response = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var response = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = $"user-{Guid.NewGuid():N}@example.com",
             Username = "",
@@ -155,7 +152,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
     {
         var client = Factory.CreateClientWithTenant();
 
-        var response = await client.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var response = await client.PostAsJsonAsync("/manage/users", new
         {
             Email = $"user-{Guid.NewGuid():N}@example.com",
             Username = $"user{Guid.NewGuid():N}",
@@ -163,6 +160,63 @@ public class ManageIntegrationTests : BaseIntegrationTest
         });
 
         Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
+    }
+
+    [Fact]
+    public async Task RegisterUser_WithSysAdminRole_SucceedsWhenCalledBySysAdmin()
+    {
+        // The seeded user is a SysAdmin, so registering another SysAdmin should succeed
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var newEmail = $"sysadmin-reg-{Guid.NewGuid():N}@example.com";
+
+        var response = await sysClient.PostAsJsonAsync("/manage/users", new
+        {
+            Email = newEmail,
+            Username = $"sysadminreg{Guid.NewGuid():N}",
+            Role = IdmtDefaultRoleTypes.SysAdmin
+        });
+
+        await response.AssertSuccess();
+        var result = await response.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>();
+        Assert.NotNull(result);
+        Assert.NotNull(result!.UserId);
+    }
+
+    [Fact]
+    public async Task RegisterUser_WithSysAdminRole_ReturnsForbidden_WhenCalledByTenantAdmin()
+    {
+        // First, create a TenantAdmin user with password
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var tenantAdminEmail = $"tadmin-{Guid.NewGuid():N}@example.com";
+        var tenantAdminPassword = "TenantAdmin1!";
+
+        await RegisterAndSetPasswordAsync(
+            sysClient,
+            tenantAdminPassword,
+            email: tenantAdminEmail,
+            username: $"tadmin{Guid.NewGuid():N}",
+            role: IdmtDefaultRoleTypes.TenantAdmin);
+
+        // Login as the TenantAdmin
+        var loginClient = Factory.CreateClientWithTenant();
+        var loginResponse = await loginClient.PostAsJsonAsync("/auth/token", new
+        {
+            Email = tenantAdminEmail,
+            Password = tenantAdminPassword
+        });
+        await loginResponse.AssertSuccess();
+        var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
+        loginClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
+
+        // Try to register a SysAdmin user as TenantAdmin - should be forbidden
+        var response = await loginClient.PostAsJsonAsync("/manage/users", new
+        {
+            Email = $"newadmin-{Guid.NewGuid():N}@example.com",
+            Username = $"newadmin{Guid.NewGuid():N}",
+            Role = IdmtDefaultRoleTypes.SysAdmin
+        });
+
+        Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Forbidden, HttpStatusCode.InternalServerError });
     }
 
     #endregion
@@ -176,7 +230,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var email = $"unregister-{Guid.NewGuid():N}@example.com";
 
         // Register user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
             Username = $"unreg{Guid.NewGuid():N}",
@@ -205,27 +259,9 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var password = "TempPassword1!";
         var sysClient = await CreateAuthenticatedClientAsync();
 
-        // Register user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
-        {
-            Email = email,
-            Username = $"deleted{Guid.NewGuid():N}",
-            Role = IdmtDefaultRoleTypes.TenantAdmin
-        });
-        var registerResponseValue = await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>();
-        var resetToken = registerResponseValue!.PasswordSetupToken;
-        var userId = Guid.Parse(registerResponseValue!.UserId!);
-
-        // Set password
-        using var publicClient = Factory.CreateClient();
-        await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
-            {
-                ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
-                ["email"] = email,
-                ["token"] = resetToken
-            }),
-            new { NewPassword = password });
+        // Register user and set password
+        var (userIdStr, _) = await RegisterAndSetPasswordAsync(sysClient, password, email: email, username: $"deleted{Guid.NewGuid():N}");
+        var userId = Guid.Parse(userIdStr);
 
         // Verify login works
         var loginClient = Factory.CreateClientWithTenant();
@@ -260,7 +296,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var email = $"deactivate-{Guid.NewGuid():N}@example.com";
 
         // Register user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
             Username = $"deact{Guid.NewGuid():N}",
@@ -280,7 +316,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var email = $"reactivate-{Guid.NewGuid():N}@example.com";
 
         // Register user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
             Username = $"reactiv{Guid.NewGuid():N}",
@@ -303,27 +339,9 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var password = "TempPassword1!";
         var sysClient = await CreateAuthenticatedClientAsync();
 
-        // Register user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
-        {
-            Email = email,
-            Username = $"deactlogin{Guid.NewGuid():N}",
-            Role = IdmtDefaultRoleTypes.TenantAdmin
-        });
-        var registerResponseValue = await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>();
-        var resetToken = registerResponseValue!.PasswordSetupToken;
-        var userId = Guid.Parse(registerResponseValue!.UserId!);
-
-        // Set password
-        using var publicClient = Factory.CreateClient();
-        await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
-            {
-                ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
-                ["email"] = email,
-                ["token"] = resetToken
-            }),
-            new { NewPassword = password });
+        // Register user and set password
+        var (userIdStr, _) = await RegisterAndSetPasswordAsync(sysClient, password, email: email, username: $"deactlogin{Guid.NewGuid():N}");
+        var userId = Guid.Parse(userIdStr);
 
         // Deactivate user
         await sysClient.PutAsJsonAsync($"/manage/users/{userId}", new { IsActive = false });
@@ -379,24 +397,8 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var email = $"role-{Guid.NewGuid():N}@example.com";
 
         // Register user with TenantAdmin role
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
-        {
-            Email = email,
-            Username = $"role{Guid.NewGuid():N}",
-            Role = IdmtDefaultRoleTypes.TenantAdmin
-        });
-        var resetToken = (await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>())!.PasswordSetupToken;
-
-        // Set password and login
-        using var publicClient = Factory.CreateClient();
-        await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
-            {
-                ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
-                ["email"] = email,
-                ["token"] = resetToken
-            }),
-            new { NewPassword = "Password1!" });
+        // Register user and set password
+        await RegisterAndSetPasswordAsync(sysClient, "Password1!", email: email, username: $"role{Guid.NewGuid():N}");
 
         var loginClient = Factory.CreateClientWithTenant();
         var loginResponse = await loginClient.PostAsJsonAsync("/auth/token", new { Email = email, Password = "Password1!" });
@@ -429,23 +431,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var sysClient = await CreateAuthenticatedClientAsync();
 
         // Register and setup user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
-        {
-            Email = email,
-            Username = $"pwdchange{Guid.NewGuid():N}",
-            Role = IdmtDefaultRoleTypes.TenantAdmin
-        });
-        var setupToken = (await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>())!.PasswordSetupToken;
-
-        using var publicClient = Factory.CreateClient();
-        await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
-            {
-                ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
-                ["email"] = email,
-                ["token"] = setupToken
-            }),
-            new { NewPassword = "OldPassword1!" });
+        await RegisterAndSetPasswordAsync(sysClient, "OldPassword1!", email: email, username: $"pwdchange{Guid.NewGuid():N}");
 
         // Login and change password
         var loginClient = Factory.CreateClientWithTenant();
@@ -477,23 +463,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var sysClient = await CreateAuthenticatedClientAsync();
 
         // Register and setup user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
-        {
-            Email = email,
-            Username = $"pwdverify{Guid.NewGuid():N}",
-            Role = IdmtDefaultRoleTypes.TenantAdmin
-        });
-        var setupToken = (await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>())!.PasswordSetupToken;
-
-        using var publicClient = Factory.CreateClient();
-        await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
-            {
-                ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
-                ["email"] = email,
-                ["token"] = setupToken
-            }),
-            new { NewPassword = "CurrentPassword1!" });
+        await RegisterAndSetPasswordAsync(sysClient, "CurrentPassword1!", email: email, username: $"pwdverify{Guid.NewGuid():N}");
 
         // Login
         var loginClient = Factory.CreateClientWithTenant();
@@ -518,24 +488,8 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var newUsername = $"user{Guid.NewGuid():N}";
         var sysClient = await CreateAuthenticatedClientAsync();
 
-        // Register user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
-        {
-            Email = email,
-            Username = oldUsername,
-            Role = IdmtDefaultRoleTypes.TenantAdmin
-        });
-        var setupToken = (await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>())!.PasswordSetupToken;
-
-        using var publicClient = Factory.CreateClient();
-        await publicClient.PostAsJsonAsync(
-            QueryHelpers.AddQueryString("/auth/reset-password", new Dictionary<string, string?>
-            {
-                ["tenantIdentifier"] = IdmtApiFactory.DefaultTenantIdentifier,
-                ["email"] = email,
-                ["token"] = setupToken
-            }),
-            new { NewPassword = "Password1!" });
+        // Register user and set password
+        await RegisterAndSetPasswordAsync(sysClient, "Password1!", email: email, username: oldUsername);
 
         // Login and change username
         var loginClient = Factory.CreateClientWithTenant();

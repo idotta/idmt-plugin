@@ -23,7 +23,6 @@ public static class ForgotPassword
     public interface IForgotPasswordHandler
     {
         Task<ErrorOr<ForgotPasswordResponse>> HandleAsync(
-            bool useApiLinks,
             ForgotPasswordRequest request,
             CancellationToken cancellationToken = default);
     }
@@ -35,7 +34,6 @@ public static class ForgotPassword
         ILogger<ForgotPasswordHandler> logger) : IForgotPasswordHandler
     {
         public async Task<ErrorOr<ForgotPasswordResponse>> HandleAsync(
-            bool useApiLinks,
             ForgotPasswordRequest request,
             CancellationToken cancellationToken = default)
         {
@@ -51,10 +49,8 @@ public static class ForgotPassword
                 // Generate password reset token
                 var token = await userManager.GeneratePasswordResetTokenAsync(user);
 
-                // Generate password reset link
-                var resetUrl = useApiLinks
-                    ? linkGenerator.GeneratePasswordResetApiLink(user.Email!, token)
-                    : linkGenerator.GeneratePasswordResetFormLink(user.Email!, token);
+                // Generate password reset link (always client form URL)
+                var resetUrl = linkGenerator.GeneratePasswordResetLink(user.Email!, token);
 
                 // Send email with reset code
                 await emailSender.SendPasswordResetCodeAsync(user, request.Email, resetUrl);
@@ -73,7 +69,6 @@ public static class ForgotPassword
     public static RouteHandlerBuilder MapForgotPasswordEndpoint(this IEndpointRouteBuilder endpoints)
     {
         return endpoints.MapPost("/forgot-password", async Task<Results<Ok, ValidationProblem, StatusCodeHttpResult>> (
-            [FromQuery] bool useApiLinks,
             [FromBody] ForgotPasswordRequest request,
             [FromServices] IForgotPasswordHandler handler,
             [FromServices] IValidator<ForgotPasswordRequest> validator,
@@ -83,7 +78,7 @@ public static class ForgotPassword
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
-            var result = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
+            var result = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
             if (result.IsError)
             {
                 return TypedResults.StatusCode(StatusCodes.Status500InternalServerError);

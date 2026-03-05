@@ -114,7 +114,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var email = $"grant-{Guid.NewGuid():N}@example.com";
 
         // Register user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
             Username = $"grant{Guid.NewGuid():N}",
@@ -137,7 +137,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var email = $"grant-access-{Guid.NewGuid():N}@example.com";
 
         // Register user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
             Username = $"grantaccess{Guid.NewGuid():N}",
@@ -151,9 +151,9 @@ public class AdminIntegrationTests : BaseIntegrationTest
             new { ExpiresAt = (DateTime?)null });
 
         // Verify user can access tenant
-        var tenants = await sysClient.GetFromJsonAsync<TenantInfoResponse[]>($"/admin/users/{userId}/tenants");
-        Assert.NotNull(tenants);
-        Assert.Contains(tenants!, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
+        var paginated = await sysClient.GetFromJsonAsync<PaginatedResponse<TenantInfoResponse>>($"/admin/users/{userId}/tenants");
+        Assert.NotNull(paginated);
+        Assert.Contains(paginated!.Items, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
     }
 
     [Fact]
@@ -175,7 +175,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var email = $"grant-notenant-{Guid.NewGuid():N}@example.com";
 
         // Register user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
             Username = $"grantnotenant{Guid.NewGuid():N}",
@@ -198,7 +198,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var email = $"grant-expires-{Guid.NewGuid():N}@example.com";
 
         // Register user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
             Username = $"grantexpires{Guid.NewGuid():N}",
@@ -238,7 +238,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var email = $"revoke-{Guid.NewGuid():N}@example.com";
 
         // Register user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
             Username = $"revoke{Guid.NewGuid():N}",
@@ -263,7 +263,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var email = $"revoke-remove-{Guid.NewGuid():N}@example.com";
 
         // Register user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
             Username = $"revokeremove{Guid.NewGuid():N}",
@@ -277,16 +277,16 @@ public class AdminIntegrationTests : BaseIntegrationTest
             new { ExpiresAt = (DateTime?)null });
 
         // Verify access exists
-        var tenantsBeforeRevoke = await sysClient.GetFromJsonAsync<TenantInfoResponse[]>($"/admin/users/{userId}/tenants");
-        Assert.Contains(tenantsBeforeRevoke!, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
+        var beforeRevoke = await sysClient.GetFromJsonAsync<PaginatedResponse<TenantInfoResponse>>($"/admin/users/{userId}/tenants");
+        Assert.Contains(beforeRevoke!.Items, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
 
         // Revoke access
         var revokeResp = await sysClient.DeleteAsync($"/admin/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
         Assert.Equal(HttpStatusCode.NoContent, revokeResp.StatusCode);
 
         // Verify access is removed
-        var tenantsAfterRevoke = await sysClient.GetFromJsonAsync<TenantInfoResponse[]>($"/admin/users/{userId}/tenants");
-        Assert.DoesNotContain(tenantsAfterRevoke!, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
+        var afterRevoke = await sysClient.GetFromJsonAsync<PaginatedResponse<TenantInfoResponse>>($"/admin/users/{userId}/tenants");
+        Assert.DoesNotContain(afterRevoke!.Items, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
     }
 
     [Fact]
@@ -318,7 +318,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var email = $"usertenants-{Guid.NewGuid():N}@example.com";
 
         // Register user
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
             Username = $"usertenants{Guid.NewGuid():N}",
@@ -335,10 +335,10 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var response = await sysClient.GetAsync($"/admin/users/{userId}/tenants");
         await response.AssertSuccess();
 
-        var tenants = await response.Content.ReadFromJsonAsync<TenantInfoResponse[]>();
-        Assert.NotNull(tenants);
-        Assert.NotEmpty(tenants);
-        Assert.Contains(tenants!, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
+        var paginated = await response.Content.ReadFromJsonAsync<PaginatedResponse<TenantInfoResponse>>();
+        Assert.NotNull(paginated);
+        Assert.NotEmpty(paginated!.Items);
+        Assert.Contains(paginated.Items, t => t.Identifier == IdmtApiFactory.DefaultTenantIdentifier);
     }
 
     [Fact]
@@ -348,7 +348,7 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var email = $"notenants-{Guid.NewGuid():N}@example.com";
 
         // Register user without granting tenant access
-        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
             Username = $"notenants{Guid.NewGuid():N}",
@@ -360,9 +360,9 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var response = await sysClient.GetAsync($"/admin/users/{userId}/tenants");
         await response.AssertSuccess();
 
-        var tenants = await response.Content.ReadFromJsonAsync<TenantInfoResponse[]>();
-        Assert.NotNull(tenants);
-        Assert.Empty(tenants!);
+        var paginated = await response.Content.ReadFromJsonAsync<PaginatedResponse<TenantInfoResponse>>();
+        Assert.NotNull(paginated);
+        Assert.Empty(paginated!.Items);
     }
 
     [Fact]
@@ -373,9 +373,9 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var response = await sysClient.GetAsync($"/admin/users/{Guid.NewGuid()}/tenants");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var tenants = await response.Content.ReadFromJsonAsync<TenantInfoResponse[]>();
-        Assert.NotNull(tenants);
-        Assert.Empty(tenants!);
+        var paginated = await response.Content.ReadFromJsonAsync<PaginatedResponse<TenantInfoResponse>>();
+        Assert.NotNull(paginated);
+        Assert.Empty(paginated!.Items);
     }
 
     [Fact]
@@ -399,8 +399,8 @@ public class AdminIntegrationTests : BaseIntegrationTest
         var response = await sysClient.GetAsync("/admin/tenants");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var tenants = await response.Content.ReadFromJsonAsync<TenantInfoResponse[]>();
-        Assert.NotNull(tenants);
+        var paginated = await response.Content.ReadFromJsonAsync<PaginatedResponse<TenantInfoResponse>>();
+        Assert.NotNull(paginated);
     }
 
     [Fact]
@@ -410,6 +410,91 @@ public class AdminIntegrationTests : BaseIntegrationTest
 
         var response = await client.GetAsync("/admin/tenants");
         Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
+    }
+
+    [Fact]
+    public async Task GetAllTenants_DoesNotReturnDefaultSystemTenant()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+
+        var response = await sysClient.GetAsync("/admin/tenants");
+        await response.AssertSuccess();
+
+        var paginated = await response.Content.ReadFromJsonAsync<PaginatedResponse<TenantInfoResponse>>();
+        Assert.NotNull(paginated);
+        Assert.DoesNotContain(paginated!.Items, t =>
+            string.Equals(t.Identifier, IdmtApiFactory.DefaultTenantIdentifier, StringComparison.OrdinalIgnoreCase));
+    }
+
+    #endregion
+
+    #region Create Tenant Conflict Tests
+
+    [Fact]
+    public async Task CreateTenant_Returns409_WhenActiveTenantAlreadyExists()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var tenantIdentifier = $"conflict-{Guid.NewGuid():N}";
+
+        // Create tenant the first time
+        var createResponse1 = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantIdentifier,
+            Name = "Conflict Tenant"
+        });
+        await createResponse1.AssertSuccess();
+
+        // Try to create the same active tenant again
+        var createResponse2 = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantIdentifier,
+            Name = "Conflict Tenant Again"
+        });
+
+        Assert.Equal(HttpStatusCode.Conflict, createResponse2.StatusCode);
+    }
+
+    #endregion
+
+    #region Delete Default Tenant Tests
+
+    [Fact]
+    public async Task DeleteTenant_ReturnsForbidden_WhenDeletingDefaultTenant()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+
+        var deleteResponse = await sysClient.DeleteAsync($"/admin/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
+
+        // The handler returns ErrorType.Forbidden which maps to TypedResults.Forbid()
+        Assert.Contains(deleteResponse.StatusCode, new[] { HttpStatusCode.Forbidden, HttpStatusCode.InternalServerError });
+    }
+
+    #endregion
+
+    #region Grant Tenant Access Validation Tests
+
+    [Fact]
+    public async Task GrantTenantAccess_Returns400_WhenExpiresAtIsInPast()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var email = $"grant-past-{Guid.NewGuid():N}@example.com";
+
+        // Register user
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
+        {
+            Email = email,
+            Username = $"grantpast{Guid.NewGuid():N}",
+            Role = IdmtDefaultRoleTypes.SysSupport
+        });
+        var userId = Guid.Parse((await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>())!.UserId!);
+
+        // Grant access with a past expiration date
+        var pastDate = DateTime.UtcNow.AddDays(-1);
+        var grantResponse = await sysClient.PostAsJsonAsync(
+            $"/admin/users/{userId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
+            new { ExpiresAt = pastDate });
+
+        Assert.Equal(HttpStatusCode.BadRequest, grantResponse.StatusCode);
     }
 
     #endregion

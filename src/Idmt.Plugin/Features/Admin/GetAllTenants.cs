@@ -13,31 +13,55 @@ namespace Idmt.Plugin.Features.Admin;
 
 public static class GetAllTenants
 {
+    private const int MaxPageSize = 100;
+
     public interface IGetAllTenantsHandler
     {
-        Task<ErrorOr<TenantInfoResponse[]>> HandleAsync(CancellationToken cancellationToken = default);
+        Task<ErrorOr<PaginatedResponse<TenantInfoResponse>>> HandleAsync(
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken = default);
     }
 
     internal sealed class GetAllTenantsHandler(
         IMultiTenantStore<IdmtTenantInfo> tenantStore,
         ILogger<GetAllTenantsHandler> logger) : IGetAllTenantsHandler
     {
-        public async Task<ErrorOr<TenantInfoResponse[]>> HandleAsync(CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<PaginatedResponse<TenantInfoResponse>>> HandleAsync(
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken = default)
         {
             try
             {
                 var tenants = await tenantStore.GetAllAsync();
-                var res = tenants
-                .Where(t => t is not null && !string.Equals(t.Identifier, MultiTenantOptions.DefaultTenantIdentifier, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(t => t.Name)
-                .Select(t => new TenantInfoResponse(
-                    t!.Id ?? string.Empty,
-                    t.Identifier ?? string.Empty,
-                    t.Name ?? string.Empty,
-                    t.Plan ?? string.Empty,
-                    t.IsActive)).ToArray();
 
-                return res;
+                // Apply the same filter and stable ordering as before, then paginate.
+                var filtered = tenants
+                    .Where(t => t is not null && !string.Equals(t.Identifier, MultiTenantOptions.DefaultTenantIdentifier, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(t => t.Name)
+                    .Select(t => new TenantInfoResponse(
+                        t!.Id ?? string.Empty,
+                        t.Identifier ?? string.Empty,
+                        t.Name ?? string.Empty,
+                        t.Plan ?? string.Empty,
+                        t.IsActive))
+                    .ToList();
+
+                var totalCount = filtered.Count;
+                var items = filtered
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+
+                var response = new PaginatedResponse<TenantInfoResponse>(
+                    items,
+                    totalCount,
+                    page,
+                    pageSize,
+                    HasMore: (page - 1) * pageSize + items.Count < totalCount);
+
+                return response;
             }
             catch (Exception ex)
             {
@@ -49,11 +73,16 @@ public static class GetAllTenants
 
     public static RouteHandlerBuilder MapGetAllTenantsEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapGet("/tenants", async Task<Results<Ok<TenantInfoResponse[]>, InternalServerError>> (
+        return endpoints.MapGet("/tenants", async Task<Results<Ok<PaginatedResponse<TenantInfoResponse>>, InternalServerError>> (
             IGetAllTenantsHandler handler,
-            CancellationToken cancellationToken) =>
+            CancellationToken cancellationToken,
+            [Microsoft.AspNetCore.Mvc.FromQuery] int page = 1,
+            [Microsoft.AspNetCore.Mvc.FromQuery] int pageSize = 25) =>
         {
-            var result = await handler.HandleAsync(cancellationToken);
+            page = Math.Max(1, page);
+            pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+
+            var result = await handler.HandleAsync(page, pageSize, cancellationToken);
             if (result.IsError)
             {
                 return TypedResults.InternalServerError();

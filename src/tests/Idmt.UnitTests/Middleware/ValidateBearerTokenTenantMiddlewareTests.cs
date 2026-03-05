@@ -134,17 +134,74 @@ public class ValidateBearerTokenTenantMiddlewareTests
         Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
     }
 
-    private DefaultHttpContext CreateBearerContext(string? tenantClaimValue)
+    [Fact]
+    public async Task InvokeAsync_EmptyStringTenantClaim_Returns401()
+    {
+        // Empty string tenant claim should be treated the same as missing
+        var context = CreateBearerContext(tenantClaimValue: "", claimKey: null);
+        SetupTenantContext("test-tenant");
+
+        var nextCalled = false;
+        await _middleware.InvokeAsync(context, _ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        });
+
+        Assert.False(nextCalled);
+        Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_UsesCustomClaimType_WhenConfigured()
+    {
+        // Configure a custom claim type
+        const string customClaimType = "custom_tenant_claim";
+        _options.MultiTenant.StrategyOptions[IdmtMultiTenantStrategy.Claim] = customClaimType;
+
+        var context = CreateBearerContext(tenantClaimValue: "test-tenant", claimKey: customClaimType);
+        SetupTenantContext("test-tenant");
+
+        var nextCalled = false;
+        await _middleware.InvokeAsync(context, _ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        });
+
+        Assert.True(nextCalled);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_Returns403_WhenTenantClaimCaseDiffers()
+    {
+        // Ordinal comparison means different casing should fail
+        var context = CreateBearerContext(tenantClaimValue: "Test-Tenant");
+        SetupTenantContext("test-tenant");
+
+        var nextCalled = false;
+        await _middleware.InvokeAsync(context, _ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        });
+
+        Assert.False(nextCalled);
+        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+    }
+
+    private DefaultHttpContext CreateBearerContext(string? tenantClaimValue, string? claimKey = null)
     {
         var context = new DefaultHttpContext();
         context.Request.Headers.Authorization = "Bearer test-token";
 
+        var resolvedClaimKey = claimKey ?? _options.MultiTenant.StrategyOptions.GetValueOrDefault(
+            IdmtMultiTenantStrategy.Claim, IdmtMultiTenantStrategy.DefaultClaim);
+
         var claims = new List<Claim> { new(ClaimTypes.Name, "user") };
         if (tenantClaimValue != null)
         {
-            var claimKey = _options.MultiTenant.StrategyOptions.GetValueOrDefault(
-                IdmtMultiTenantStrategy.Claim, IdmtMultiTenantStrategy.DefaultClaim);
-            claims.Add(new Claim(claimKey, tenantClaimValue));
+            claims.Add(new Claim(resolvedClaimKey, tenantClaimValue));
         }
 
         var identity = new ClaimsIdentity(claims, "Bearer");
