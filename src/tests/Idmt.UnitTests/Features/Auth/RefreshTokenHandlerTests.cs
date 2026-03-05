@@ -227,7 +227,7 @@ public class RefreshTokenHandlerTests
         // No tenant context set - accessor returns null
         _tenantContextAccessorMock
             .SetupGet(a => a.MultiTenantContext)
-            .Returns((IMultiTenantContext<IdmtTenantInfo>?)null);
+            .Returns((IMultiTenantContext<IdmtTenantInfo>)null!);
 
         var request = new RefreshToken.RefreshTokenRequest("null-tenant-token");
 
@@ -339,7 +339,7 @@ public class RefreshTokenHandlerTests
         {
             _tenantContextAccessorMock
                 .SetupGet(a => a.MultiTenantContext)
-                .Returns((IMultiTenantContext<IdmtTenantInfo>?)null);
+                .Returns((IMultiTenantContext<IdmtTenantInfo>)null!);
         }
         else
         {
