@@ -89,6 +89,7 @@ public static class GetAllTenants
             }
             return TypedResults.Ok(result.Value);
         })
+        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
         .WithSummary("Get all tenants");
     }
 }

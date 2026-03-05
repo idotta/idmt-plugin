@@ -1,5 +1,6 @@
 using ErrorOr;
 using Finbuckle.MultiTenant.Abstractions;
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
@@ -111,6 +112,7 @@ public static class RevokeTenantAccess
             }
             return TypedResults.NoContent();
         })
+        .RequireAuthorization(IdmtAuthOptions.RequireSysAdminPolicy)
         .WithSummary("Revoke user access from a tenant");
     }
 }

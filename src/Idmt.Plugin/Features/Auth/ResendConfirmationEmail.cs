@@ -1,4 +1,3 @@
-using System.Text.Encodings.Web;
 using ErrorOr;
 using FluentValidation;
 using Idmt.Plugin.Errors;
@@ -56,7 +55,7 @@ public static class ResendConfirmationEmail
 
                 string confirmEmailUrl = linkGenerator.GenerateConfirmEmailLink(request.Email, token);
 
-                await emailSender.SendConfirmationLinkAsync(user, request.Email, HtmlEncoder.Default.Encode(confirmEmailUrl));
+                await emailSender.SendConfirmationLinkAsync(user, request.Email, confirmEmailUrl);
 
                 return Result.Success;
             }

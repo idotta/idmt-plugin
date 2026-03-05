@@ -22,7 +22,8 @@ internal sealed class TokenRevocationService(
         var existing = await dbContext.RevokedTokens.FindAsync([tokenId], cancellationToken);
         if (existing is not null)
         {
-            existing.RevokedAt = now;
+            // Only extend the expiry — never move RevokedAt forward as that
+            // would re-validate tokens issued between the old and new timestamps
             existing.ExpiresAt = expiresAt;
         }
         else

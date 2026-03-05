@@ -4,6 +4,7 @@ using FluentValidation;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
+using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -32,6 +33,8 @@ public static class UpdateUserInfo
     internal sealed class UpdateUserInfoHandler(
         UserManager<IdmtUser> userManager,
         IdmtDbContext dbContext,
+        IIdmtLinkGenerator linkGenerator,
+        IEmailSender<IdmtUser> emailSender,
         ILogger<UpdateUserInfoHandler> logger) : IUpdateUserInfoHandler
     {
         public async Task<ErrorOr<Success>> HandleAsync(
@@ -73,20 +76,35 @@ public static class UpdateUserInfo
                     hasChanges = true;
                 }
 
-                // Update email if provided
+                // Update email if provided.
+                // ChangeEmailAsync persists the new email and sets EmailConfirmed = false internally.
+                // After that we send a confirmation email to the new address so the user has a
+                // recovery path and is not permanently locked out.
                 if (!string.IsNullOrWhiteSpace(request.NewEmail) && request.NewEmail != appUser.Email)
                 {
-                    // Generate email change token
                     var token = await userManager.GenerateChangeEmailTokenAsync(appUser, request.NewEmail);
-                    var result = await userManager.ChangeEmailAsync(appUser, request.NewEmail, token);
-                    if (!result.Succeeded)
+                    var changeEmailResult = await userManager.ChangeEmailAsync(appUser, request.NewEmail, token);
+                    if (!changeEmailResult.Succeeded)
                     {
-                        logger.LogError("Failed to change email: {ErrorMessage}", result.Errors.Select(e => e.Description));
+                        logger.LogError("Failed to change email: {ErrorMessage}", changeEmailResult.Errors.Select(e => e.Description));
                         await transaction.RollbackAsync(cancellationToken);
                         return IdmtErrors.User.UpdateFailed;
                     }
-                    appUser.EmailConfirmed = false;
-                    hasChanges = true;
+
+                    // ChangeEmailAsync already persisted EmailConfirmed = false — do NOT set it again
+                    // or call UpdateAsync for the email change; doing so is redundant and can cause
+                    // a second write with a stale concurrency stamp.
+
+                    // Generate a fresh confirmation token (the change-email token above is now consumed)
+                    // and send the link to the new address so the user can re-confirm.
+                    var confirmToken = await userManager.GenerateEmailConfirmationTokenAsync(appUser);
+                    var confirmLink = linkGenerator.GenerateConfirmEmailLink(request.NewEmail, confirmToken);
+                    await emailSender.SendConfirmationLinkAsync(appUser, request.NewEmail, confirmLink);
+
+                    logger.LogInformation("Email changed for user. Confirmation email dispatched to new address.");
+                    // hasChanges intentionally not set here: ChangeEmailAsync already persisted the
+                    // email change. The flag only controls the final UpdateAsync for other field
+                    // changes (username, password) that are still pending.
                 }
 
                 // Update password if provided

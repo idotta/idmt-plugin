@@ -158,7 +158,7 @@ public class TokenRevocationServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task RevokeUserTokensAsync_UpdatesExistingRecord()
+    public async Task RevokeUserTokensAsync_UpdatesExpiresAt_WhenRecordAlreadyExists()
     {
         // Arrange: create an initial revocation record
         var initialTime = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -172,18 +172,52 @@ public class TokenRevocationServiceTests : IDisposable
         });
         await _dbContext.SaveChangesAsync();
 
-        // Advance time so we can observe the update
+        // Advance time so we can observe the ExpiresAt update
         _timeProvider.Advance(TimeSpan.FromHours(1));
         var expectedNow = _timeProvider.GetUtcNow().UtcDateTime;
 
         // Act
         await _sut.RevokeUserTokensAsync(UserId, TenantId);
 
-        // Assert
+        // Assert: ExpiresAt slides forward from the new call time
         var record = await _dbContext.RevokedTokens.FindAsync(tokenId);
         Assert.NotNull(record);
-        Assert.Equal(expectedNow, record.RevokedAt);
         Assert.Equal(expectedNow.AddDays(30), record.ExpiresAt);
+    }
+
+    [Fact]
+    public async Task RevokeUserTokensAsync_DoesNotMoveRevokedAt_WhenRecordAlreadyExists()
+    {
+        // Arrange: seed a record with a known original RevokedAt timestamp
+        var originalRevokedAt = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+        var tokenId = $"{UserId}:{TenantId}";
+
+        _dbContext.RevokedTokens.Add(new RevokedToken
+        {
+            TokenId = tokenId,
+            RevokedAt = originalRevokedAt,
+            ExpiresAt = originalRevokedAt.AddDays(30)
+        });
+        await _dbContext.SaveChangesAsync();
+
+        // Advance the clock so that re-revoking would use a later timestamp
+        _timeProvider.Advance(TimeSpan.FromHours(6));
+        var laterTime = _timeProvider.GetUtcNow().UtcDateTime;
+
+        // Sanity-check: the later time really is after the original
+        Assert.True(laterTime > originalRevokedAt);
+
+        // Act: revoke again for the same user / tenant
+        await _sut.RevokeUserTokensAsync(UserId, TenantId);
+
+        // Assert: RevokedAt must remain at the original value so that tokens
+        // issued between originalRevokedAt and laterTime stay revoked
+        var record = await _dbContext.RevokedTokens.FindAsync(tokenId);
+        Assert.NotNull(record);
+        Assert.Equal(originalRevokedAt, record.RevokedAt);
+
+        // ExpiresAt must have been extended to the new call time + expiry window
+        Assert.Equal(laterTime.AddDays(30), record.ExpiresAt);
     }
 
     [Fact]

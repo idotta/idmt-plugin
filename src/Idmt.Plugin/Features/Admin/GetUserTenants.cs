@@ -1,4 +1,5 @@
 using ErrorOr;
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
@@ -98,6 +99,7 @@ public static class GetUserTenants
             }
             return TypedResults.Ok(result.Value);
         })
+        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
         .WithSummary("Get tenants accessible by user");
     }
 }

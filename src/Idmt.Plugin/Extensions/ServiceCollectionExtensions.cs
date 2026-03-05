@@ -388,6 +388,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITenantAccessService, TenantAccessService>();
         services.AddScoped<ITenantOperationService, TenantOperationService>();
         services.AddScoped<ITokenRevocationService, TokenRevocationService>();
+        services.AddHostedService<TokenRevocationCleanupService>();
         services.AddScoped<IIdmtLinkGenerator, IdmtLinkGenerator>();
         services.AddTransient<IEmailSender<IdmtUser>, IdmtEmailSender>();
 

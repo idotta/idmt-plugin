@@ -1,5 +1,6 @@
 using ErrorOr;
 using Finbuckle.MultiTenant.Abstractions;
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
@@ -236,6 +237,7 @@ public static class GrantTenantAccess
             }
             return TypedResults.Ok();
         })
+        .RequireAuthorization(IdmtAuthOptions.RequireSysAdminPolicy)
         .WithSummary("Grant user access to a tenant");
     }
 }
