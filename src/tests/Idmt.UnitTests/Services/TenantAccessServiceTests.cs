@@ -3,6 +3,7 @@ using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
 using Idmt.Plugin.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace Idmt.UnitTests.Services;
@@ -31,11 +32,14 @@ public class TenantAccessServiceTests
         _dbContext = new IdmtDbContext(
             _tenantAccessorMock.Object,
             options,
-            _currentUserServiceMock.Object);
+            _currentUserServiceMock.Object,
+            TimeProvider.System,
+            NullLogger<IdmtDbContext>.Instance);
 
         _service = new TenantAccessService(
             _dbContext,
-            _currentUserServiceMock.Object);
+            _currentUserServiceMock.Object,
+            TimeProvider.System);
     }
 
     [Fact]
@@ -87,6 +91,7 @@ public class TenantAccessServiceTests
     }
 
     [Theory]
+    [InlineData(IdmtDefaultRoleTypes.SysAdmin, "AnyRole", true)]
     [InlineData(IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.SysAdmin, false)]
     [InlineData(IdmtDefaultRoleTypes.SysSupport, IdmtDefaultRoleTypes.TenantAdmin, true)]
     [InlineData(IdmtDefaultRoleTypes.TenantAdmin, IdmtDefaultRoleTypes.SysAdmin, false)]
@@ -104,6 +109,17 @@ public class TenantAccessServiceTests
         var result = _service.CanAssignRole(targetRole);
 
         Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void CanManageUser_ReturnsTrue_WhenSysAdminManagesAnyUser()
+    {
+        _currentUserServiceMock.Reset();
+        _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.SysAdmin)).Returns(true);
+
+        var result = _service.CanManageUser([IdmtDefaultRoleTypes.SysAdmin]);
+
+        Assert.True(result);
     }
 
     [Fact]
@@ -132,6 +148,53 @@ public class TenantAccessServiceTests
         _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.SysSupport)).Returns(true);
 
         var result = _service.CanManageUser([IdmtDefaultRoleTypes.TenantAdmin]);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task CanAccessTenantAsync_ReturnsTrue_WhenAccessExpiringInFuture()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = "tenant1";
+
+        _dbContext.TenantAccess.Add(
+            new TenantAccess { UserId = userId, TenantId = tenantId, IsActive = true, ExpiresAt = DateTime.UtcNow.AddDays(1) }
+        );
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.CanAccessTenantAsync(userId, tenantId);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task CanAccessTenantAsync_ReturnsFalse_WhenNoAccessRecord()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = "tenant1";
+
+        var result = await _service.CanAccessTenantAsync(userId, tenantId);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void CanManageUser_ReturnsFalse_WhenTenantAdminManagesSysUser()
+    {
+        _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.TenantAdmin)).Returns(true);
+
+        var result = _service.CanManageUser([IdmtDefaultRoleTypes.SysSupport]);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void CanManageUser_ReturnsTrue_WhenTenantAdminManagesTenantUser()
+    {
+        _currentUserServiceMock.Setup(x => x.IsInRole(IdmtDefaultRoleTypes.TenantAdmin)).Returns(true);
+
+        var result = _service.CanManageUser(["CustomRole"]);
 
         Assert.True(result);
     }

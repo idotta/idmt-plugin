@@ -1,3 +1,4 @@
+using System.Text;
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Models;
@@ -52,22 +53,19 @@ public class IdmtLinkGeneratorTests
     }
 
     [Fact]
-    public void Constructor_ShouldInitialize()
-    {
-        Assert.NotNull(_service);
-    }
-
-    [Fact]
-    public void GenerateConfirmEmailApiLink_UsesLinkGenerator()
+    public void GenerateConfirmEmailLink_ServerConfirm_UsesLinkGenerator()
     {
         const string email = "user@example.com";
         const string token = "confirm-token";
         const string expectedUrl = "https://demo.example/confirm-email";
+        _options.Application.EmailConfirmationMode = EmailConfirmationMode.ServerConfirm;
+
+        var expectedEncodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
 
         RouteValueDictionary? capturedRouteValues = null;
         _linkGeneratorMock.Setup(x => x.GetUriByAddress<string>(
                 _httpContext,
-                ApplicationOptions.ConfirmEmailEndpointName,
+                IdmtEndpointNames.ConfirmEmailDirect,
                 It.IsAny<RouteValueDictionary>(),
                 It.IsAny<RouteValueDictionary?>(),
                 It.IsAny<string?>(),
@@ -81,53 +79,25 @@ public class IdmtLinkGeneratorTests
             })
             .Returns(expectedUrl);
 
-        var result = _service.GenerateConfirmEmailApiLink(email, token);
+        var result = _service.GenerateConfirmEmailLink(email, token);
 
         Assert.Equal(expectedUrl, result);
         Assert.NotNull(capturedRouteValues);
-        Assert.True(HasExpectedRouteValues(capturedRouteValues!, _tenantInfo.Identifier ?? string.Empty, email, token));
+        Assert.Equal(email, capturedRouteValues!["email"]?.ToString());
+        Assert.Equal(expectedEncodedToken, capturedRouteValues["token"]?.ToString());
+        Assert.Equal(_tenantInfo.Identifier, capturedRouteValues["tenantIdentifier"]?.ToString());
     }
 
     [Fact]
-    public void GeneratePasswordResetApiLink_UsesLinkGenerator()
-    {
-        const string email = "user@example.com";
-        const string token = "reset-token";
-        const string expectedUrl = "https://demo.example/password-reset";
-
-        RouteValueDictionary? capturedRouteValues = null;
-        _linkGeneratorMock.Setup(x => x.GetUriByAddress<string>(
-                _httpContext,
-                ApplicationOptions.PasswordResetEndpointName,
-                It.IsAny<RouteValueDictionary>(),
-                It.IsAny<RouteValueDictionary?>(),
-                It.IsAny<string?>(),
-                It.IsAny<HostString?>(),
-                It.IsAny<PathString?>(),
-                It.IsAny<FragmentString>(),
-                It.IsAny<LinkOptions?>()))
-            .Callback<HttpContext, string, RouteValueDictionary, RouteValueDictionary?, string?, HostString?, PathString?, FragmentString, LinkOptions?>((context, name, values, ambientValues, scheme, host, pathBase, fragment, options) =>
-            {
-                capturedRouteValues = values;
-            })
-            .Returns(expectedUrl);
-
-        var result = _service.GeneratePasswordResetApiLink(email, token);
-
-        Assert.Equal(expectedUrl, result);
-        Assert.NotNull(capturedRouteValues);
-        Assert.True(HasExpectedRouteValues(capturedRouteValues!, _tenantInfo.Identifier ?? string.Empty, email, token));
-    }
-
-    [Fact]
-    public void GenerateConfirmEmailFormLink_ReturnsClientUri()
+    public void GenerateConfirmEmailLink_ClientForm_ReturnsClientUri()
     {
         const string email = "user@example.com";
         const string token = "confirm-token";
+        _options.Application.EmailConfirmationMode = EmailConfirmationMode.ClientForm;
         _options.Application.ClientUrl = "https://client.example";
         _options.Application.ConfirmEmailFormPath = "/confirm-email";
 
-        var result = _service.GenerateConfirmEmailFormLink(email, token);
+        var result = _service.GenerateConfirmEmailLink(email, token);
         var uri = new Uri(result);
 
         var expectedBase = $"{_options.Application.ClientUrl!.TrimEnd('/')}/{_options.Application.ConfirmEmailFormPath!.TrimStart('/')}";
@@ -136,18 +106,22 @@ public class IdmtLinkGeneratorTests
         var query = QueryHelpers.ParseQuery(uri.Query);
         Assert.Equal(_tenantInfo.Identifier, query["tenantIdentifier"].ToString());
         Assert.Equal(email, query["email"].ToString());
-        Assert.Equal(token, query["token"].ToString());
+
+        // Token should be Base64URL-encoded
+        var encodedToken = query["token"].ToString();
+        var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(encodedToken));
+        Assert.Equal(token, decodedToken);
     }
 
     [Fact]
-    public void GeneratePasswordResetFormLink_ReturnsClientUri()
+    public void GeneratePasswordResetLink_ReturnsClientUri()
     {
         const string email = "user@example.com";
         const string token = "reset-token";
         _options.Application.ClientUrl = "https://client.example";
         _options.Application.ResetPasswordFormPath = "/reset-password";
 
-        var result = _service.GeneratePasswordResetFormLink(email, token);
+        var result = _service.GeneratePasswordResetLink(email, token);
         var uri = new Uri(result);
 
         var expectedBase = $"{_options.Application.ClientUrl!.TrimEnd('/')}/{_options.Application.ResetPasswordFormPath!.TrimStart('/')}";
@@ -156,35 +130,43 @@ public class IdmtLinkGeneratorTests
         var query = QueryHelpers.ParseQuery(uri.Query);
         Assert.Equal(_tenantInfo.Identifier, query["tenantIdentifier"].ToString());
         Assert.Equal(email, query["email"].ToString());
-        Assert.Equal(token, query["token"].ToString());
+
+        // Token should be Base64URL-encoded
+        var encodedToken = query["token"].ToString();
+        var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(encodedToken));
+        Assert.Equal(token, decodedToken);
     }
 
     [Fact]
-    public void GenerateConfirmEmailApiLink_ThrowsWhenHttpContextMissing()
+    public void GenerateConfirmEmailLink_ThrowsWhenHttpContextMissing()
     {
         _httpContextAccessorMock.Setup(x => x.HttpContext).Returns((HttpContext?)null);
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            _service.GenerateConfirmEmailApiLink("user@example.com", "token"));
+            _service.GenerateConfirmEmailLink("user@example.com", "token"));
 
         Assert.Equal("No HTTP context was found.", exception.Message);
     }
 
     [Fact]
-    public void GenerateConfirmEmailFormLink_ThrowsWhenClientUrlMissing()
+    public void GenerateConfirmEmailLink_ClientForm_ThrowsWhenClientUrlMissing()
     {
+        _options.Application.EmailConfirmationMode = EmailConfirmationMode.ClientForm;
+
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            _service.GenerateConfirmEmailFormLink("user@example.com", "token"));
+            _service.GenerateConfirmEmailLink("user@example.com", "token"));
 
         Assert.Equal("Client URL is not configured.", exception.Message);
     }
 
     [Fact]
-    public void GenerateConfirmEmailApiLink_ThrowsWhenEndpointNotFound()
+    public void GenerateConfirmEmailLink_ServerConfirm_ThrowsWhenEndpointNotFound()
     {
+        _options.Application.EmailConfirmationMode = EmailConfirmationMode.ServerConfirm;
+
         _linkGeneratorMock.Setup(x => x.GetUriByAddress<string>(
                 _httpContext,
-                ApplicationOptions.ConfirmEmailEndpointName,
+                IdmtEndpointNames.ConfirmEmailDirect,
                 It.IsAny<RouteValueDictionary>(),
                 It.IsAny<RouteValueDictionary?>(),
                 It.IsAny<string?>(),
@@ -195,59 +177,51 @@ public class IdmtLinkGeneratorTests
             .Returns((string?)null);
 
         var exception = Assert.Throws<NotSupportedException>(() =>
-            _service.GenerateConfirmEmailApiLink("user@example.com", "token"));
+            _service.GenerateConfirmEmailLink("user@example.com", "token"));
 
-        Assert.Contains(ApplicationOptions.ConfirmEmailEndpointName, exception.Message);
+        Assert.Contains(IdmtEndpointNames.ConfirmEmailDirect, exception.Message);
     }
 
     [Fact]
-    public void GeneratePasswordResetApiLink_ThrowsWhenEndpointNotFound()
-    {
-        _linkGeneratorMock.Setup(x => x.GetUriByAddress<string>(
-                _httpContext,
-                ApplicationOptions.PasswordResetEndpointName,
-                It.IsAny<RouteValueDictionary>(),
-                It.IsAny<RouteValueDictionary?>(),
-                It.IsAny<string?>(),
-                It.IsAny<HostString?>(),
-                It.IsAny<PathString?>(),
-                It.IsAny<FragmentString>(),
-                It.IsAny<LinkOptions?>()))
-            .Returns((string?)null);
-
-        var exception = Assert.Throws<NotSupportedException>(() =>
-            _service.GeneratePasswordResetApiLink("user@example.com", "token"));
-
-        Assert.Contains(ApplicationOptions.PasswordResetEndpointName, exception.Message);
-    }
-
-    [Fact]
-    public void GeneratePasswordResetApiLink_ThrowsWhenHttpContextMissing()
+    public void GeneratePasswordResetLink_ThrowsWhenHttpContextMissing()
     {
         _httpContextAccessorMock.Setup(x => x.HttpContext).Returns((HttpContext?)null);
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            _service.GeneratePasswordResetApiLink("user@example.com", "token"));
+            _service.GeneratePasswordResetLink("user@example.com", "token"));
 
         Assert.Equal("No HTTP context was found.", exception.Message);
     }
 
     [Fact]
-    public void GeneratePasswordResetFormLink_ThrowsWhenClientUrlMissing()
+    public void GeneratePasswordResetLink_ThrowsWhenClientUrlMissing()
     {
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            _service.GeneratePasswordResetFormLink("user@example.com", "token"));
+            _service.GeneratePasswordResetLink("user@example.com", "token"));
 
         Assert.Equal("Client URL is not configured.", exception.Message);
     }
 
-    private static bool HasExpectedRouteValues(RouteValueDictionary routeValues, string tenantIdentifier, string email, string token)
+    [Fact]
+    public void GenerateConfirmEmailLink_Base64UrlEncodesSpecialCharacterTokens()
     {
-        return routeValues.TryGetValue("tenantIdentifier", out var tenantValue)
-            && routeValues.TryGetValue("email", out var emailValue)
-            && routeValues.TryGetValue("token", out var tokenValue)
-            && string.Equals(tenantValue?.ToString(), tenantIdentifier, StringComparison.Ordinal)
-            && string.Equals(emailValue?.ToString(), email, StringComparison.Ordinal)
-            && string.Equals(tokenValue?.ToString(), token, StringComparison.Ordinal);
+        // Tokens from Identity often contain +, /, = which need Base64URL encoding
+        const string token = "CfDJ8N+test/token=value==";
+        _options.Application.EmailConfirmationMode = EmailConfirmationMode.ClientForm;
+        _options.Application.ClientUrl = "https://client.example";
+        _options.Application.ConfirmEmailFormPath = "/confirm-email";
+
+        var result = _service.GenerateConfirmEmailLink("user@example.com", token);
+        var uri = new Uri(result);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+
+        var encodedToken = query["token"].ToString();
+        // Should not contain raw +, /, = (Base64URL uses -, _, no padding)
+        Assert.DoesNotContain("+", encodedToken);
+        Assert.DoesNotContain("/", encodedToken);
+
+        // Decoding should return the original token
+        var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(encodedToken));
+        Assert.Equal(token, decodedToken);
     }
 }

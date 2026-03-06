@@ -1,7 +1,10 @@
 using System.Security.Claims;
-using Idmt.Plugin.Configuration;
+using ErrorOr;
+using FluentValidation;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
+using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -10,7 +13,6 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Idmt.Plugin.Features.Manage;
 
@@ -25,15 +27,17 @@ public static class UpdateUserInfo
 
     public interface IUpdateUserInfoHandler
     {
-        Task<Result> HandleAsync(UpdateUserInfoRequest request, ClaimsPrincipal user, CancellationToken cancellationToken = default);
+        Task<ErrorOr<Success>> HandleAsync(UpdateUserInfoRequest request, ClaimsPrincipal user, CancellationToken cancellationToken = default);
     }
 
     internal sealed class UpdateUserInfoHandler(
         UserManager<IdmtUser> userManager,
         IdmtDbContext dbContext,
+        IIdmtLinkGenerator linkGenerator,
+        IEmailSender<IdmtUser> emailSender,
         ILogger<UpdateUserInfoHandler> logger) : IUpdateUserInfoHandler
     {
-        public async Task<Result> HandleAsync(
+        public async Task<ErrorOr<Success>> HandleAsync(
             UpdateUserInfoRequest request,
             ClaimsPrincipal user,
             CancellationToken cancellationToken = default)
@@ -41,22 +45,24 @@ public static class UpdateUserInfo
             var userEmail = user.FindFirstValue(ClaimTypes.Email);
             if (string.IsNullOrEmpty(userEmail))
             {
-                return Result.Failure("User email not found in claims", StatusCodes.Status400BadRequest);
+                return IdmtErrors.User.ClaimsNotFound;
             }
 
             var appUser = await userManager.FindByEmailAsync(userEmail);
             if (appUser == null)
             {
-                return Result.Failure("User not found", StatusCodes.Status404NotFound);
+                return IdmtErrors.User.NotFound;
             }
             if (!appUser.IsActive)
             {
-                return Result.Failure("User is not active", StatusCodes.Status403Forbidden);
+                return IdmtErrors.User.Inactive;
             }
 
             await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
             try
             {
+                bool hasChanges = false;
+
                 // Update username if provided
                 if (!string.IsNullOrWhiteSpace(request.NewUsername) && request.NewUsername != appUser.UserName)
                 {
@@ -65,72 +71,77 @@ public static class UpdateUserInfo
                     {
                         logger.LogError("Failed to set username: {ErrorMessage}", setUsernameResult.Errors.Select(e => e.Description));
                         await transaction.RollbackAsync(cancellationToken);
-                        return Result.Failure("Failed to update username", StatusCodes.Status400BadRequest);
+                        return IdmtErrors.User.UpdateFailed;
                     }
+                    hasChanges = true;
                 }
 
-                // Update email if provided
+                // Update email if provided.
+                // ChangeEmailAsync persists the new email and sets EmailConfirmed = false internally.
+                // After that we send a confirmation email to the new address so the user has a
+                // recovery path and is not permanently locked out.
                 if (!string.IsNullOrWhiteSpace(request.NewEmail) && request.NewEmail != appUser.Email)
                 {
-                    // Generate email change token
                     var token = await userManager.GenerateChangeEmailTokenAsync(appUser, request.NewEmail);
-                    var result = await userManager.ChangeEmailAsync(appUser, request.NewEmail, token);
-                    appUser.EmailConfirmed = false;
-                    await userManager.UpdateAsync(appUser);
-
-                    if (!result.Succeeded)
+                    var changeEmailResult = await userManager.ChangeEmailAsync(appUser, request.NewEmail, token);
+                    if (!changeEmailResult.Succeeded)
                     {
-                        logger.LogError("Failed to change email: {ErrorMessage}", result.Errors.Select(e => e.Description));
+                        logger.LogError("Failed to change email: {ErrorMessage}", changeEmailResult.Errors.Select(e => e.Description));
                         await transaction.RollbackAsync(cancellationToken);
-                        return Result.Failure("Failed to update email", StatusCodes.Status400BadRequest);
+                        return IdmtErrors.User.UpdateFailed;
                     }
+
+                    // ChangeEmailAsync already persisted EmailConfirmed = false — do NOT set it again
+                    // or call UpdateAsync for the email change; doing so is redundant and can cause
+                    // a second write with a stale concurrency stamp.
+
+                    // Generate a fresh confirmation token (the change-email token above is now consumed)
+                    // and send the link to the new address so the user can re-confirm.
+                    var confirmToken = await userManager.GenerateEmailConfirmationTokenAsync(appUser);
+                    var confirmLink = linkGenerator.GenerateConfirmEmailLink(request.NewEmail, confirmToken);
+                    await emailSender.SendConfirmationLinkAsync(appUser, request.NewEmail, confirmLink);
+
+                    logger.LogInformation("Email changed for user. Confirmation email dispatched to new address.");
+                    // hasChanges intentionally not set here: ChangeEmailAsync already persisted the
+                    // email change. The flag only controls the final UpdateAsync for other field
+                    // changes (username, password) that are still pending.
                 }
 
                 // Update password if provided
-                if (!string.IsNullOrEmpty(request.OldPassword) && !string.IsNullOrWhiteSpace(request.NewPassword))
+                if (!string.IsNullOrWhiteSpace(request.OldPassword) && !string.IsNullOrWhiteSpace(request.NewPassword))
                 {
                     var changePasswordResult = await userManager.ChangePasswordAsync(appUser, request.OldPassword, request.NewPassword);
                     if (!changePasswordResult.Succeeded)
                     {
                         logger.LogError("Failed to change password: {ErrorMessage}", changePasswordResult.Errors.Select(e => e.Description));
                         await transaction.RollbackAsync(cancellationToken);
-                        return Result.Failure("Failed to update password", StatusCodes.Status400BadRequest);
+                        return IdmtErrors.Password.ResetFailed;
+                    }
+                    hasChanges = true;
+                }
+
+                if (hasChanges)
+                {
+                    var updateResult = await userManager.UpdateAsync(appUser);
+                    if (!updateResult.Succeeded)
+                    {
+                        logger.LogError("Failed to update user: {Errors}", string.Join(", ", updateResult.Errors.Select(e => e.Description)));
+                        await transaction.RollbackAsync(cancellationToken);
+                        return IdmtErrors.User.UpdateFailed;
                     }
                 }
 
-                await userManager.UpdateAsync(appUser);
-
                 await transaction.CommitAsync(cancellationToken);
 
-                return Result.Success();
+                return Result.Success;
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync(cancellationToken);
-                logger.LogError(ex, "Exception occurred during user registration. Transaction rolled back.");
-                return Result.Failure($"An error occurred while updating user info: {ex.Message}", StatusCodes.Status500InternalServerError);
+                logger.LogError(ex, "Exception occurred during user info update. Transaction rolled back.");
+                return IdmtErrors.General.Unexpected;
             }
         }
-    }
-
-    public static Dictionary<string, string[]>? Validate(this UpdateUserInfoRequest request, Configuration.PasswordOptions options)
-    {
-        var errors = new Dictionary<string, string[]>();
-        // Only require old password when NewPassword is provided
-        if (!string.IsNullOrEmpty(request.NewPassword) && string.IsNullOrEmpty(request.OldPassword))
-        {
-            errors["OldPassword"] = ["Old password is required to change password"];
-        }
-        if (request.NewEmail is not null && !Validators.IsValidEmail(request.NewEmail))
-        {
-            errors["NewEmail"] = ["New email is not valid"];
-        }
-        if (request.NewPassword is not null && !Validators.IsValidNewPassword(request.NewPassword, options, out var newPasswordErrors))
-        {
-            errors["NewPassword"] = newPasswordErrors ?? [];
-        }
-
-        return errors.Count == 0 ? null : errors;
     }
 
     public static RouteHandlerBuilder MapUpdateUserInfoEndpoint(this IEndpointRouteBuilder endpoints)
@@ -139,22 +150,23 @@ public static class UpdateUserInfo
             [FromBody] UpdateUserInfoRequest request,
             ClaimsPrincipal user,
             [FromServices] IUpdateUserInfoHandler handler,
-            [FromServices] IOptions<IdmtOptions> options,
+            [FromServices] IValidator<UpdateUserInfoRequest> validator,
             HttpContext context) =>
         {
-            if (request.Validate(options.Value.Identity.Password) is { } errors)
+            if (ValidationHelper.Validate(request, validator) is { } errors)
             {
                 return TypedResults.ValidationProblem(errors);
             }
 
             var result = await handler.HandleAsync(request, user, cancellationToken: context.RequestAborted);
-            if (!result.IsSuccess)
+            if (result.IsError)
             {
-                return result.StatusCode switch
+                return result.FirstError.Type switch
                 {
-                    StatusCodes.Status400BadRequest => TypedResults.BadRequest(),
-                    StatusCodes.Status403Forbidden => TypedResults.Forbid(),
-                    StatusCodes.Status404NotFound => TypedResults.NotFound(),
+                    ErrorType.NotFound => TypedResults.NotFound(),
+                    ErrorType.Forbidden => TypedResults.Forbid(),
+                    ErrorType.Validation => TypedResults.BadRequest(),
+                    ErrorType.Failure => TypedResults.BadRequest(),
                     _ => TypedResults.InternalServerError(),
                 };
             }

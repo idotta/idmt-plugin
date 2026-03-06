@@ -1,6 +1,9 @@
-using Finbuckle.MultiTenant.Abstractions;
+using ErrorOr;
+using FluentValidation;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -9,153 +12,94 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 
 namespace Idmt.Plugin.Features.Auth;
 
 public static class ResetPassword
 {
-    public sealed record ResetPasswordRequest(string NewPassword);
+    public sealed record ResetPasswordRequest(string TenantIdentifier, string Email, string Token, string NewPassword);
 
     public interface IResetPasswordHandler
     {
-        Task<Result> HandleAsync(string tenantIdentifier, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default);
+        Task<ErrorOr<Success>> HandleAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default);
     }
 
-    internal sealed class ResetPasswordHandler(IServiceProvider serviceProvider) : IResetPasswordHandler
+    internal sealed class ResetPasswordHandler(
+        ITenantOperationService tenantOps,
+        ILogger<ResetPasswordHandler> logger) : IResetPasswordHandler
     {
-        public async Task<Result> HandleAsync(string tenantIdentifier, string email, string token, ResetPasswordRequest request, CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<Success>> HandleAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
         {
-            using var scope = serviceProvider.CreateScope();
-            var provider = scope.ServiceProvider;
-
-            var tenantStore = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
-            var tenantInfo = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
-            if (tenantInfo is null || !tenantInfo.IsActive)
+            return await tenantOps.ExecuteInTenantScopeAsync(request.TenantIdentifier, async provider =>
             {
-                return Result.Failure("Invalid tenant", StatusCodes.Status400BadRequest);
-            }
-            // Set Tenant Context BEFORE resolving DbContext/Managers
-            var tenantContextSetter = provider.GetRequiredService<IMultiTenantContextSetter>();
-            var tenantContext = new MultiTenantContext<IdmtTenantInfo>(tenantInfo);
-            tenantContextSetter.MultiTenantContext = tenantContext;
-
-            var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
-            try
-            {
-                var user = await userManager.FindByEmailAsync(email);
-                if (user is null)
+                var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
+                try
                 {
-                    // Avoid revealing that the email does not exist
-                    return Result.Failure("User not found", StatusCodes.Status400BadRequest);
+                    var user = await userManager.FindByEmailAsync(request.Email);
+                    if (user is null || !user.IsActive)
+                    {
+                        return IdmtErrors.Password.ResetFailed;
+                    }
+
+                    var result = await userManager.ResetPasswordAsync(user, request.Token, request.NewPassword);
+
+                    if (!result.Succeeded)
+                    {
+                        return IdmtErrors.Password.ResetFailed;
+                    }
+
+                    if (!user.EmailConfirmed)
+                    {
+                        user.EmailConfirmed = true;
+                        await userManager.UpdateAsync(user);
+                    }
+
+                    return Result.Success;
                 }
-
-                // Reset password using the token
-                var result = await userManager.ResetPasswordAsync(user, token, request.NewPassword);
-
-                if (!result.Succeeded)
+                catch (Exception ex)
                 {
-                    var errors = string.Join("\n", result.Errors.Select(e => e.Description));
-                    return Result.Failure(errors, StatusCodes.Status400BadRequest);
+                    logger.LogError(ex, "An error occurred during password reset for {Email}", PiiMasker.MaskEmail(request.Email));
+                    return IdmtErrors.General.Unexpected;
                 }
-
-                if (!user.EmailConfirmed)
-                {
-                    user.EmailConfirmed = true;
-                    await userManager.UpdateAsync(user);
-                }
-
-                return Result.Success();
-            }
-            catch (Exception ex)
-            {
-                return Result.Failure($"An error occurred while resetting the password: {ex.Message}", StatusCodes.Status500InternalServerError);
-            }
+            });
         }
-    }
-
-    public static Dictionary<string, string[]>? Validate(this ResetPasswordRequest request, string tenantIdentifier, string email, string token, Configuration.PasswordOptions options)
-    {
-        var errors = new Dictionary<string, string[]>();
-        if (string.IsNullOrEmpty(tenantIdentifier))
-        {
-            errors["TenantIdentifier"] = ["Tenant ID is required"];
-        }
-        if (!Validators.IsValidEmail(email))
-        {
-            errors["Email"] = ["Invalid email address."];
-        }
-        if (string.IsNullOrEmpty(token))
-        {
-            errors["Token"] = ["Token is required"];
-        }
-        if (!Validators.IsValidNewPassword(request.NewPassword, options, out var newPasswordErrors))
-        {
-            errors["NewPassword"] = newPasswordErrors ?? [];
-        }
-
-        return errors.Count == 0 ? null : errors;
     }
 
     public static RouteHandlerBuilder MapResetPasswordEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/resetPassword", async Task<Results<Ok, ValidationProblem, BadRequest>> (
-            [FromQuery] string tenantIdentifier,
-            [FromQuery] string email,
-            [FromQuery] string token,
+        return endpoints.MapPost("/reset-password", async Task<Results<Ok, ValidationProblem, BadRequest>> (
             [FromBody] ResetPasswordRequest request,
             [FromServices] IResetPasswordHandler handler,
-            [FromServices] IOptions<IdmtOptions> options,
+            [FromServices] IValidator<ResetPasswordRequest> validator,
             HttpContext context) =>
         {
-            if (request.Validate(tenantIdentifier, email, token, options.Value.Identity.Password) is { } validationErrors)
+            if (ValidationHelper.Validate(request, validator) is { } validationErrors)
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
-            var result = await handler.HandleAsync(tenantIdentifier, email, token, request, cancellationToken: context.RequestAborted);
-            if (!result.IsSuccess)
+
+            // Decode Base64URL-encoded token
+            string decodedToken;
+            try
+            {
+                decodedToken = Base64Service.DecodeBase64UrlToken(request.Token);
+            }
+            catch (FormatException)
+            {
+                return TypedResults.BadRequest();
+            }
+
+            var decodedRequest = request with { Token = decodedToken };
+            var result = await handler.HandleAsync(decodedRequest, cancellationToken: context.RequestAborted);
+            if (result.IsError)
             {
                 return TypedResults.BadRequest();
             }
             return TypedResults.Ok();
         })
-        .WithName(ApplicationOptions.PasswordResetEndpointName)
+        .WithName(IdmtEndpointNames.PasswordReset)
         .WithSummary("Reset password")
         .WithDescription("Reset password using reset token");
-    }
-
-    public static RouteHandlerBuilder MapResetPasswordRedirectEndpoint(this IEndpointRouteBuilder endpoints)
-    {
-        return endpoints.MapGet("/resetPassword", Results<RedirectHttpResult, ProblemHttpResult> (
-            [FromQuery] string tenantIdentifier,
-            [FromQuery] string email,
-            [FromQuery] string token,
-            [FromServices] IOptions<IdmtOptions> options,
-            HttpContext context) =>
-        {
-            var clientUrl = options.Value.Application.ClientUrl;
-            var resetPasswordPath = options.Value.Application.ResetPasswordFormPath;
-
-            if (string.IsNullOrEmpty(clientUrl))
-            {
-                return TypedResults.Problem("Client URL is not configured.");
-            }
-
-            var queryParams = new Dictionary<string, string?>
-            {
-                ["tenantIdentifier"] = tenantIdentifier,
-                ["email"] = email,
-                ["token"] = token
-            };
-
-            var uri = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
-                $"{clientUrl.TrimEnd('/')}/{resetPasswordPath.TrimStart('/')}",
-                queryParams);
-
-            return TypedResults.Redirect(uri);
-        })
-        .WithName(ApplicationOptions.PasswordResetEndpointName + "-form")
-        .WithSummary("Redirect to reset password form")
-        .WithDescription("Redirect to reset password form");
     }
 }

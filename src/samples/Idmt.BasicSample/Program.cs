@@ -35,7 +35,7 @@ else
     app.MapGroup("").MapIdmtEndpoints();
 }
 
-await app.EnsureIdmtDatabaseAsync(autoMigrate: false);
+await app.EnsureIdmtDatabaseAsync();
 
 var seedAction = app.Services.GetService<SeedDataAsync>();
 await app.SeedIdmtDataAsync(seedAction);

@@ -1,4 +1,6 @@
+using ErrorOr;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
 using Microsoft.AspNetCore.Builder;
@@ -18,7 +20,7 @@ public static class UpdateUser
 
     public interface IUpdateUserHandler
     {
-        Task<Result> HandleAsync(Guid userId, UpdateUserRequest request, CancellationToken cancellationToken = default);
+        Task<ErrorOr<Success>> HandleAsync(Guid userId, UpdateUserRequest request, CancellationToken cancellationToken = default);
     }
 
     internal sealed class UpdateUserHandler(
@@ -26,21 +28,21 @@ public static class UpdateUser
         ITenantAccessService tenantAccessService,
         ILogger<UpdateUserHandler> logger) : IUpdateUserHandler
     {
-        public async Task<Result> HandleAsync(Guid userId, UpdateUserRequest request, CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<Success>> HandleAsync(Guid userId, UpdateUserRequest request, CancellationToken cancellationToken = default)
         {
             try
             {
                 var appUser = await userManager.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
                 if (appUser == null)
                 {
-                    return Result.Failure("User not found", StatusCodes.Status404NotFound);
+                    return IdmtErrors.User.NotFound;
                 }
 
                 var userRoles = await userManager.GetRolesAsync(appUser);
 
                 if (!tenantAccessService.CanManageUser(userRoles))
                 {
-                    return Result.Failure("Insufficient permissions to update this user.", StatusCodes.Status403Forbidden);
+                    return IdmtErrors.User.InsufficientPermissions;
                 }
 
                 appUser.IsActive = request.IsActive;
@@ -48,14 +50,14 @@ public static class UpdateUser
                 var result = await userManager.UpdateAsync(appUser);
                 if (!result.Succeeded)
                 {
-                    return Result.Failure("Failed to update user", StatusCodes.Status400BadRequest);
+                    return IdmtErrors.User.UpdateFailed;
                 }
-                return Result.Success();
+                return Result.Success;
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Exception occurred while updating user {UserId}", userId);
-                return Result.Failure($"An error occurred while updating the user: {ex.Message}", StatusCodes.Status500InternalServerError);
+                return IdmtErrors.General.Unexpected;
             }
         }
     }
@@ -69,19 +71,19 @@ public static class UpdateUser
             HttpContext context) =>
         {
             var result = await handler.HandleAsync(userId, request, cancellationToken: context.RequestAborted);
-            if (!result.IsSuccess)
+            if (result.IsError)
             {
-                return result.StatusCode switch
+                return result.FirstError.Type switch
                 {
-                    StatusCodes.Status404NotFound => TypedResults.NotFound(),
-                    StatusCodes.Status403Forbidden => TypedResults.Forbid(),
-                    StatusCodes.Status400BadRequest => TypedResults.BadRequest(),
+                    ErrorType.NotFound => TypedResults.NotFound(),
+                    ErrorType.Forbidden => TypedResults.Forbid(),
+                    ErrorType.Failure => TypedResults.BadRequest(),
                     _ => TypedResults.InternalServerError(),
                 };
             }
             return TypedResults.Ok();
         })
-        .RequireAuthorization(AuthOptions.RequireTenantManagerPolicy)
+        .RequireAuthorization(IdmtAuthOptions.RequireTenantManagerPolicy)
         .WithSummary("Activate/Deactivate user")
         .WithDescription("Activate/Deactivate a user within the same tenant (Admin/System only)");
     }

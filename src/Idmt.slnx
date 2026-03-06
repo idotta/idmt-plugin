@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/Idmt.BasicSample/Idmt.BasicSample.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Idmt.BasicSample.Tests/Idmt.BasicSample.Tests.csproj" />
+    <Project Path="tests/Idmt.UnitTests/Idmt.UnitTests.csproj" />
+  </Folder>
+  <Project Path="Idmt.Plugin/Idmt.Plugin.csproj" />
+</Solution>

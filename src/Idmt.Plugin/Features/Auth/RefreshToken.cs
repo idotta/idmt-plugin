@@ -1,5 +1,12 @@
 using System.Security.Claims;
+using ErrorOr;
+using Finbuckle.MultiTenant.Abstractions;
+using FluentValidation;
+using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Services;
+using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -19,16 +26,19 @@ public static class RefreshToken
 
     public interface IRefreshTokenHandler
     {
-        Task<Result<RefreshTokenResponse>> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default);
+        Task<ErrorOr<RefreshTokenResponse>> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default);
     }
 
     internal sealed class RefreshTokenHandler(
         IOptionsMonitor<BearerTokenOptions> bearerTokenOptions,
         TimeProvider timeProvider,
-        SignInManager<IdmtUser> signInManager)
+        SignInManager<IdmtUser> signInManager,
+        IMultiTenantContextAccessor<IdmtTenantInfo> tenantContextAccessor,
+        IOptions<IdmtOptions> idmtOptions,
+        ITokenRevocationService tokenRevocationService)
         : IRefreshTokenHandler
     {
-        public async Task<Result<RefreshTokenResponse>> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<RefreshTokenResponse>> HandleAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default)
         {
             var refreshTokenProtector = bearerTokenOptions.Get(IdentityConstants.BearerScheme).RefreshTokenProtector;
             var refreshTicket = refreshTokenProtector.Unprotect(request.RefreshToken);
@@ -37,47 +47,61 @@ public static class RefreshToken
                 timeProvider.GetUtcNow() >= expiresUtc ||
                 await signInManager.ValidateSecurityStampAsync(refreshTicket.Principal) is not IdmtUser user)
             {
-                return Result.Failure<RefreshTokenResponse>("Invalid refresh token", StatusCodes.Status400BadRequest);
+                return IdmtErrors.Token.Invalid;
+            }
+
+            if (!user.IsActive)
+            {
+                return IdmtErrors.Auth.Unauthorized;
+            }
+
+            // Validate tenant context matches refresh token
+            var tenantClaimKey = idmtOptions.Value.MultiTenant.StrategyOptions.GetValueOrDefault(
+                IdmtMultiTenantStrategy.Claim, IdmtMultiTenantStrategy.DefaultClaim);
+            var tokenTenantClaim = refreshTicket.Principal?.FindFirst(tenantClaimKey)?.Value;
+            var currentTenant = tenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier;
+
+            if (tokenTenantClaim is null || currentTenant is null || tokenTenantClaim != currentTenant)
+            {
+                return IdmtErrors.Auth.Unauthorized;
+            }
+
+            // Check if this token has been revoked
+            var issuedAt = refreshTicket.Properties.IssuedUtc
+                ?? expiresUtc - idmtOptions.Value.Identity.Bearer.RefreshTokenExpiration;
+            var tenantId = tenantContextAccessor.MultiTenantContext?.TenantInfo?.Id;
+
+            if (tenantId is not null && await tokenRevocationService.IsTokenRevokedAsync(user.Id, tenantId, issuedAt, cancellationToken))
+            {
+                return IdmtErrors.Token.Revoked;
             }
 
             ClaimsPrincipal claimsPrincipal = await signInManager.CreateUserPrincipalAsync(user);
-            return Result.Success(new RefreshTokenResponse(claimsPrincipal));
+            return new RefreshTokenResponse(claimsPrincipal);
         }
-    }
-
-    public static Dictionary<string, string[]>? Validate(this RefreshTokenRequest request)
-    {
-        if (string.IsNullOrEmpty(request.RefreshToken))
-        {
-            return new Dictionary<string, string[]>
-            {
-                ["RefreshToken"] = ["Refresh token is required."]
-            };
-        }
-        return null;
     }
 
     public static RouteHandlerBuilder MapRefreshTokenEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/refresh", async Task<Results<Ok<AccessTokenResponse>, SignInHttpResult, ChallengeHttpResult, ValidationProblem>> (
+        return endpoints.MapPost("/refresh", async Task<Results<SignInHttpResult, ChallengeHttpResult, ValidationProblem>> (
             [FromBody] RefreshTokenRequest request,
             [FromServices] IRefreshTokenHandler handler,
+            [FromServices] IValidator<RefreshTokenRequest> validator,
             HttpContext context) =>
         {
-            if (request.Validate() is { } validationErrors)
+            if (ValidationHelper.Validate(request, validator) is { } validationErrors)
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
 
             var response = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
-            if (!response.IsSuccess)
+            if (response.IsError)
             {
                 return TypedResults.Challenge();
             }
-            return TypedResults.SignIn(response.Value!.ClaimsPrincipal, authenticationScheme: IdentityConstants.BearerScheme);
+            return TypedResults.SignIn(response.Value.ClaimsPrincipal, authenticationScheme: IdentityConstants.BearerScheme);
         })
         .WithSummary("Refresh token")
-        .WithDescription("Refresh JWT token using refresh token")
-        .RequireAuthorization();
+        .WithDescription("Refresh JWT token using refresh token");
     }
 }

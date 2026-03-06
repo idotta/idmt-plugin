@@ -24,7 +24,7 @@ public class IdmtOptions
     /// <summary>
     /// Identity configuration options
     /// </summary>
-    public AuthOptions Identity { get; set; } = new();
+    public IdmtAuthOptions Identity { get; set; } = new();
 
     /// <summary>
     /// Multi-tenant configuration options
@@ -35,6 +35,32 @@ public class IdmtOptions
     /// Database configuration options
     /// </summary>
     public DatabaseOptions Database { get; set; } = new();
+
+    /// <summary>
+    /// Rate limiting configuration options for auth endpoints
+    /// </summary>
+    public RateLimitingOptions RateLimiting { get; set; } = new();
+
+}
+
+/// <summary>
+/// Controls how email confirmation links behave.
+/// </summary>
+public enum EmailConfirmationMode
+{
+    /// <summary>
+    /// Email link points to GET /auth/confirm-email on the server, which confirms
+    /// the email directly (like Microsoft's reference implementation).
+    /// No client-side form needed for email confirmation.
+    /// </summary>
+    ServerConfirm,
+
+    /// <summary>
+    /// Email link points to ClientUrl/ConfirmEmailFormPath on the client app.
+    /// The client reads the token from the URL and calls POST /auth/confirm-email.
+    /// Default for SPA/mobile apps.
+    /// </summary>
+    ClientForm
 }
 
 /// <summary>
@@ -42,8 +68,12 @@ public class IdmtOptions
 /// </summary>
 public class ApplicationOptions
 {
-    public const string PasswordResetEndpointName = "ResetPassword";
-    public const string ConfirmEmailEndpointName = "ConfirmEmail";
+    /// <summary>
+    /// URI prefix applied to all IDMT endpoint groups (/auth, /manage, /admin, /health).
+    /// Defaults to "/api/v1". Set to "" to restore the legacy unprefixed behavior.
+    /// Examples: "/api/v1", "/v2", "/api/v2", ""
+    /// </summary>
+    public string ApiPrefix { get; set; } = "/api/v1";
 
     /// <summary>
     /// Base URL of the client application, if any (e.g. "https://myapp.com")
@@ -57,12 +87,19 @@ public class ApplicationOptions
 
     public string ResetPasswordFormPath { get; set; } = "/reset-password";
     public string ConfirmEmailFormPath { get; set; } = "/confirm-email";
+
+    /// <summary>
+    /// Controls how email confirmation links are generated.
+    /// ServerConfirm: link hits GET /auth/confirm-email which confirms directly.
+    /// ClientForm: link points to ClientUrl/ConfirmEmailFormPath for SPA handling.
+    /// </summary>
+    public EmailConfirmationMode EmailConfirmationMode { get; set; } = EmailConfirmationMode.ClientForm;
 }
 
 /// <summary>
 /// ASP.NET Core Identity configuration
 /// </summary>
-public class AuthOptions
+public class IdmtAuthOptions
 {
     public const string CookieOrBearerScheme = "CookieOrBearer";
 
@@ -75,7 +112,7 @@ public class AuthOptions
     /// <summary>
     /// Password requirements
     /// </summary>
-    public PasswordOptions Password { get; set; } = new();
+    public IdmtPasswordOptions Password { get; set; } = new();
 
     /// <summary>
     /// User requirements
@@ -90,7 +127,7 @@ public class AuthOptions
     /// <summary>
     /// Cookie configuration options
     /// </summary>
-    public CookieOptions Cookie { get; set; } = new();
+    public IdmtCookieOptions Cookie { get; set; } = new();
 
     /// <summary>
     /// Bearer token configuration options
@@ -106,13 +143,13 @@ public class AuthOptions
 /// <summary>
 /// Password configuration options
 /// </summary>
-public class PasswordOptions
+public class IdmtPasswordOptions
 {
     public bool RequireDigit { get; set; } = true;
     public bool RequireLowercase { get; set; } = true;
     public bool RequireUppercase { get; set; } = true;
     public bool RequireNonAlphanumeric { get; set; } = false;
-    public int RequiredLength { get; set; } = 6;
+    public int RequiredLength { get; set; } = 8;
     public int RequiredUniqueChars { get; set; } = 1;
 }
 
@@ -130,19 +167,34 @@ public class UserOptions
 /// </summary>
 public class SignInOptions
 {
-    public bool RequireConfirmedEmail { get; set; } = false;
+    public bool RequireConfirmedEmail { get; set; } = true;
     public bool RequireConfirmedPhoneNumber { get; set; } = false;
 }
 
 /// <summary>
 /// Cookie configuration options
 /// </summary>
-public class CookieOptions
+public class IdmtCookieOptions
 {
     public string Name { get; set; } = ".Idmt.Application";
     public bool HttpOnly { get; set; } = true;
-    public Microsoft.AspNetCore.Http.CookieSecurePolicy SecurePolicy { get; set; } = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
-    public Microsoft.AspNetCore.Http.SameSiteMode SameSite { get; set; } = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
+    public Microsoft.AspNetCore.Http.CookieSecurePolicy SecurePolicy { get; set; } = Microsoft.AspNetCore.Http.CookieSecurePolicy.Always;
+
+    /// <summary>
+    /// Controls the SameSite attribute of the authentication cookie.
+    /// Defaults to <see cref="Microsoft.AspNetCore.Http.SameSiteMode.Strict"/>, which means the
+    /// browser will never send the cookie on cross-site requests (neither top-level navigations
+    /// nor sub-resource loads). This is the strongest available CSRF protection at the cookie
+    /// layer and removes the need for anti-forgery tokens on state-mutating endpoints that rely
+    /// solely on cookie authentication.
+    ///
+    /// Change to <see cref="Microsoft.AspNetCore.Http.SameSiteMode.Lax"/> only if your
+    /// application requires cookie preservation on top-level cross-site GET navigations (e.g.
+    /// OAuth / OIDC redirect flows), and compensate with explicit anti-forgery validation on
+    /// every state-mutating endpoint.
+    /// </summary>
+    public Microsoft.AspNetCore.Http.SameSiteMode SameSite { get; set; } = Microsoft.AspNetCore.Http.SameSiteMode.Strict;
+
     public TimeSpan ExpireTimeSpan { get; set; } = TimeSpan.FromDays(14);
     public bool SlidingExpiration { get; set; } = true;
     public bool IsRedirectEnabled { get; set; } = false;
@@ -191,7 +243,7 @@ public class MultiTenantOptions
     /// </summary>
     public const string DefaultTenantIdentifier = "system-tenant";
 
-    public string DefaultTenantDisplayName { get; set; } = "System Tenant";
+    public string DefaultTenantName { get; set; } = "System Tenant";
 
     /// <summary>
     /// Tenant resolution strategy (header, subdomain, etc.)
@@ -205,17 +257,64 @@ public class MultiTenantOptions
 }
 
 /// <summary>
+/// Controls how the IDMT database schema is initialized on startup.
+/// </summary>
+public enum DatabaseInitializationMode
+{
+    /// <summary>
+    /// Use EF Core Migrations. Consumers must create and apply migrations themselves.
+    /// Recommended for production. Default.
+    /// </summary>
+    Migrate,
+
+    /// <summary>
+    /// Use EnsureCreated for quick setup. Not compatible with migrations.
+    /// Suitable for development, testing, and prototyping only.
+    /// </summary>
+    EnsureCreated,
+
+    /// <summary>
+    /// Skip automatic database initialization. Consumer manages the database schema externally.
+    /// </summary>
+    None
+}
+
+/// <summary>
 /// Database configuration options
 /// </summary>
 public class DatabaseOptions
 {
     /// <summary>
-    /// Connection string template with placeholder for tenant's properties
+    /// Controls how the database schema is initialized on startup.
+    /// <see cref="DatabaseInitializationMode.Migrate"/> runs EF Core migrations and is the
+    /// default for production use. <see cref="DatabaseInitializationMode.EnsureCreated"/> is
+    /// suitable for development, testing, and prototyping where migrations are not used.
+    /// <see cref="DatabaseInitializationMode.None"/> skips initialization entirely and leaves
+    /// schema management to the consumer.
     /// </summary>
-    public string ConnectionStringTemplate { get; set; } = string.Empty;
+    public DatabaseInitializationMode DatabaseInitialization { get; set; } = DatabaseInitializationMode.Migrate;
+}
+
+/// <summary>
+/// Rate limiting configuration for IDMT auth endpoints.
+/// When enabled, a fixed-window limiter named "idmt-auth" is registered and applied
+/// to all authentication endpoints (login, token, forgot-password, etc.) to protect
+/// against brute-force and email-flooding attacks.
+/// </summary>
+public class RateLimitingOptions
+{
+    /// <summary>
+    /// Enable built-in rate limiting for auth endpoints. Default: true.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Auto-migrate database on startup
+    /// Maximum number of requests allowed per window for auth endpoints. Default: 10.
     /// </summary>
-    public bool AutoMigrate { get; set; } = false;
+    public int PermitLimit { get; set; } = 10;
+
+    /// <summary>
+    /// Duration of the sliding window in seconds. Default: 60.
+    /// </summary>
+    public int WindowInSeconds { get; set; } = 60;
 }

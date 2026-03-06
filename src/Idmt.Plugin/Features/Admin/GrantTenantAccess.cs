@@ -1,7 +1,10 @@
+using ErrorOr;
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
+using Idmt.Plugin.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -16,105 +19,101 @@ namespace Idmt.Plugin.Features.Admin;
 
 public static class GrantTenantAccess
 {
-    public sealed record GrantAccessRequest(DateTime? ExpiresAt);
+    public sealed record GrantAccessRequest(DateTimeOffset? ExpiresAt);
 
     public interface IGrantTenantAccessHandler
     {
-        Task<Result> HandleAsync(Guid userId, string tenantIdentifier, DateTime? expiresAt = null, CancellationToken cancellationToken = default);
+        Task<ErrorOr<Success>> HandleAsync(Guid userId, string tenantIdentifier, DateTimeOffset? expiresAt = null, CancellationToken cancellationToken = default);
     }
 
+    // Issue 19 fix: inject IdmtDbContext, UserManager<IdmtUser>, and IMultiTenantStore<IdmtTenantInfo>
+    // as constructor parameters rather than resolving them from a manually-created IServiceProvider
+    // scope. The manual scope bypassed the request lifetime, causing audit-log fields that depend on
+    // ICurrentUserService (resolved through the request scope) to be null.
     internal sealed class GrantTenantAccessHandler(
-        IServiceProvider serviceProvider,
+        IdmtDbContext dbContext,
+        UserManager<IdmtUser> userManager,
+        IMultiTenantStore<IdmtTenantInfo> tenantStore,
+        ITenantOperationService tenantOps,
+        TimeProvider timeProvider,
         ILogger<GrantTenantAccessHandler> logger
         ) : IGrantTenantAccessHandler
     {
-        public async Task<Result> HandleAsync(Guid userId, string tenantIdentifier, DateTime? expiresAt = null, CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<Success>> HandleAsync(Guid userId, string tenantIdentifier, DateTimeOffset? expiresAt = null, CancellationToken cancellationToken = default)
         {
-            IdmtUser? user = null;
-            IdmtTenantInfo? targetTenant = null;
-            IList<string> userRoles = [];
-            using (var scope = serviceProvider.CreateScope())
+            if (expiresAt.HasValue && expiresAt.Value <= timeProvider.GetUtcNow())
             {
-                var sp = scope.ServiceProvider;
-
-                try
-                {
-                    var dbContext = sp.GetRequiredService<IdmtDbContext>();
-                    var userManager = sp.GetRequiredService<UserManager<IdmtUser>>();
-                    var tenantStore = sp.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
-
-                    user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
-                    if (user is null)
-                    {
-                        return Result.Failure("User not found", StatusCodes.Status404NotFound);
-                    }
-
-                    targetTenant = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
-                    if (targetTenant is null)
-                    {
-                        return Result.Failure("Tenant not found", StatusCodes.Status404NotFound);
-                    }
-
-                    userRoles = await userManager.GetRolesAsync(user);
-                    if (userRoles.Count == 0)
-                    {
-                        logger.LogWarning("User {UserId} has no roles assigned; cannot grant tenant access.", userId);
-                        return Result.Failure("User has no roles assigned", StatusCodes.Status400BadRequest);
-                    }
-
-                    var tenantAccess = await dbContext.TenantAccess
-                        .FirstOrDefaultAsync(ta => ta.UserId == userId && ta.TenantId == targetTenant.Id, cancellationToken);
-                    if (tenantAccess is not null)
-                    {
-                        tenantAccess.IsActive = true;
-                        tenantAccess.ExpiresAt = expiresAt;
-                        dbContext.TenantAccess.Update(tenantAccess);
-                    }
-                    else
-                    {
-                        tenantAccess = new TenantAccess
-                        {
-                            UserId = userId,
-                            TenantId = targetTenant.Id,
-                            IsActive = true,
-                            ExpiresAt = expiresAt
-                        };
-                        dbContext.TenantAccess.Add(tenantAccess);
-                    }
-                    await dbContext.SaveChangesAsync(cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Error granting tenant access to user {UserId} for tenant {TenantIdentifier}", userId, tenantIdentifier);
-                    return Result.Failure("An error occurred while granting tenant access", StatusCodes.Status500InternalServerError);
-                }
+                return Error.Validation("ExpiresAt", "Expiration date must be in the future");
             }
 
-            using (var scope = serviceProvider.CreateScope())
+            IdmtUser? user;
+            IdmtTenantInfo? targetTenant;
+            IList<string> userRoles;
+
+            try
             {
-                var sp = scope.ServiceProvider;
-
-                var tenantStore = sp.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
-                var tenantInfo = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
-                if (tenantInfo is null || !tenantInfo.IsActive)
+                user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+                if (user is null)
                 {
-                    return Result.Failure("Tenant not found or inactive", StatusCodes.Status404NotFound);
+                    return IdmtErrors.User.NotFound;
                 }
-                // Set Tenant Context BEFORE resolving DbContext/Managers
-                var tenantContextSetter = sp.GetRequiredService<IMultiTenantContextSetter>();
-                var tenantContext = new MultiTenantContext<IdmtTenantInfo>(tenantInfo);
-                tenantContextSetter.MultiTenantContext = tenantContext;
 
+                targetTenant = await tenantStore.GetByIdentifierAsync(tenantIdentifier);
+                if (targetTenant is null)
+                {
+                    return IdmtErrors.Tenant.NotFound;
+                }
+
+                if (!targetTenant.IsActive)
+                {
+                    return IdmtErrors.Tenant.Inactive;
+                }
+
+                userRoles = await userManager.GetRolesAsync(user);
+                if (userRoles.Count == 0)
+                {
+                    logger.LogWarning("User {UserId} has no roles assigned; cannot grant tenant access.", userId);
+                    return IdmtErrors.User.NoRolesAssigned;
+                }
+
+                var tenantAccess = await dbContext.TenantAccess
+                    .FirstOrDefaultAsync(ta => ta.UserId == userId && ta.TenantId == targetTenant.Id, cancellationToken);
+                if (tenantAccess is not null)
+                {
+                    tenantAccess.IsActive = true;
+                    tenantAccess.ExpiresAt = expiresAt;
+                    dbContext.TenantAccess.Update(tenantAccess);
+                }
+                else
+                {
+                    tenantAccess = new TenantAccess
+                    {
+                        UserId = userId,
+                        TenantId = targetTenant.Id,
+                        IsActive = true,
+                        ExpiresAt = expiresAt
+                    };
+                    dbContext.TenantAccess.Add(tenantAccess);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error granting tenant access to user {UserId} for tenant {TenantIdentifier}", userId, tenantIdentifier);
+                return IdmtErrors.Tenant.AccessError;
+            }
+
+            // Execute tenant-scope operation BEFORE persisting TenantAccess to prevent orphaned records
+            var tenantResult = await tenantOps.ExecuteInTenantScopeAsync(tenantIdentifier, async tsp =>
+            {
                 try
                 {
-                    var targetUserManager = sp.GetRequiredService<UserManager<IdmtUser>>();
+                    var targetUserManager = tsp.GetRequiredService<UserManager<IdmtUser>>();
 
                     var targetUser = await targetUserManager.Users
                         .FirstOrDefaultAsync(u => u.Email == user.Email && u.UserName == user.UserName, cancellationToken);
 
                     if (targetUser is null)
                     {
-                        // Create new user record for the target tenant
                         targetUser = new IdmtUser
                         {
                             UserName = user.UserName,
@@ -132,8 +131,18 @@ public static class GrantTenantAccess
                             IsActive = true
                         };
 
-                        await targetUserManager.CreateAsync(targetUser);
-                        await targetUserManager.AddToRolesAsync(targetUser, userRoles);
+                        var createResult = await targetUserManager.CreateAsync(targetUser);
+                        if (!createResult.Succeeded)
+                        {
+                            logger.LogError("Failed to create user in target tenant: {Errors}", string.Join(", ", createResult.Errors.Select(e => e.Description)));
+                            return IdmtErrors.Tenant.AccessError;
+                        }
+                        var roleResult = await targetUserManager.AddToRolesAsync(targetUser, userRoles);
+                        if (!roleResult.Succeeded)
+                        {
+                            logger.LogError("Failed to assign roles in target tenant: {Errors}", string.Join(", ", roleResult.Errors.Select(e => e.Description)));
+                            return IdmtErrors.Tenant.AccessError;
+                        }
                     }
                     else
                     {
@@ -141,14 +150,67 @@ public static class GrantTenantAccess
                         await targetUserManager.UpdateAsync(targetUser);
                     }
 
-                    return Result.Success();
+                    return Result.Success;
                 }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Error granting tenant access to user {UserId} in tenant {TenantIdentifier}", userId, tenantIdentifier);
-                    return Result.Failure("An error occurred while granting tenant access", StatusCodes.Status500InternalServerError);
+                    return IdmtErrors.Tenant.AccessError;
                 }
+            });
+
+            if (tenantResult.IsError)
+            {
+                return tenantResult;
             }
+
+            // Tenant-scope operation succeeded — now persist the TenantAccess record
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex,
+                    "Failed to save TenantAccess record for user {UserId} in tenant {TenantIdentifier}. " +
+                    "Executing compensating action to deactivate user in target tenant.",
+                    userId, tenantIdentifier);
+
+                // Compensating action: deactivate the user in the target tenant
+                await tenantOps.ExecuteInTenantScopeAsync(tenantIdentifier, async tsp =>
+                {
+                    try
+                    {
+                        var compensationUserManager = tsp.GetRequiredService<UserManager<IdmtUser>>();
+                        var orphanedUser = await compensationUserManager.Users
+                            .FirstOrDefaultAsync(u => u.Email == user!.Email && u.UserName == user.UserName, cancellationToken);
+
+                        if (orphanedUser is not null)
+                        {
+                            orphanedUser.IsActive = false;
+                            await compensationUserManager.UpdateAsync(orphanedUser);
+                            logger.LogWarning(
+                                "Compensating action completed: deactivated user {Email} in tenant {TenantIdentifier} " +
+                                "after TenantAccess save failure.",
+                                user!.Email, tenantIdentifier);
+                        }
+
+                        return Result.Success;
+                    }
+                    catch (Exception compensationEx)
+                    {
+                        logger.LogCritical(compensationEx,
+                            "CRITICAL: Compensating action failed for user {UserId} in tenant {TenantIdentifier}. " +
+                            "Manual intervention required: user exists in target tenant without a TenantAccess record.",
+                            userId, tenantIdentifier);
+                        return IdmtErrors.Tenant.AccessError;
+                    }
+                });
+
+                return IdmtErrors.Tenant.AccessError;
+            }
+
+            return Result.Success;
         }
     }
 
@@ -162,18 +224,18 @@ public static class GrantTenantAccess
             CancellationToken cancellationToken) =>
         {
             var result = await handler.HandleAsync(userId, tenantIdentifier, request.ExpiresAt, cancellationToken);
-            if (!result.IsSuccess)
+            if (result.IsError)
             {
-                return result.StatusCode switch
+                return result.FirstError.Type switch
                 {
-                    StatusCodes.Status400BadRequest => TypedResults.BadRequest(),
-                    StatusCodes.Status404NotFound => TypedResults.NotFound(),
-                    _ => TypedResults.InternalServerError()
+                    ErrorType.Validation => TypedResults.BadRequest(),
+                    ErrorType.NotFound => TypedResults.NotFound(),
+                    _ => TypedResults.InternalServerError(),
                 };
             }
             return TypedResults.Ok();
         })
-        .RequireAuthorization(AuthOptions.RequireSysUserPolicy)
+        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
         .WithSummary("Grant user access to a tenant");
     }
 }

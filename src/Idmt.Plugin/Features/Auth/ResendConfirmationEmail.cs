@@ -1,4 +1,6 @@
-using System.Text.Encodings.Web;
+using ErrorOr;
+using FluentValidation;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
@@ -18,8 +20,7 @@ public static class ResendConfirmationEmail
 
     public interface IResendConfirmationEmailHandler
     {
-        Task<Result> HandleAsync(
-            bool useApiLinks,
+        Task<ErrorOr<Success>> HandleAsync(
             ResendConfirmationEmailRequest request,
             CancellationToken cancellationToken = default);
     }
@@ -31,8 +32,7 @@ public static class ResendConfirmationEmail
         ILogger<ResendConfirmationEmailHandler> logger
         ) : IResendConfirmationEmailHandler
     {
-        public async Task<Result> HandleAsync(
-            bool useApiLinks,
+        public async Task<ErrorOr<Success>> HandleAsync(
             ResendConfirmationEmailRequest request,
             CancellationToken cancellationToken = default)
         {
@@ -42,61 +42,46 @@ public static class ResendConfirmationEmail
                 if (user == null || !user.IsActive)
                 {
                     // Don't reveal whether user exists for security
-                    return Result.Success(StatusCodes.Status200OK);
+                    return Result.Success;
                 }
 
                 if (user.EmailConfirmed)
                 {
-                    return Result.Success(StatusCodes.Status200OK);
+                    return Result.Success;
                 }
 
                 // Generate email confirmation token
                 string token = await userManager.GenerateEmailConfirmationTokenAsync(user);
 
-                string confirmEmailUrl = useApiLinks
-                    ? linkGenerator.GenerateConfirmEmailApiLink(request.Email, token)
-                    : linkGenerator.GenerateConfirmEmailFormLink(request.Email, token);
+                string confirmEmailUrl = linkGenerator.GenerateConfirmEmailLink(request.Email, token);
 
-                await emailSender.SendConfirmationLinkAsync(user, request.Email, HtmlEncoder.Default.Encode(confirmEmailUrl));
+                await emailSender.SendConfirmationLinkAsync(user, request.Email, confirmEmailUrl);
 
-                return Result.Success(StatusCodes.Status200OK);
+                return Result.Success;
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error resending confirmation email to {Email}", request.Email);
-                return Result.Failure($"An error occurred while resending confirmation email: {ex.Message}", StatusCodes.Status500InternalServerError);
+                logger.LogError(ex, "Error resending confirmation email to {Email}", PiiMasker.MaskEmail(request.Email));
+                return IdmtErrors.General.Unexpected;
             }
         }
-    }
-
-    public static Dictionary<string, string[]>? Validate(this ResendConfirmationEmailRequest request)
-    {
-        if (!Validators.IsValidEmail(request.Email))
-        {
-            return new Dictionary<string, string[]>
-            {
-                ["Email"] = ["Invalid email address."]
-            };
-        }
-
-        return null;
     }
 
     public static RouteHandlerBuilder MapResendConfirmationEmailEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/resendConfirmationEmail", async Task<Results<Ok, ValidationProblem, InternalServerError>> (
-            [FromQuery] bool useApiLinks,
+        return endpoints.MapPost("/resend-confirmation-email", async Task<Results<Ok, ValidationProblem, InternalServerError>> (
             [FromBody] ResendConfirmationEmailRequest request,
             [FromServices] IResendConfirmationEmailHandler handler,
+            [FromServices] IValidator<ResendConfirmationEmailRequest> validator,
             HttpContext context) =>
         {
-            if (request.Validate() is { } validationErrors)
+            if (ValidationHelper.Validate(request, validator) is { } validationErrors)
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
 
-            var result = await handler.HandleAsync(useApiLinks, request, cancellationToken: context.RequestAborted);
-            if (!result.IsSuccess)
+            var result = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
+            if (result.IsError)
             {
                 return TypedResults.InternalServerError();
             }

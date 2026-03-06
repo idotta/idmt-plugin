@@ -75,7 +75,8 @@ public class IdmtUserClaimsPrincipalFactoryTests
             _roleManagerMock.Object,
             _identityOptionsMock.Object,
             _tenantStoreMock.Object,
-            _idmtOptionsMock.Object);
+            _idmtOptionsMock.Object,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<IdmtUserClaimsPrincipalFactory>.Instance);
     }
 
     private async Task<ClaimsIdentity> CallGenerateClaimsAsync(IdmtUser user)
@@ -213,7 +214,8 @@ public class IdmtUserClaimsPrincipalFactoryTests
             _roleManagerMock.Object,
             _identityOptionsMock.Object,
             customTenantStoreMock.Object,
-            customOptionsMock.Object);
+            customOptionsMock.Object,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<IdmtUserClaimsPrincipalFactory>.Instance);
 
         var user = new IdmtUser
         {

@@ -23,9 +23,9 @@ public sealed class TenantAccess : IAuditable
     public bool IsActive { get; set; } = true;
 
     /// <summary>
-    /// Optional expiration date
+    /// Optional expiration date (always UTC)
     /// </summary>
-    public DateTime? ExpiresAt { get; set; }
+    public DateTimeOffset? ExpiresAt { get; set; }
 
     public string GetId() => Id.ToString();
 

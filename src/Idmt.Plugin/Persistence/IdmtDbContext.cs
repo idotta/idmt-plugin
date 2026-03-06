@@ -1,9 +1,12 @@
 using Finbuckle.MultiTenant.Abstractions;
 using Finbuckle.MultiTenant.EntityFrameworkCore.Extensions;
 using Finbuckle.MultiTenant.Identity.EntityFrameworkCore;
+using Idmt.Plugin.Constants;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Microsoft.Extensions.Logging;
 
 namespace Idmt.Plugin.Persistence;
 
@@ -14,30 +17,42 @@ public class IdmtDbContext
     : MultiTenantIdentityDbContext<IdmtUser, IdmtRole, Guid>
 {
     private readonly ICurrentUserService _currentUserService;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger<IdmtDbContext> _logger;
 
     public IdmtDbContext(
-        IMultiTenantContextAccessor multiTenantContextAccessor, ICurrentUserService currentUserService)
+        IMultiTenantContextAccessor multiTenantContextAccessor, ICurrentUserService currentUserService, TimeProvider timeProvider, ILogger<IdmtDbContext> logger)
         : base(multiTenantContextAccessor)
     {
         _currentUserService = currentUserService;
+        _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     public IdmtDbContext(
         IMultiTenantContextAccessor multiTenantContextAccessor,
         DbContextOptions<IdmtDbContext> options,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        TimeProvider timeProvider,
+        ILogger<IdmtDbContext> logger)
         : base(multiTenantContextAccessor, options)
     {
         _currentUserService = currentUserService;
+        _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     protected IdmtDbContext(
         IMultiTenantContextAccessor multiTenantContextAccessor,
         DbContextOptions options,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        TimeProvider timeProvider,
+        ILogger<IdmtDbContext> logger)
         : base(multiTenantContextAccessor, options)
     {
         _currentUserService = currentUserService;
+        _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     /// <summary>
@@ -50,9 +65,26 @@ public class IdmtDbContext
     /// </summary>
     public DbSet<TenantAccess> TenantAccess { get; set; } = null!;
 
+    /// <summary>
+    /// Revoked refresh token records for token revocation tracking.
+    /// </summary>
+    public DbSet<RevokedToken> RevokedTokens { get; set; } = null!;
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        // Store DateTimeOffset as UTC ticks (long) so that range comparisons are
+        // translatable by all supported providers, including the SQLite provider
+        // used in unit tests (which cannot translate DateTimeOffset text comparisons
+        // in ExecuteDelete / ExecuteDeleteAsync).
+        var dateTimeOffsetConverter = new ValueConverter<DateTimeOffset, long>(
+            dto => dto.UtcTicks,
+            ticks => new DateTimeOffset(ticks, TimeSpan.Zero));
+
+        var nullableDateTimeOffsetConverter = new ValueConverter<DateTimeOffset?, long?>(
+            dto => dto == null ? null : dto.Value.UtcTicks,
+            ticks => ticks == null ? null : new DateTimeOffset(ticks.Value, TimeSpan.Zero));
 
         // Configure user entity with proper multi-tenant support
         builder.Entity<IdmtUser>(entity =>
@@ -60,6 +92,7 @@ public class IdmtDbContext
             entity.HasIndex(u => u.IsActive);
             entity.HasIndex(u => new { u.Email, u.UserName, u.TenantId }).IsUnique();
             entity.IsMultiTenant();
+            entity.Property(u => u.LastLoginAt).HasConversion(nullableDateTimeOffsetConverter);
         });
 
         // Configure role entity with proper multi-tenant support
@@ -77,15 +110,27 @@ public class IdmtDbContext
             entity.HasIndex(a => new { a.UserId, a.Timestamp });
             entity.HasIndex(a => new { a.TenantId, a.Timestamp });
             entity.HasIndex(a => a.Action);
+            entity.Property(a => a.Timestamp).HasConversion(dateTimeOffsetConverter);
         });
 
         // Configure tenant access
         builder.Entity<TenantAccess>(entity =>
         {
             entity.HasKey(ta => ta.Id);
-            entity.HasIndex(ta => new { ta.UserId, ta.TenantId });
+            entity.HasIndex(ta => new { ta.UserId, ta.TenantId }).IsUnique();
             entity.HasIndex(ta => ta.TenantId);
             entity.HasIndex(ta => ta.IsActive);
+            entity.Property(ta => ta.ExpiresAt).HasConversion(nullableDateTimeOffsetConverter);
+        });
+
+        // Configure revoked tokens
+        builder.Entity<RevokedToken>(entity =>
+        {
+            entity.HasKey(rt => rt.TokenId);
+            entity.Property(rt => rt.TokenId).HasMaxLength(128);
+            entity.Property(rt => rt.RevokedAt).HasConversion(dateTimeOffsetConverter);
+            entity.Property(rt => rt.ExpiresAt).HasConversion(dateTimeOffsetConverter);
+            entity.HasIndex(rt => rt.ExpiresAt);
         });
 
         // Configure TenantInfo - IdmtTenantStoreDbContext accesses this table but doesn't configure it
@@ -101,7 +146,6 @@ public class IdmtDbContext
 
             // Property configurations for custom properties
             entity.Property(ti => ti.Name).HasMaxLength(200);
-            entity.Property(ti => ti.DisplayName).HasMaxLength(200);
             entity.Property(ti => ti.Plan).HasMaxLength(100);
             entity.Property(ti => ti.IsActive).IsRequired().HasDefaultValue(true);
 
@@ -114,58 +158,70 @@ public class IdmtDbContext
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        var entries = ChangeTracker.Entries<IAuditable>().ToArray();
-
-        foreach (var entry in entries)
+        try
         {
-            if (entry.State == EntityState.Added)
+            var entries = ChangeTracker.Entries<IAuditable>().ToArray();
+
+            foreach (var entry in entries)
             {
-                AuditLogs.Add(new IdmtAuditLog
+                if (entry.State == EntityState.Added)
                 {
-                    UserId = _currentUserService.UserId,
-                    TenantId = entry.Entity.GetTenantId(),
-                    Action = "Created",
-                    Resource = entry.Entity.GetName(),
-                    ResourceId = entry.Entity.GetId(),
-                    Success = true,
-                    Timestamp = DT.UtcNow,
-                    IpAddress = _currentUserService.IpAddress,
-                    UserAgent = _currentUserService.UserAgent,
-                });
+                    AuditLogs.Add(new IdmtAuditLog
+                    {
+                        UserId = _currentUserService.UserId,
+                        TenantId = entry.Entity.GetTenantId(),
+                        Action = AuditAction.Created.ToString(),
+                        Resource = entry.Entity.GetName(),
+                        ResourceId = entry.Entity.GetId(),
+                        Success = true,
+                        Timestamp = _timeProvider.GetUtcNow(),
+                        IpAddress = _currentUserService.IpAddress,
+                        UserAgent = _currentUserService.UserAgent,
+                    });
+                }
+                else if (entry.State == EntityState.Deleted)
+                {
+                    AuditLogs.Add(new IdmtAuditLog
+                    {
+                        UserId = _currentUserService.UserId,
+                        TenantId = entry.Entity.GetTenantId(),
+                        Action = AuditAction.Deleted.ToString(),
+                        Resource = entry.Entity.GetName(),
+                        ResourceId = entry.Entity.GetId(),
+                        Success = true,
+                        Timestamp = _timeProvider.GetUtcNow(),
+                        IpAddress = _currentUserService.IpAddress,
+                        UserAgent = _currentUserService.UserAgent,
+                    });
+                }
+                else if (entry.State == EntityState.Modified)
+                {
+                    string details = string.Join("\n", entry.Properties
+                        .Where(prop => prop.IsModified)
+                        .Select(prop => prop.Metadata.Name));
+                    AuditLogs.Add(new IdmtAuditLog
+                    {
+                        UserId = _currentUserService.UserId,
+                        TenantId = entry.Entity.GetTenantId(),
+                        Action = AuditAction.Modified.ToString(),
+                        Resource = entry.Entity.GetName(),
+                        ResourceId = entry.Entity.GetId(),
+                        Details = details,
+                        Success = true,
+                        Timestamp = _timeProvider.GetUtcNow(),
+                        IpAddress = _currentUserService.IpAddress,
+                        UserAgent = _currentUserService.UserAgent,
+                    });
+                }
             }
-            else if (entry.State == EntityState.Deleted)
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Audit logging failed during SaveChangesAsync");
+            foreach (var entry in ChangeTracker.Entries<IdmtAuditLog>()
+                .Where(e => e.State == EntityState.Added).ToList())
             {
-                AuditLogs.Add(new IdmtAuditLog
-                {
-                    UserId = _currentUserService.UserId,
-                    TenantId = entry.Entity.GetTenantId(),
-                    Action = "Deleted",
-                    Resource = entry.Entity.GetName(),
-                    ResourceId = entry.Entity.GetId(),
-                    Success = true,
-                    Timestamp = DT.UtcNow,
-                    IpAddress = _currentUserService.IpAddress,
-                    UserAgent = _currentUserService.UserAgent,
-                });
-            }
-            else if (entry.State == EntityState.Modified)
-            {
-                string details = string.Join("\n", entry.Properties
-                    .Where(prop => prop.IsModified)
-                    .Select(prop => prop.Metadata.Name));
-                AuditLogs.Add(new IdmtAuditLog
-                {
-                    UserId = _currentUserService.UserId,
-                    TenantId = entry.Entity.GetTenantId(),
-                    Action = "Modified",
-                    Resource = entry.Entity.GetName(),
-                    ResourceId = entry.Entity.GetId(),
-                    Details = details,
-                    Success = true,
-                    Timestamp = DT.UtcNow,
-                    IpAddress = _currentUserService.IpAddress,
-                    UserAgent = _currentUserService.UserAgent,
-                });
+                entry.State = EntityState.Detached;
             }
         }
 
@@ -173,5 +229,5 @@ public class IdmtDbContext
     }
 
     public override int SaveChanges() =>
-        SaveChangesAsync(CancellationToken.None).GetAwaiter().GetResult();
+        throw new NotSupportedException("Use SaveChangesAsync. Sync SaveChanges is not supported in IdmtDbContext.");
 }

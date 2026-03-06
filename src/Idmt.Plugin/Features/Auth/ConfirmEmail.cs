@@ -1,6 +1,9 @@
-using Finbuckle.MultiTenant.Abstractions;
+using ErrorOr;
+using FluentValidation;
 using Idmt.Plugin.Configuration;
+using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -19,110 +22,117 @@ public static class ConfirmEmail
 
     public interface IConfirmEmailHandler
     {
-        Task<Result> HandleAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default);
+        Task<ErrorOr<Success>> HandleAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default);
     }
 
-    internal sealed class ConfirmEmailHandler(IServiceProvider serviceProvider, ILogger<ConfirmEmailHandler> logger) : IConfirmEmailHandler
+    internal sealed class ConfirmEmailHandler(ITenantOperationService tenantOps, ILogger<ConfirmEmailHandler> logger) : IConfirmEmailHandler
     {
-        public async Task<Result> HandleAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default)
+        public async Task<ErrorOr<Success>> HandleAsync(ConfirmEmailRequest request, CancellationToken cancellationToken = default)
         {
-            using var scope = serviceProvider.CreateScope();
-            var provider = scope.ServiceProvider;
-
-            var tenantStore = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
-            var tenantInfo = await tenantStore.GetByIdentifierAsync(request.TenantIdentifier);
-            if (tenantInfo is null || !tenantInfo.IsActive)
+            return await tenantOps.ExecuteInTenantScopeAsync(request.TenantIdentifier, async provider =>
             {
-                return Result.Failure("Invalid tenant", StatusCodes.Status400BadRequest);
-            }
-            // Set Tenant Context BEFORE resolving DbContext/Managers
-            var tenantContextSetter = provider.GetRequiredService<IMultiTenantContextSetter>();
-            var tenantContext = new MultiTenantContext<IdmtTenantInfo>(tenantInfo);
-            tenantContextSetter.MultiTenantContext = tenantContext;
-
-            var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
-            try
-            {
-                var user = await userManager.FindByEmailAsync(request.Email);
-                if (user == null)
+                var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
+                try
                 {
-                    // Avoid revealing that the email does not exist
-                    return Result.Failure("User not found", StatusCodes.Status400BadRequest);
+                    var user = await userManager.FindByEmailAsync(request.Email);
+                    if (user == null)
+                    {
+                        return IdmtErrors.Email.ConfirmationFailed;
+                    }
+
+                    var result = await userManager.ConfirmEmailAsync(user, request.Token!);
+
+                    if (!result.Succeeded)
+                    {
+                        return IdmtErrors.Email.ConfirmationFailed;
+                    }
+
+                    return Result.Success;
                 }
-
-                // Reset password using the token
-                var result = await userManager.ConfirmEmailAsync(user, request.Token!);
-
-                if (!result.Succeeded)
+                catch (Exception ex)
                 {
-                    var errors = string.Join("\n", result.Errors.Select(e => e.Description));
-                    return Result.Failure(errors, StatusCodes.Status400BadRequest);
+                    logger.LogError(ex, "Error confirming email for {Email} in tenant {TenantIdentifier}", PiiMasker.MaskEmail(request.Email), request.TenantIdentifier);
+                    return IdmtErrors.General.Unexpected;
                 }
-
-                return Result.Success();
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error confirming email for {Email} in tenant {TenantIdentifier}", request.Email, request.TenantIdentifier);
-                return Result.Failure(ex.Message, StatusCodes.Status500InternalServerError);
-            }
+            });
         }
-    }
-
-    public static Dictionary<string, string[]>? Validate(this ConfirmEmailRequest request)
-    {
-        var errors = new Dictionary<string, string[]>();
-
-        if (string.IsNullOrEmpty(request.TenantIdentifier))
-        {
-            errors["TenantIdentifier"] = ["Tenant identifier is required"];
-        }
-        if (string.IsNullOrEmpty(request.Email))
-        {
-            errors["Email"] = ["Email is required"];
-        }
-        if (!Validators.IsValidEmail(request.Email))
-        {
-            errors["Email"] = ["Invalid email address"];
-        }
-        if (string.IsNullOrEmpty(request.Token))
-        {
-            errors["Token"] = ["Token is required"];
-        }
-
-        return errors.Count == 0 ? null : errors;
     }
 
     public static RouteHandlerBuilder MapConfirmEmailEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapGet("/confirmEmail", async Task<Results<Ok, ValidationProblem, BadRequest, InternalServerError>> (
-            [FromQuery] string tenantIdentifier,
-            [FromQuery] string email,
-            [FromQuery] string token,
+        return endpoints.MapPost("/confirm-email", async Task<Results<Ok, ValidationProblem, BadRequest, InternalServerError>> (
+            [FromBody] ConfirmEmailRequest request,
             [FromServices] IConfirmEmailHandler handler,
-            IServiceProvider sp,
+            [FromServices] IValidator<ConfirmEmailRequest> validator,
             HttpContext context) =>
         {
-            var request = new ConfirmEmailRequest(tenantIdentifier, email, token);
-            if (request.Validate() is { } validationErrors)
+            if (ValidationHelper.Validate(request, validator) is { } validationErrors)
             {
                 return TypedResults.ValidationProblem(validationErrors);
             }
 
-            var result = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
-
-            if (!result.IsSuccess)
+            // Decode Base64URL-encoded token
+            string decodedToken;
+            try
             {
-                return result.StatusCode switch
+                decodedToken = Base64Service.DecodeBase64UrlToken(request.Token);
+            }
+            catch (FormatException)
+            {
+                return TypedResults.BadRequest();
+            }
+
+            var decodedRequest = request with { Token = decodedToken };
+            var result = await handler.HandleAsync(decodedRequest, cancellationToken: context.RequestAborted);
+
+            if (result.IsError)
+            {
+                return result.FirstError.Type switch
                 {
-                    StatusCodes.Status400BadRequest => TypedResults.BadRequest(),
+                    ErrorType.NotFound => TypedResults.BadRequest(),
+                    ErrorType.Failure => TypedResults.BadRequest(),
                     _ => TypedResults.InternalServerError(),
                 };
             }
             return TypedResults.Ok();
         })
-        .WithName(ApplicationOptions.ConfirmEmailEndpointName)
+        .WithName(IdmtEndpointNames.ConfirmEmail)
         .WithSummary("Confirm email")
         .WithDescription("Confirm user email address");
+    }
+
+    public static RouteHandlerBuilder MapConfirmEmailDirectEndpoint(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapGet("/confirm-email", async Task<Results<Ok, BadRequest>> (
+            [FromQuery] string tenantIdentifier,
+            [FromQuery] string email,
+            [FromQuery] string token,
+            [FromServices] IConfirmEmailHandler handler,
+            HttpContext context) =>
+        {
+            // Decode Base64URL-encoded token
+            string decodedToken;
+            try
+            {
+                decodedToken = Base64Service.DecodeBase64UrlToken(token);
+            }
+            catch (FormatException)
+            {
+                return TypedResults.BadRequest();
+            }
+
+            var request = new ConfirmEmailRequest(tenantIdentifier, email, decodedToken);
+            var result = await handler.HandleAsync(request, cancellationToken: context.RequestAborted);
+
+            if (result.IsError)
+            {
+                return TypedResults.BadRequest();
+            }
+
+            return TypedResults.Ok();
+        })
+        .WithName(IdmtEndpointNames.ConfirmEmailDirect)
+        .WithSummary("Confirm email directly")
+        .WithDescription("Directly confirms user email address via GET link from email");
     }
 }

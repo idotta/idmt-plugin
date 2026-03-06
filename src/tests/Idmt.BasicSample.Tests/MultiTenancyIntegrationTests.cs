@@ -28,8 +28,8 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
         using var scope = Factory.Services.CreateScope();
         var handler = scope.ServiceProvider.GetRequiredService<CreateTenant.ICreateTenantHandler>();
 
-        await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantA, TenantA, "Tenant A"));
-        await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantB, TenantB, "Tenant B"));
+        await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantA, TenantA));
+        await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantB, TenantB));
     }
 
     private async Task CreateUserInTenantAsync(string tenantIdentifier, string email, string password, string role = IdmtDefaultRoleTypes.TenantAdmin)
@@ -186,28 +186,28 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
     }
 
     [Fact]
-    public async Task User_in_other_tenant_cannot_see_system_info_for_current_tenant()
+    public async Task User_in_other_tenant_cannot_access_protected_endpoint_for_current_tenant()
     {
         await EnsureTenantsExistAsync();
 
         // Create user in Tenant A
-        var emailA = $"sysinfo-{Guid.NewGuid():N}@example.com";
+        var emailA = $"crosstoken-{Guid.NewGuid():N}@example.com";
         var passwordA = "PasswordA1!";
         await CreateUserInTenantAsync(TenantA, emailA, passwordA, IdmtDefaultRoleTypes.SysSupport);
 
-        // Get system info for Tenant A
+        // Login as Tenant A user
         var clientA = Factory.CreateClientWithTenant(TenantA);
         var loginA = await clientA.PostAsJsonAsync("/auth/token", new { Email = emailA, Password = passwordA });
         var tokens = await loginA.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
 
         clientA.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
-        var infoResponseA = await clientA.GetAsync("/admin/info");
-        var infoA = await infoResponseA.Content.ReadFromJsonAsync<GetSystemInfo.SystemInfoResponse>();
+        var infoResponseA = await clientA.GetAsync("/manage/info");
+        Assert.True(infoResponseA.IsSuccessStatusCode);
 
         // Try to access Tenant B with Tenant A token
         var clientB = Factory.CreateClientWithTenant(TenantB);
         clientB.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
-        var infoResponseB = await clientB.GetAsync("/admin/info");
+        var infoResponseB = await clientB.GetAsync("/manage/info");
 
         Assert.Contains(infoResponseB.StatusCode, new[] { HttpStatusCode.NotFound, HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
     }
@@ -296,21 +296,21 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
         using var adminClientA = Factory.CreateClientWithTenant(TenantA);
         var admin = await CreateAdminForTenantAsync(adminClientA, TenantA, initialAdminEmail, initialAdminPassword);
 
-        var registerResponse = await admin.PostAsJsonAsync("/manage/users?useApiLinks=false", new
+        var registerResponse = await admin.PostAsJsonAsync("/manage/users", new
         {
             Email = emailA,
             Username = usernameA,
             Role = IdmtDefaultRoleTypes.TenantAdmin
         });
         await registerResponse.AssertSuccess();
-        var registerResult = await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>();
 
         // 2. Set Password
         const string setupPassword = "SetupPassword1!";
+        var setupToken = await GeneratePasswordResetTokenAsync(emailA, TenantA);
         using var publicClient = Factory.CreateClient();
         var resetResponse = await publicClient.PostAsJsonAsync(
-            $"/auth/resetPassword?tenantIdentifier={TenantA}&email={emailA}&token={Uri.EscapeDataString(registerResult!.PasswordSetupToken!)}",
-            new { NewPassword = setupPassword });
+            "/auth/reset-password",
+            new { TenantIdentifier = TenantA, Email = emailA, Token = EncodeToken(setupToken), NewPassword = setupPassword });
         await resetResponse.AssertSuccess();
 
         // 3. Login in Tenant A (Success)
