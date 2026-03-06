@@ -171,7 +171,7 @@ public static class Login
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "An error occurred during login for identifier {Email} {Username}", PiiMasker.MaskEmail(request.Email), request.Username ?? "unknown");
+                logger.LogError(ex, "An error occurred during login for identifier {Email} {Username}", PiiMasker.MaskEmail(request.Email), PiiMasker.MaskEmail(request.Username));
                 return IdmtErrors.General.Unexpected;
             }
         }
@@ -316,7 +316,7 @@ public static class Login
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "An error occurred during login for identifier {Email} {Username}", PiiMasker.MaskEmail(request.Email), request.Username ?? "unknown");
+                logger.LogError(ex, "An error occurred during login for identifier {Email} {Username}", PiiMasker.MaskEmail(request.Email), PiiMasker.MaskEmail(request.Username));
                 return IdmtErrors.General.Unexpected;
             }
         }

@@ -38,7 +38,7 @@ public static class GetUserTenants
         {
             try
             {
-                var now = timeProvider.GetUtcNow().UtcDateTime;
+                var now = timeProvider.GetUtcNow();
 
                 // Base query: join TenantAccess with TenantInfo, ordered deterministically.
                 var query = dbContext.TenantAccess

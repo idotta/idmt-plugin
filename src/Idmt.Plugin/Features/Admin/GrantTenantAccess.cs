@@ -235,7 +235,7 @@ public static class GrantTenantAccess
             }
             return TypedResults.Ok();
         })
-        .RequireAuthorization(IdmtAuthOptions.RequireSysAdminPolicy)
+        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
         .WithSummary("Grant user access to a tenant");
     }
 }

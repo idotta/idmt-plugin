@@ -109,7 +109,7 @@ public static class RevokeTenantAccess
             }
             return TypedResults.NoContent();
         })
-        .RequireAuthorization(IdmtAuthOptions.RequireSysAdminPolicy)
+        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
         .WithSummary("Revoke user access from a tenant");
     }
 }
