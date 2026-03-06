@@ -478,6 +478,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ResendConfirmationEmail.IResendConfirmationEmailHandler, ResendConfirmationEmail.ResendConfirmationEmailHandler>();
         services.AddScoped<ForgotPassword.IForgotPasswordHandler, ForgotPassword.ForgotPasswordHandler>();
         services.AddScoped<ResetPassword.IResetPasswordHandler, ResetPassword.ResetPasswordHandler>();
+        services.AddScoped<DiscoverTenants.IDiscoverTenantsHandler, DiscoverTenants.DiscoverTenantsHandler>();
 
         // Auth/Manage
         services.AddScoped<RegisterUser.IRegisterUserHandler, RegisterUser.RegisterHandler>();

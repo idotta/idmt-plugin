@@ -27,7 +27,7 @@ function createHeaders(includeAuth = true) {
     // Add tenant header
     const tenantId = getTenantId();
     if (tenantId) {
-        headers['__tenant__'] = tenantId;
+        headers['__tenant-identifier__'] = tenantId;
     }
     
     // Add authorization if needed
@@ -123,6 +123,16 @@ function clearToken() {
 // ============================================
 // Authentication Endpoints
 // ============================================
+
+async function discoverTenants() {
+    const email = document.getElementById('discoverEmail').value;
+
+    await apiRequest('/auth/discover-tenants', {
+        method: 'POST',
+        includeAuth: false,
+        body: JSON.stringify({ email })
+    });
+}
 
 async function login() {
     const email = document.getElementById('loginEmail').value;

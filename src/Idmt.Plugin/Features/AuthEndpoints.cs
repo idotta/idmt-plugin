@@ -41,5 +41,6 @@ public static class AuthEndpoints
         auth.MapResendConfirmationEmailEndpoint();
         auth.MapForgotPasswordEndpoint();
         auth.MapResetPasswordEndpoint();
+        auth.MapDiscoverTenantsEndpoint();
     }
 }

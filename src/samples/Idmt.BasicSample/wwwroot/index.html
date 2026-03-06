@@ -59,6 +59,14 @@
             <h2>Authentication (/auth)</h2>
             
             <div class="endpoint-group">
+                <h3>POST /auth/discover-tenants</h3>
+                <div class="form-group">
+                    <input type="email" id="discoverEmail" placeholder="Email" value="testadmin@example.com">
+                </div>
+                <button onclick="discoverTenants()">Discover Tenants</button>
+            </div>
+
+            <div class="endpoint-group">
                 <h3>POST /auth/login (Cookie-based)</h3>
                 <div class="form-group">
                     <input type="email" id="loginEmail" placeholder="Email" value="testadmin@example.com">
