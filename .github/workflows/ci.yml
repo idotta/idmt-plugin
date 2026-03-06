@@ -20,19 +20,19 @@ jobs:
         dotnet-version: 9.0.x
 
     - name: Restore dependencies
-      run: dotnet restore src/Idmt.sln
+      run: dotnet restore src/Idmt.slnx
 
     - name: Format check
-      run: dotnet format src/Idmt.sln --verify-no-changes --verbosity diagnostic
+      run: dotnet format src/Idmt.slnx --verify-no-changes --verbosity diagnostic
 
     - name: Build
-      run: dotnet build src/Idmt.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=true
+      run: dotnet build src/Idmt.slnx --no-restore --configuration Release /p:TreatWarningsAsErrors=true
     
     - name: Run analyzers
-      run: dotnet build src/Idmt.sln --no-restore --configuration Release /p:RunAnalyzers=true /p:EnforceCodeStyleInBuild=true
+      run: dotnet build src/Idmt.slnx --no-restore --configuration Release /p:RunAnalyzers=true /p:EnforceCodeStyleInBuild=true
 
     - name: Test
-      run: dotnet test src/Idmt.sln --no-build --configuration Release --verbosity normal
+      run: dotnet test src/Idmt.slnx --no-build --configuration Release --verbosity normal
 
     - name: Pack
       run: dotnet pack src/Idmt.Plugin/Idmt.Plugin.csproj --no-build --configuration Release --output .
