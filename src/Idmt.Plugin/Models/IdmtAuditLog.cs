@@ -53,7 +53,7 @@ public class IdmtAuditLog
     /// <summary>
     /// When this action occurred.
     /// </summary>
-    public DateTime Timestamp { get; set; }
+    public DateTimeOffset Timestamp { get; set; }
 
     /// <summary>
     /// Whether this was a successful action.

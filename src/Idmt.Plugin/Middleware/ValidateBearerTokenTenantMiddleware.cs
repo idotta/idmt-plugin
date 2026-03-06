@@ -1,6 +1,7 @@
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -13,12 +14,13 @@ public class ValidateBearerTokenTenantMiddleware(
 {
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
-        // Validate tenant isolation on bearer token authentication
-        // When a bearer token is used, ensure the token's tenant claim matches the current tenant context
+        // Validate tenant isolation on bearer token authentication.
+        // When a bearer token is used, ensure the token's tenant claim matches the current
+        // tenant context so that a token issued for Tenant A cannot be used against Tenant B.
         if (context.User.Identity?.IsAuthenticated == true &&
             context.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
         {
-            if (!ValidateTokenTenant(context, tenantContextAccessor))
+            if (!await ValidateTokenTenantAsync(context, tenantContextAccessor))
             {
                 return; // Tenant validation failed, response already set, don't call next
             }
@@ -30,9 +32,10 @@ public class ValidateBearerTokenTenantMiddleware(
     /// <summary>
     /// Validates that the tenant in the bearer token matches the currently resolved tenant.
     /// This prevents users from using a token from Tenant A to access Tenant B resources.
-    /// Returns false if validation fails and sets appropriate response, true if validation passes.
+    /// Returns false if validation fails and writes a ProblemDetails JSON body, true if
+    /// validation passes.
     /// </summary>
-    private bool ValidateTokenTenant(
+    private async Task<bool> ValidateTokenTenantAsync(
         HttpContext context,
         IMultiTenantContextAccessor tenantContextAccessor)
     {
@@ -42,7 +45,11 @@ public class ValidateBearerTokenTenantMiddleware(
             if (currentTenant is null)
             {
                 logger.LogWarning("Bearer token authentication used but no tenant context was resolved. Rejecting request.");
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await WriteProblemDetailsAsync(
+                    context,
+                    StatusCodes.Status401Unauthorized,
+                    "Unauthorized",
+                    "No tenant context could be resolved for this request.");
                 return false;
             }
 
@@ -57,15 +64,24 @@ public class ValidateBearerTokenTenantMiddleware(
             // If no tenant claim is present in the token, reject the request for security
             if (string.IsNullOrEmpty(tokenTenantClaim))
             {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await WriteProblemDetailsAsync(
+                    context,
+                    StatusCodes.Status401Unauthorized,
+                    "Unauthorized",
+                    "The bearer token does not contain a required tenant claim.");
                 return false;
             }
 
-            // Validate that the token's tenant identifier matches the current request's tenant identifier
-            // The factory adds tenantInfo.Identifier to the claim, so we compare with Identifier, not Id
+            // Validate that the token's tenant identifier matches the current request's tenant
+            // identifier. The factory adds tenantInfo.Identifier to the claim, so we compare
+            // with Identifier, not Id.
             if (!tokenTenantClaim.Equals(currentTenant.Identifier, StringComparison.Ordinal))
             {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await WriteProblemDetailsAsync(
+                    context,
+                    StatusCodes.Status403Forbidden,
+                    "Forbidden",
+                    "The bearer token was not issued for the requested tenant.");
                 return false;
             }
 
@@ -74,8 +90,31 @@ public class ValidateBearerTokenTenantMiddleware(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Error validating bearer token tenant");
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await WriteProblemDetailsAsync(
+                context,
+                StatusCodes.Status401Unauthorized,
+                "Unauthorized",
+                "An error occurred while validating the bearer token tenant.");
             return false;
         }
+    }
+
+    private static async Task WriteProblemDetailsAsync(
+        HttpContext context,
+        int statusCode,
+        string title,
+        string detail)
+    {
+        context.Response.StatusCode = statusCode;
+        context.Response.ContentType = "application/problem+json";
+        var problemDetails = new ProblemDetails
+        {
+            Status = statusCode,
+            Title = title,
+            Detail = detail
+        };
+        await context.Response.WriteAsJsonAsync(problemDetails, problemDetails.GetType(),
+            options: null, contentType: "application/problem+json",
+            cancellationToken: context.RequestAborted);
     }
 }

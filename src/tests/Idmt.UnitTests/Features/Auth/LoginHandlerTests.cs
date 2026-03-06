@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Finbuckle.MultiTenant.Abstractions;
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Authentication;
@@ -60,6 +61,7 @@ public class LoginHandlerTests
             _userManagerMock.Object,
             _signInManagerMock.Object,
             _tenantAccessorMock.Object,
+            Options.Create(new IdmtOptions()),
             _timeProviderMock.Object,
             NullLogger<Login.LoginHandler>.Instance);
     }
@@ -147,6 +149,21 @@ public class LoginHandlerTests
 
         Assert.True(result.IsError);
         Assert.Equal("Auth.Unauthorized", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task ReturnsLockedOut_WhenPasswordCheckReturnsLockedOut()
+    {
+        SetupActiveTenant();
+        var user = CreateActiveUser();
+        _userManagerMock.Setup(x => x.FindByEmailAsync("test@example.com")).ReturnsAsync(user);
+        _signInManagerMock.Setup(x => x.CheckPasswordSignInAsync(user, "Password123!", true))
+            .ReturnsAsync(SignInResult.LockedOut);
+
+        var result = await _handler.HandleAsync(CreateRequest());
+
+        Assert.True(result.IsError);
+        Assert.Equal("Auth.LockedOut", result.FirstError.Code);
     }
 
     [Fact]

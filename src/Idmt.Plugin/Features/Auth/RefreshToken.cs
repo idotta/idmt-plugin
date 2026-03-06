@@ -67,8 +67,8 @@ public static class RefreshToken
             }
 
             // Check if this token has been revoked
-            var issuedAt = refreshTicket.Properties.IssuedUtc?.UtcDateTime
-                ?? (expiresUtc - idmtOptions.Value.Identity.Bearer.RefreshTokenExpiration).UtcDateTime;
+            var issuedAt = refreshTicket.Properties.IssuedUtc
+                ?? expiresUtc - idmtOptions.Value.Identity.Bearer.RefreshTokenExpiration;
             var tenantId = tenantContextAccessor.MultiTenantContext?.TenantInfo?.Id;
 
             if (tenantId is not null && await tokenRevocationService.IsTokenRevokedAsync(user.Id, tenantId, issuedAt, cancellationToken))

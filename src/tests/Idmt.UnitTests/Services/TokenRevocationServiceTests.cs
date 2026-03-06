@@ -63,8 +63,8 @@ public class TokenRevocationServiceTests : IDisposable
     public async Task IsTokenRevokedAsync_ReturnsTrue_WhenTokenIssuedBeforeRevocation()
     {
         // Arrange: revoke at T=20, token issued at T=10
-        var revokedAt = new DateTime(2026, 3, 4, 0, 0, 20, DateTimeKind.Utc);
-        var issuedAt = new DateTime(2026, 3, 4, 0, 0, 10, DateTimeKind.Utc);
+        var revokedAt = new DateTimeOffset(2026, 3, 4, 0, 0, 20, TimeSpan.Zero);
+        var issuedAt = new DateTimeOffset(2026, 3, 4, 0, 0, 10, TimeSpan.Zero);
 
         _dbContext.RevokedTokens.Add(new RevokedToken
         {
@@ -85,8 +85,8 @@ public class TokenRevocationServiceTests : IDisposable
     public async Task IsTokenRevokedAsync_ReturnsFalse_WhenTokenIssuedAfterRevocation()
     {
         // Arrange: revoke at T=20, token issued at T=30
-        var revokedAt = new DateTime(2026, 3, 4, 0, 0, 20, DateTimeKind.Utc);
-        var issuedAt = new DateTime(2026, 3, 4, 0, 0, 30, DateTimeKind.Utc);
+        var revokedAt = new DateTimeOffset(2026, 3, 4, 0, 0, 20, TimeSpan.Zero);
+        var issuedAt = new DateTimeOffset(2026, 3, 4, 0, 0, 30, TimeSpan.Zero);
 
         _dbContext.RevokedTokens.Add(new RevokedToken
         {
@@ -107,8 +107,8 @@ public class TokenRevocationServiceTests : IDisposable
     public async Task IsTokenRevokedAsync_ReturnsFalse_WhenTokenIssuedAtExactRevocationTime()
     {
         // Arrange: revoke at T=20, token issued at T=20 (boundary: strict < means NOT revoked)
-        var revokedAt = new DateTime(2026, 3, 4, 0, 0, 20, DateTimeKind.Utc);
-        var issuedAt = new DateTime(2026, 3, 4, 0, 0, 20, DateTimeKind.Utc);
+        var revokedAt = new DateTimeOffset(2026, 3, 4, 0, 0, 20, TimeSpan.Zero);
+        var issuedAt = new DateTimeOffset(2026, 3, 4, 0, 0, 20, TimeSpan.Zero);
 
         _dbContext.RevokedTokens.Add(new RevokedToken
         {
@@ -129,7 +129,7 @@ public class TokenRevocationServiceTests : IDisposable
     public async Task IsTokenRevokedAsync_ReturnsFalse_WhenNoRevocationExists()
     {
         // Arrange: no revocation record in the database
-        var issuedAt = new DateTime(2026, 3, 4, 0, 0, 10, DateTimeKind.Utc);
+        var issuedAt = new DateTimeOffset(2026, 3, 4, 0, 0, 10, TimeSpan.Zero);
 
         // Act
         var result = await _sut.IsTokenRevokedAsync(UserId, TenantId, issuedAt);
@@ -142,7 +142,7 @@ public class TokenRevocationServiceTests : IDisposable
     public async Task RevokeUserTokensAsync_CreatesNewRecord_WhenNoneExists()
     {
         // Arrange
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
         var expectedTokenId = $"{UserId}:{TenantId}";
         var expectedExpiration = TimeSpan.FromDays(30); // default RefreshTokenExpiration
 
@@ -161,7 +161,7 @@ public class TokenRevocationServiceTests : IDisposable
     public async Task RevokeUserTokensAsync_UpdatesExpiresAt_WhenRecordAlreadyExists()
     {
         // Arrange: create an initial revocation record
-        var initialTime = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+        var initialTime = new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero);
         var tokenId = $"{UserId}:{TenantId}";
 
         _dbContext.RevokedTokens.Add(new RevokedToken
@@ -174,7 +174,7 @@ public class TokenRevocationServiceTests : IDisposable
 
         // Advance time so we can observe the ExpiresAt update
         _timeProvider.Advance(TimeSpan.FromHours(1));
-        var expectedNow = _timeProvider.GetUtcNow().UtcDateTime;
+        var expectedNow = _timeProvider.GetUtcNow();
 
         // Act
         await _sut.RevokeUserTokensAsync(UserId, TenantId);
@@ -189,7 +189,7 @@ public class TokenRevocationServiceTests : IDisposable
     public async Task RevokeUserTokensAsync_DoesNotMoveRevokedAt_WhenRecordAlreadyExists()
     {
         // Arrange: seed a record with a known original RevokedAt timestamp
-        var originalRevokedAt = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc);
+        var originalRevokedAt = new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero);
         var tokenId = $"{UserId}:{TenantId}";
 
         _dbContext.RevokedTokens.Add(new RevokedToken
@@ -202,7 +202,7 @@ public class TokenRevocationServiceTests : IDisposable
 
         // Advance the clock so that re-revoking would use a later timestamp
         _timeProvider.Advance(TimeSpan.FromHours(6));
-        var laterTime = _timeProvider.GetUtcNow().UtcDateTime;
+        var laterTime = _timeProvider.GetUtcNow();
 
         // Sanity-check: the later time really is after the original
         Assert.True(laterTime > originalRevokedAt);
@@ -224,7 +224,7 @@ public class TokenRevocationServiceTests : IDisposable
     public async Task CleanupExpiredAsync_DeletesOnlyExpiredRecords()
     {
         // Arrange: add two records -- one expired, one still valid
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = _timeProvider.GetUtcNow();
 
         var expiredRecord = new RevokedToken
         {
@@ -280,7 +280,7 @@ public class TokenRevocationServiceTests : IDisposable
     {
         // Arrange: simulate the state left by the "winning" concurrent insert —
         // a record already exists in the database before our call begins.
-        var winnerRevokedAt = new DateTime(2026, 3, 4, 12, 0, 0, DateTimeKind.Utc);
+        var winnerRevokedAt = new DateTimeOffset(2026, 3, 4, 12, 0, 0, TimeSpan.Zero);
         var tokenId = $"{UserId}:{TenantId}";
 
         _dbContext.RevokedTokens.Add(new RevokedToken
@@ -294,7 +294,7 @@ public class TokenRevocationServiceTests : IDisposable
         // Advance the clock slightly so the second caller's ExpiresAt differs
         // from the winner's — this lets us assert the slide-forward happened.
         _timeProvider.Advance(TimeSpan.FromSeconds(5));
-        var secondCallerNow = _timeProvider.GetUtcNow().UtcDateTime;
+        var secondCallerNow = _timeProvider.GetUtcNow();
 
         // Act: the "losing" caller arrives after the winner has already inserted.
         // Because FindAsync now returns the existing record, the service takes the

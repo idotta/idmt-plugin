@@ -16,7 +16,7 @@ internal sealed class TokenRevocationService(
     public async Task RevokeUserTokensAsync(Guid userId, string tenantId, CancellationToken cancellationToken = default)
     {
         var tokenId = BuildTokenId(userId, tenantId);
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         var expiresAt = now.Add(idmtOptions.Value.Identity.Bearer.RefreshTokenExpiration);
 
         var existing = await dbContext.RevokedTokens.FindAsync([tokenId], cancellationToken);
@@ -62,7 +62,7 @@ internal sealed class TokenRevocationService(
         logger.LogInformation("Revoked all refresh tokens for user {UserId} in tenant {TenantId}", userId, tenantId);
     }
 
-    public async Task<bool> IsTokenRevokedAsync(Guid userId, string tenantId, DateTime issuedAt, CancellationToken cancellationToken = default)
+    public async Task<bool> IsTokenRevokedAsync(Guid userId, string tenantId, DateTimeOffset issuedAt, CancellationToken cancellationToken = default)
     {
         var tokenId = BuildTokenId(userId, tenantId);
         var revocation = await dbContext.RevokedTokens
@@ -75,7 +75,7 @@ internal sealed class TokenRevocationService(
 
     public async Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow();
         var count = await dbContext.RevokedTokens
             .Where(rt => rt.ExpiresAt < now)
             .ExecuteDeleteAsync(cancellationToken);

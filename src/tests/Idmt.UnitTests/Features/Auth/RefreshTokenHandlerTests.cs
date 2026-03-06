@@ -261,7 +261,7 @@ public class RefreshTokenHandlerTests
         SetupTenantContext(TestTenantIdentifier, tenantId);
 
         _tokenRevocationServiceMock
-            .Setup(x => x.IsTokenRevokedAsync(user.Id, tenantId, issuedUtc.UtcDateTime, It.IsAny<CancellationToken>()))
+            .Setup(x => x.IsTokenRevokedAsync(user.Id, tenantId, issuedUtc, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var request = new RefreshToken.RefreshTokenRequest("revoked-token");

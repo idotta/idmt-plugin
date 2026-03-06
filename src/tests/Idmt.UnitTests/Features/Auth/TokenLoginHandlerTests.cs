@@ -147,6 +147,21 @@ public class TokenLoginHandlerTests
     }
 
     [Fact]
+    public async Task ReturnsLockedOut_WhenPasswordCheckReturnsLockedOut()
+    {
+        SetupActiveTenant();
+        var user = CreateActiveUser();
+        _userManagerMock.Setup(x => x.FindByEmailAsync("test@example.com")).ReturnsAsync(user);
+        _signInManagerMock.Setup(x => x.CheckPasswordSignInAsync(user, "Password123!", true))
+            .ReturnsAsync(SignInResult.LockedOut);
+
+        var result = await _handler.HandleAsync(CreateRequest());
+
+        Assert.True(result.IsError);
+        Assert.Equal("Auth.LockedOut", result.FirstError.Code);
+    }
+
+    [Fact]
     public async Task ReturnsTokenResponse_OnSuccessfulLogin()
     {
         SetupActiveTenant();

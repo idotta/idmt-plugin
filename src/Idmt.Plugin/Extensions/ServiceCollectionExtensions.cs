@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using FluentValidation;
@@ -44,6 +45,41 @@ public static class ServiceCollectionExtensions
     /// <param name="configureDb">Optional action to configure the DbContext</param>
     /// <param name="configureOptions">Optional action to configure IDMT options</param>
     /// <returns>The service collection for method chaining</returns>
+    /// <remarks>
+    /// <para><b>OpenAPI / Swagger security scheme</b></para>
+    /// <para>
+    /// This library does not configure OpenAPI itself — the host application owns that
+    /// concern. To make the Bearer token visible in the generated OpenAPI document and
+    /// in Swagger UI, add a security scheme transformer in the host's service registration.
+    /// </para>
+    /// <para>
+    /// Example using the .NET 10 <c>IOpenApiDocumentTransformer</c> pattern:
+    /// <code>
+    /// // In Program.cs / Startup.cs of the host application:
+    /// builder.Services.AddOpenApi(options =>
+    /// {
+    ///     options.AddDocumentTransformer((document, context, cancellationToken) =>
+    ///     {
+    ///         document.Components ??= new OpenApiComponents();
+    ///         document.Components.SecuritySchemes ??= new Dictionary&lt;string, OpenApiSecurityScheme&gt;();
+    ///         document.Components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
+    ///         {
+    ///             Type = SecuritySchemeType.Http,
+    ///             Scheme = "bearer",
+    ///             BearerFormat = "opaque",
+    ///             Description = "Enter the bearer token obtained from POST /auth/login/token"
+    ///         };
+    ///         return Task.CompletedTask;
+    ///     });
+    /// });
+    /// </code>
+    /// </para>
+    /// <para>
+    /// Alternatively, implement <c>IOpenApiDocumentTransformer</c> in a dedicated class and
+    /// register it with <c>options.AddDocumentTransformer&lt;YourTransformer&gt;()</c> for
+    /// better testability and separation of concerns.
+    /// </para>
+    /// </remarks>
     public static IServiceCollection AddIdmt<TDbContext>(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -112,17 +148,18 @@ public static class ServiceCollectionExtensions
         // at application startup rather than on the first resolve of IOptions<IdmtOptions>.
         services.AddSingleton<IValidateOptions<IdmtOptions>, IdmtOptionsValidator>();
 
-        // If section doesn't exist and no custom configuration, return defaults
-        if (!idmtSection.Exists() && configureOptions == null)
-        {
-            var defaultOptions = IdmtOptions.Default;
-            services.Configure<IdmtOptions>(opts => { });
-            services.AddOptions<IdmtOptions>().ValidateOnStart();
-            return defaultOptions;
-        }
+        // Build the canonical IdmtOptions instance exactly once.
+        // Previously, configureOptions was invoked twice: once here to build the local snapshot
+        // used during service registration, and again inside a services.Configure<IdmtOptions>
+        // lambda when IOptions<IdmtOptions> was first resolved. Registering via Options.Create
+        // wraps the fully-configured instance in a snapshot so both callers see the same object
+        // with no further binding or delegate invocations at resolve time.
+        var idmtOptions = idmtSection.Exists() ? new IdmtOptions() : IdmtOptions.Default;
 
-        var idmtOptions = new IdmtOptions();
-        idmtSection.Bind(idmtOptions);
+        if (idmtSection.Exists())
+        {
+            idmtSection.Bind(idmtOptions);
+        }
 
         // Apply defaults for empty arrays (which means they weren't configured)
         if (idmtOptions.MultiTenant.Strategies.Length == 0)
@@ -130,23 +167,22 @@ public static class ServiceCollectionExtensions
             idmtOptions.MultiTenant.Strategies = IdmtOptions.Default.MultiTenant.Strategies;
         }
 
+        // The caller's delegate runs exactly once against the canonical instance.
         configureOptions?.Invoke(idmtOptions);
 
-        services.Configure<IdmtOptions>(opts =>
+        // Validate the fully-configured options eagerly. This runs during service registration
+        // (not deferred to first resolve) so misconfigurations surface immediately at startup.
+        var validator = new IdmtOptionsValidator();
+        var validationResult = validator.Validate(null, idmtOptions);
+        if (validationResult.Failed)
         {
-            idmtSection.Bind(opts);
+            throw new OptionsValidationException(nameof(IdmtOptions), typeof(IdmtOptions),
+                validationResult.Failures ?? [validationResult.FailureMessage]);
+        }
 
-            // Apply defaults for empty arrays (which means they weren't configured)
-            if (opts.MultiTenant.Strategies.Length == 0)
-            {
-                opts.MultiTenant.Strategies = IdmtOptions.Default.MultiTenant.Strategies;
-            }
-
-            configureOptions?.Invoke(opts);
-        });
-
-        // Ensure validation is triggered eagerly at startup rather than on first resolve.
-        services.AddOptions<IdmtOptions>().ValidateOnStart();
+        // Register the fully-configured snapshot. Every call to IOptions<IdmtOptions>.Value
+        // returns this identical object — no re-binding or second delegate invocation occurs.
+        services.AddSingleton(Options.Create(idmtOptions));
 
         return idmtOptions;
     }
@@ -289,7 +325,16 @@ public static class ServiceCollectionExtensions
         {
             options.Cookie.HttpOnly = idmtOptions.Identity.Cookie.HttpOnly;
             options.Cookie.SecurePolicy = idmtOptions.Identity.Cookie.SecurePolicy;
-            options.Cookie.SameSite = idmtOptions.Identity.Cookie.SameSite;
+
+            // SameSite=Strict is the primary CSRF mitigation for cookie-authenticated endpoints
+            // in this library. The browser will never attach the auth cookie to any cross-site
+            // request, eliminating the CSRF attack surface without requiring explicit anti-forgery
+            // tokens. SameSiteMode.None is explicitly blocked because it would remove all
+            // SameSite-based CSRF protection; the library falls back to Strict in that case.
+            options.Cookie.SameSite = idmtOptions.Identity.Cookie.SameSite == SameSiteMode.None
+                ? SameSiteMode.Strict
+                : idmtOptions.Identity.Cookie.SameSite;
+
             options.ExpireTimeSpan = idmtOptions.Identity.Cookie.ExpireTimeSpan;
             options.SlidingExpiration = idmtOptions.Identity.Cookie.SlidingExpiration;
 
@@ -407,6 +452,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IIdmtLinkGenerator, IdmtLinkGenerator>();
         services.AddTransient<IEmailSender<IdmtUser>, IdmtEmailSender>();
 
+        // Issue 23 fix: warn at startup if the stub email sender is still registered.
+        // If the consumer replaces IEmailSender<IdmtUser> with a real implementation before or
+        // after calling AddIdmt, ASP.NET Core DI resolves the last-registered descriptor, so the
+        // hosted service will resolve the custom sender and the warning will not be emitted.
+        services.AddHostedService<IdmtEmailSenderStartupCheck>();
+
         // Register TimeProvider for testable time access
         services.TryAddSingleton(TimeProvider.System);
 
@@ -465,12 +516,15 @@ public static class ServiceCollectionExtensions
 
         services.AddRateLimiter(options =>
         {
-            options.AddFixedWindowLimiter("idmt-auth", opt =>
-            {
-                opt.PermitLimit = idmtOptions.RateLimiting.PermitLimit;
-                opt.Window = TimeSpan.FromSeconds(idmtOptions.RateLimiting.WindowInSeconds);
-                opt.QueueLimit = 0;
-            });
+            options.AddPolicy("idmt-auth", context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = idmtOptions.RateLimiting.PermitLimit,
+                        Window = TimeSpan.FromSeconds(idmtOptions.RateLimiting.WindowInSeconds),
+                        QueueLimit = 0
+                    }));
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
         });
     }

@@ -27,7 +27,7 @@ public class IdmtUser : IdentityUser<Guid>, IAuditable
     /// <summary>
     /// When this user last logged in.
     /// </summary>
-    public DateTime? LastLoginAt { get; set; }
+    public DateTimeOffset? LastLoginAt { get; set; }
 
     public string GetId() => Id.ToString();
 

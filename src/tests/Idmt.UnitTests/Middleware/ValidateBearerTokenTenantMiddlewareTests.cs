@@ -1,9 +1,11 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Middleware;
 using Idmt.Plugin.Models;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -66,7 +68,7 @@ public class ValidateBearerTokenTenantMiddlewareTests
     }
 
     [Fact]
-    public async Task InvokeAsync_MissingTenantClaim_Returns401()
+    public async Task InvokeAsync_MissingTenantClaim_Returns401WithProblemDetails()
     {
         var context = CreateBearerContext(tenantClaimValue: null);
         SetupTenantContext("test-tenant");
@@ -80,10 +82,11 @@ public class ValidateBearerTokenTenantMiddlewareTests
 
         Assert.False(nextCalled);
         Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+        AssertProblemDetailsResponse(context, StatusCodes.Status401Unauthorized, "Unauthorized");
     }
 
     [Fact]
-    public async Task InvokeAsync_MismatchedTenantClaim_Returns403()
+    public async Task InvokeAsync_MismatchedTenantClaim_Returns403WithProblemDetails()
     {
         var context = CreateBearerContext(tenantClaimValue: "tenant-a");
         SetupTenantContext("tenant-b");
@@ -97,6 +100,7 @@ public class ValidateBearerTokenTenantMiddlewareTests
 
         Assert.False(nextCalled);
         Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+        AssertProblemDetailsResponse(context, StatusCodes.Status403Forbidden, "Forbidden");
     }
 
     [Fact]
@@ -116,7 +120,7 @@ public class ValidateBearerTokenTenantMiddlewareTests
     }
 
     [Fact]
-    public async Task InvokeAsync_ExceptionInValidation_Returns401()
+    public async Task InvokeAsync_ExceptionInValidation_Returns401WithProblemDetails()
     {
         var context = CreateBearerContext(tenantClaimValue: "test-tenant");
         // Setup accessor to throw
@@ -132,10 +136,11 @@ public class ValidateBearerTokenTenantMiddlewareTests
 
         Assert.False(nextCalled);
         Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+        AssertProblemDetailsResponse(context, StatusCodes.Status401Unauthorized, "Unauthorized");
     }
 
     [Fact]
-    public async Task InvokeAsync_EmptyStringTenantClaim_Returns401()
+    public async Task InvokeAsync_EmptyStringTenantClaim_Returns401WithProblemDetails()
     {
         // Empty string tenant claim should be treated the same as missing
         var context = CreateBearerContext(tenantClaimValue: "", claimKey: null);
@@ -150,6 +155,7 @@ public class ValidateBearerTokenTenantMiddlewareTests
 
         Assert.False(nextCalled);
         Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+        AssertProblemDetailsResponse(context, StatusCodes.Status401Unauthorized, "Unauthorized");
     }
 
     [Fact]
@@ -188,11 +194,61 @@ public class ValidateBearerTokenTenantMiddlewareTests
 
         Assert.False(nextCalled);
         Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+        AssertProblemDetailsResponse(context, StatusCodes.Status403Forbidden, "Forbidden");
     }
+
+    [Fact]
+    public async Task InvokeAsync_NullTenantContext_Returns401WithProblemDetails()
+    {
+        // No tenant context set at all (accessor returns null MultiTenantContext)
+        var context = CreateBearerContext(tenantClaimValue: "test-tenant");
+        _tenantAccessorMock.SetupGet(x => x.MultiTenantContext).Returns(default(IMultiTenantContext)!);
+
+        var nextCalled = false;
+        await _middleware.InvokeAsync(context, _ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        });
+
+        Assert.False(nextCalled);
+        Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+        AssertProblemDetailsResponse(context, StatusCodes.Status401Unauthorized, "Unauthorized");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ErrorResponse_HasProblemJsonContentType()
+    {
+        var context = CreateBearerContext(tenantClaimValue: "tenant-a");
+        SetupTenantContext("tenant-b");
+
+        await _middleware.InvokeAsync(context, _ => Task.CompletedTask);
+
+        Assert.Contains("application/problem+json", context.Response.ContentType);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ErrorResponse_BodyContainsNonNullDetail()
+    {
+        var context = CreateBearerContext(tenantClaimValue: "tenant-a");
+        SetupTenantContext("tenant-b");
+
+        await _middleware.InvokeAsync(context, _ => Task.CompletedTask);
+
+        var problem = ReadProblemDetails(context);
+        Assert.NotNull(problem);
+        Assert.False(string.IsNullOrWhiteSpace(problem.Detail));
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
 
     private DefaultHttpContext CreateBearerContext(string? tenantClaimValue, string? claimKey = null)
     {
+        // Use a real MemoryStream so WriteAsJsonAsync can write to the body
         var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
         context.Request.Headers.Authorization = "Bearer test-token";
 
         var resolvedClaimKey = claimKey ?? _options.MultiTenant.StrategyOptions.GetValueOrDefault(
@@ -214,5 +270,43 @@ public class ValidateBearerTokenTenantMiddlewareTests
         var tenant = new IdmtTenantInfo("id", identifier, "Test");
         var multiTenantContext = new MultiTenantContext<IdmtTenantInfo>(tenant);
         _tenantAccessorMock.SetupGet(x => x.MultiTenantContext).Returns(multiTenantContext);
+    }
+
+    /// <summary>
+    /// Rewinds the response body stream and deserializes the ProblemDetails payload.
+    /// Returns null when the body is empty.
+    /// </summary>
+    private static ProblemDetails? ReadProblemDetails(DefaultHttpContext context)
+    {
+        context.Response.Body.Seek(0, SeekOrigin.Begin);
+        var json = new StreamReader(context.Response.Body).ReadToEnd();
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<ProblemDetails>(json, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+    }
+
+    /// <summary>
+    /// Asserts that the response body contains a valid ProblemDetails document with the
+    /// expected status code and title, and that the Content-Type is application/problem+json.
+    /// </summary>
+    private static void AssertProblemDetailsResponse(
+        DefaultHttpContext context,
+        int expectedStatus,
+        string expectedTitle)
+    {
+        Assert.Contains("application/problem+json", context.Response.ContentType);
+
+        var problem = ReadProblemDetails(context);
+        Assert.NotNull(problem);
+        Assert.Equal(expectedStatus, problem.Status);
+        Assert.Equal(expectedTitle, problem.Title);
+        Assert.False(string.IsNullOrWhiteSpace(problem.Detail),
+            "ProblemDetails.Detail must not be empty so API clients can diagnose the failure.");
     }
 }

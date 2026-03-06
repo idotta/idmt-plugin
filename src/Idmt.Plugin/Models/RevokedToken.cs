@@ -7,6 +7,6 @@ namespace Idmt.Plugin.Models;
 public sealed class RevokedToken
 {
     public string TokenId { get; set; } = null!;
-    public DateTime RevokedAt { get; set; }
-    public DateTime ExpiresAt { get; set; }
+    public DateTimeOffset RevokedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
 }

@@ -5,6 +5,7 @@ using Idmt.Plugin.Constants;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.Logging;
 
 namespace Idmt.Plugin.Persistence;
@@ -73,12 +74,25 @@ public class IdmtDbContext
     {
         base.OnModelCreating(builder);
 
+        // Store DateTimeOffset as UTC ticks (long) so that range comparisons are
+        // translatable by all supported providers, including the SQLite provider
+        // used in unit tests (which cannot translate DateTimeOffset text comparisons
+        // in ExecuteDelete / ExecuteDeleteAsync).
+        var dateTimeOffsetConverter = new ValueConverter<DateTimeOffset, long>(
+            dto => dto.UtcTicks,
+            ticks => new DateTimeOffset(ticks, TimeSpan.Zero));
+
+        var nullableDateTimeOffsetConverter = new ValueConverter<DateTimeOffset?, long?>(
+            dto => dto == null ? null : dto.Value.UtcTicks,
+            ticks => ticks == null ? null : new DateTimeOffset(ticks.Value, TimeSpan.Zero));
+
         // Configure user entity with proper multi-tenant support
         builder.Entity<IdmtUser>(entity =>
         {
             entity.HasIndex(u => u.IsActive);
             entity.HasIndex(u => new { u.Email, u.UserName, u.TenantId }).IsUnique();
             entity.IsMultiTenant();
+            entity.Property(u => u.LastLoginAt).HasConversion(nullableDateTimeOffsetConverter);
         });
 
         // Configure role entity with proper multi-tenant support
@@ -96,15 +110,17 @@ public class IdmtDbContext
             entity.HasIndex(a => new { a.UserId, a.Timestamp });
             entity.HasIndex(a => new { a.TenantId, a.Timestamp });
             entity.HasIndex(a => a.Action);
+            entity.Property(a => a.Timestamp).HasConversion(dateTimeOffsetConverter);
         });
 
         // Configure tenant access
         builder.Entity<TenantAccess>(entity =>
         {
             entity.HasKey(ta => ta.Id);
-            entity.HasIndex(ta => new { ta.UserId, ta.TenantId });
+            entity.HasIndex(ta => new { ta.UserId, ta.TenantId }).IsUnique();
             entity.HasIndex(ta => ta.TenantId);
             entity.HasIndex(ta => ta.IsActive);
+            entity.Property(ta => ta.ExpiresAt).HasConversion(nullableDateTimeOffsetConverter);
         });
 
         // Configure revoked tokens
@@ -112,6 +128,8 @@ public class IdmtDbContext
         {
             entity.HasKey(rt => rt.TokenId);
             entity.Property(rt => rt.TokenId).HasMaxLength(128);
+            entity.Property(rt => rt.RevokedAt).HasConversion(dateTimeOffsetConverter);
+            entity.Property(rt => rt.ExpiresAt).HasConversion(dateTimeOffsetConverter);
             entity.HasIndex(rt => rt.ExpiresAt);
         });
 
@@ -156,7 +174,7 @@ public class IdmtDbContext
                         Resource = entry.Entity.GetName(),
                         ResourceId = entry.Entity.GetId(),
                         Success = true,
-                        Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
+                        Timestamp = _timeProvider.GetUtcNow(),
                         IpAddress = _currentUserService.IpAddress,
                         UserAgent = _currentUserService.UserAgent,
                     });
@@ -171,7 +189,7 @@ public class IdmtDbContext
                         Resource = entry.Entity.GetName(),
                         ResourceId = entry.Entity.GetId(),
                         Success = true,
-                        Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
+                        Timestamp = _timeProvider.GetUtcNow(),
                         IpAddress = _currentUserService.IpAddress,
                         UserAgent = _currentUserService.UserAgent,
                     });
@@ -190,7 +208,7 @@ public class IdmtDbContext
                         ResourceId = entry.Entity.GetId(),
                         Details = details,
                         Success = true,
-                        Timestamp = _timeProvider.GetUtcNow().UtcDateTime,
+                        Timestamp = _timeProvider.GetUtcNow(),
                         IpAddress = _currentUserService.IpAddress,
                         UserAgent = _currentUserService.UserAgent,
                     });
@@ -200,6 +218,11 @@ public class IdmtDbContext
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Audit logging failed during SaveChangesAsync");
+            foreach (var entry in ChangeTracker.Entries<IdmtAuditLog>()
+                .Where(e => e.State == EntityState.Added).ToList())
+            {
+                entry.State = EntityState.Detached;
+            }
         }
 
         return base.SaveChangesAsync(cancellationToken);

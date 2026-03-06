@@ -4,9 +4,7 @@ using Idmt.Plugin.Features.Admin;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
 using Idmt.Plugin.Services;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -17,7 +15,6 @@ public class RevokeTenantAccessHandlerTests : IDisposable
     private readonly Mock<ITenantOperationService> _tenantOpsMock;
     private readonly IdmtDbContext _dbContext;
     private readonly Mock<IMultiTenantStore<IdmtTenantInfo>> _tenantStoreMock;
-    private readonly Mock<UserManager<IdmtUser>> _userManagerMock;
     private readonly RevokeTenantAccess.RevokeTenantAccessHandler _handler;
 
     public RevokeTenantAccessHandlerTests()
@@ -44,19 +41,9 @@ public class RevokeTenantAccessHandlerTests : IDisposable
 
         _tenantStoreMock = new Mock<IMultiTenantStore<IdmtTenantInfo>>();
 
-        var userStoreMock = new Mock<IUserStore<IdmtUser>>();
-        _userManagerMock = new Mock<UserManager<IdmtUser>>(
-            userStoreMock.Object, null!, null!, null!, null!, null!, null!, null!, null!);
-
-        // Build real ServiceProvider
-        var services = new ServiceCollection();
-        services.AddSingleton<IdmtDbContext>(_dbContext);
-        services.AddSingleton(_tenantStoreMock.Object);
-        services.AddSingleton(_userManagerMock.Object);
-        var serviceProvider = services.BuildServiceProvider();
-
         _handler = new RevokeTenantAccess.RevokeTenantAccessHandler(
-            serviceProvider,
+            _dbContext,
+            _tenantStoreMock.Object,
             _tenantOpsMock.Object,
             NullLogger<RevokeTenantAccess.RevokeTenantAccessHandler>.Instance);
     }

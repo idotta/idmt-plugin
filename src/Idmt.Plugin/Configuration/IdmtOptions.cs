@@ -179,7 +179,22 @@ public class IdmtCookieOptions
     public string Name { get; set; } = ".Idmt.Application";
     public bool HttpOnly { get; set; } = true;
     public Microsoft.AspNetCore.Http.CookieSecurePolicy SecurePolicy { get; set; } = Microsoft.AspNetCore.Http.CookieSecurePolicy.Always;
-    public Microsoft.AspNetCore.Http.SameSiteMode SameSite { get; set; } = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
+
+    /// <summary>
+    /// Controls the SameSite attribute of the authentication cookie.
+    /// Defaults to <see cref="Microsoft.AspNetCore.Http.SameSiteMode.Strict"/>, which means the
+    /// browser will never send the cookie on cross-site requests (neither top-level navigations
+    /// nor sub-resource loads). This is the strongest available CSRF protection at the cookie
+    /// layer and removes the need for anti-forgery tokens on state-mutating endpoints that rely
+    /// solely on cookie authentication.
+    ///
+    /// Change to <see cref="Microsoft.AspNetCore.Http.SameSiteMode.Lax"/> only if your
+    /// application requires cookie preservation on top-level cross-site GET navigations (e.g.
+    /// OAuth / OIDC redirect flows), and compensate with explicit anti-forgery validation on
+    /// every state-mutating endpoint.
+    /// </summary>
+    public Microsoft.AspNetCore.Http.SameSiteMode SameSite { get; set; } = Microsoft.AspNetCore.Http.SameSiteMode.Strict;
+
     public TimeSpan ExpireTimeSpan { get; set; } = TimeSpan.FromDays(14);
     public bool SlidingExpiration { get; set; } = true;
     public bool IsRedirectEnabled { get; set; } = false;

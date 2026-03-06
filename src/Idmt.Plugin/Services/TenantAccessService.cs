@@ -16,7 +16,7 @@ internal sealed class TenantAccessService(
                 ta.UserId == userId &&
                 ta.TenantId == tenantId &&
                 ta.IsActive &&
-                (ta.ExpiresAt == null || ta.ExpiresAt > timeProvider.GetUtcNow().UtcDateTime),
+                (ta.ExpiresAt == null || ta.ExpiresAt > timeProvider.GetUtcNow()),
                 cancellationToken);
     }
 

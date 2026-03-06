@@ -1,6 +1,7 @@
 using ErrorOr;
 using Finbuckle.MultiTenant.Abstractions;
 using FluentValidation;
+using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Services;
@@ -61,6 +62,7 @@ public static class Login
         UserManager<IdmtUser> userManager,
         SignInManager<IdmtUser> signInManager,
         IMultiTenantContextAccessor multiTenantContextAccessor,
+        IOptions<IdmtOptions> idmtOptions,
         TimeProvider timeProvider,
         ILogger<LoginHandler> logger) : ILoginHandler
     {
@@ -102,6 +104,11 @@ public static class Login
                     user,
                     request.Password,
                     lockoutOnFailure: true);
+
+                if (result.IsLockedOut)
+                {
+                    return IdmtErrors.Auth.LockedOut;
+                }
 
                 if (result.RequiresTwoFactor)
                 {
@@ -149,11 +156,11 @@ public static class Login
                     new AuthenticationProperties
                     {
                         IsPersistent = request.RememberMe,
-                        ExpiresUtc = timeProvider.GetUtcNow().AddDays(30)
+                        ExpiresUtc = timeProvider.GetUtcNow().Add(idmtOptions.Value.Identity.Cookie.ExpireTimeSpan)
                     });
 
                 // Update last login timestamp
-                user.LastLoginAt = timeProvider.GetUtcNow().UtcDateTime;
+                user.LastLoginAt = timeProvider.GetUtcNow();
                 var loginUpdateResult = await userManager.UpdateAsync(user);
                 if (!loginUpdateResult.Succeeded)
                 {
@@ -216,6 +223,11 @@ public static class Login
                     user,
                     request.Password,
                     lockoutOnFailure: true);
+
+                if (result.IsLockedOut)
+                {
+                    return IdmtErrors.Auth.LockedOut;
+                }
 
                 if (result.RequiresTwoFactor)
                 {
@@ -285,7 +297,7 @@ public static class Login
                 var refreshToken = refreshTokenProtector.Protect(refreshTicket);
 
                 // Update last login timestamp
-                user.LastLoginAt = timeProvider.GetUtcNow().UtcDateTime;
+                user.LastLoginAt = timeProvider.GetUtcNow();
                 var tokenLoginUpdateResult = await userManager.UpdateAsync(user);
                 if (!tokenLoginUpdateResult.Succeeded)
                 {

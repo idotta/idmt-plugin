@@ -6,7 +6,6 @@ using Idmt.Plugin.Persistence;
 using Idmt.Plugin.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
@@ -46,23 +45,17 @@ public class GrantTenantAccessHandlerTests : IDisposable
             TimeProvider.System,
             NullLogger<IdmtDbContext>.Instance);
 
-        // Set up mocks for services resolved from IServiceProvider
         _tenantStoreMock = new Mock<IMultiTenantStore<IdmtTenantInfo>>();
 
         var userStoreMock = new Mock<IUserStore<IdmtUser>>();
         _userManagerMock = new Mock<UserManager<IdmtUser>>(
             userStoreMock.Object, null!, null!, null!, null!, null!, null!, null!, null!);
 
-        // Build a real ServiceProvider that returns our mocks and real DbContext
-        var services = new ServiceCollection();
-        services.AddSingleton(_dbContext);
-        services.AddSingleton<IdmtDbContext>(_dbContext);
-        services.AddSingleton(_tenantStoreMock.Object);
-        services.AddSingleton(_userManagerMock.Object);
-        var serviceProvider = services.BuildServiceProvider();
-
+        // Issue 19 fix: inject dependencies directly — no IServiceProvider wrapper required.
         _handler = new GrantTenantAccess.GrantTenantAccessHandler(
-            serviceProvider,
+            _dbContext,
+            _userManagerMock.Object,
+            _tenantStoreMock.Object,
             _tenantOpsMock.Object,
             _timeProvider,
             NullLogger<GrantTenantAccess.GrantTenantAccessHandler>.Instance);
@@ -72,7 +65,7 @@ public class GrantTenantAccessHandlerTests : IDisposable
     public async Task ReturnsValidationError_WhenExpiresAtIsInPast()
     {
         // Arrange - time is 2026-03-04 12:00 UTC; expiration is yesterday
-        var pastDate = new DateTime(2026, 3, 3, 0, 0, 0, DateTimeKind.Utc);
+        var pastDate = new DateTimeOffset(2026, 3, 3, 0, 0, 0, TimeSpan.Zero);
 
         // Act
         var result = await _handler.HandleAsync(Guid.NewGuid(), "some-tenant", pastDate);
@@ -87,7 +80,7 @@ public class GrantTenantAccessHandlerTests : IDisposable
     public async Task ReturnsValidationError_WhenExpiresAtEqualsNow()
     {
         // Arrange - exactly the current time (boundary: <= means equal is rejected)
-        var exactNow = _timeProvider.GetUtcNow().UtcDateTime;
+        var exactNow = _timeProvider.GetUtcNow();
 
         // Act
         var result = await _handler.HandleAsync(Guid.NewGuid(), "some-tenant", exactNow);
@@ -204,7 +197,7 @@ public class GrantTenantAccessHandlerTests : IDisposable
             .Setup(x => x.GetRolesAsync(It.IsAny<IdmtUser>()))
             .ReturnsAsync(new List<string> { "SysAdmin" });
 
-        var futureExpiry = new DateTime(2026, 12, 31, 0, 0, 0, DateTimeKind.Utc);
+        var futureExpiry = new DateTimeOffset(2026, 12, 31, 0, 0, 0, TimeSpan.Zero);
 
         _tenantOpsMock
             .Setup(x => x.ExecuteInTenantScopeAsync(
@@ -286,18 +279,11 @@ public class GrantTenantAccessHandlerTests : IDisposable
             .Setup(x => x.GetRolesAsync(It.IsAny<IdmtUser>()))
             .ReturnsAsync(new List<string> { "SysAdmin" });
 
-        // Build service provider with the throwing context registered as IdmtDbContext
-        var services = new ServiceCollection();
-        services.AddSingleton<IdmtDbContext>(throwingContext);
-        services.AddSingleton(tenantStoreMock.Object);
-        services.AddSingleton(userManagerMock.Object);
-        var serviceProvider = services.BuildServiceProvider();
-
         var tenantOpsMock = new Mock<ITenantOperationService>();
 
         // Both calls to ExecuteInTenantScopeAsync return Success:
-        //   1st call — tenant-scope user creation (line 107)
-        //   2nd call — compensating action (line 181)
+        //   1st call — tenant-scope user creation
+        //   2nd call — compensating action after SaveChanges failure
         tenantOpsMock
             .Setup(x => x.ExecuteInTenantScopeAsync(
                 "comp-tenant",
@@ -305,8 +291,11 @@ public class GrantTenantAccessHandlerTests : IDisposable
                 It.IsAny<bool>()))
             .ReturnsAsync(Result.Success);
 
+        // Issue 19 fix: inject throwing context and mocks directly — no IServiceProvider wrapper.
         var handler = new GrantTenantAccess.GrantTenantAccessHandler(
-            serviceProvider,
+            throwingContext,
+            userManagerMock.Object,
+            tenantStoreMock.Object,
             tenantOpsMock.Object,
             _timeProvider,
             NullLogger<GrantTenantAccess.GrantTenantAccessHandler>.Instance);
