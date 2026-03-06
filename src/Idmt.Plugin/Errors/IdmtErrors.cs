@@ -19,8 +19,8 @@ public static class IdmtErrors
             description: "User is deactivated");
 
         public static Error TwoFactorRequired => Error.Custom(
-            type: 42, 
-            code: "Auth.TwoFactorRequired", 
+            type: 42,
+            code: "Auth.TwoFactorRequired",
             description: "Two-factor authentication is required");
 
         public static Error InvalidCredentials => Error.Unauthorized(
