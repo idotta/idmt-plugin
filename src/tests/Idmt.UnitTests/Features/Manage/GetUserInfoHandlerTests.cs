@@ -132,6 +132,61 @@ public class GetUserInfoHandlerTests
         Assert.Equal(ErrorType.NotFound, result.FirstError.Type);
     }
 
+    [Fact]
+    public async Task ReturnsAllRoles_WhenUserHasSingleRole()
+    {
+        // Arrange
+        var principal = CreatePrincipalWithEmail("user@test.com");
+        var user = new IdmtUser
+        {
+            UserName = "testuser",
+            Email = "user@test.com",
+            TenantId = "tenant-1",
+            IsActive = true
+        };
+        var tenant = new IdmtTenantInfo("tenant-1", "Tenant One");
+
+        _userManagerMock.Setup(x => x.FindByEmailAsync("user@test.com")).ReturnsAsync(user);
+        _userManagerMock.Setup(x => x.GetRolesAsync(user)).ReturnsAsync(["Member"]);
+        _tenantStoreMock.Setup(x => x.GetAsync("tenant-1")).ReturnsAsync(tenant);
+
+        // Act
+        var result = await _handler.HandleAsync(principal);
+
+        // Assert
+        Assert.False(result.IsError);
+        Assert.Single(result.Value.Roles);
+        Assert.Equal("Member", result.Value.Roles[0]);
+    }
+
+    [Fact]
+    public async Task ReturnsAllRoles_SortedAlphabetically_WhenUserHasMultipleRoles()
+    {
+        // Arrange
+        var principal = CreatePrincipalWithEmail("multi@test.com");
+        var user = new IdmtUser
+        {
+            UserName = "multiuser",
+            Email = "multi@test.com",
+            TenantId = "tenant-1",
+            IsActive = true
+        };
+        var tenant = new IdmtTenantInfo("tenant-1", "Tenant One");
+
+        _userManagerMock.Setup(x => x.FindByEmailAsync("multi@test.com")).ReturnsAsync(user);
+        // Roles are intentionally supplied in non-alphabetical order to verify sorting.
+        _userManagerMock.Setup(x => x.GetRolesAsync(user)).ReturnsAsync(["TenantAdmin", "Member", "Auditor"]);
+        _tenantStoreMock.Setup(x => x.GetAsync("tenant-1")).ReturnsAsync(tenant);
+
+        // Act
+        var result = await _handler.HandleAsync(principal);
+
+        // Assert
+        Assert.False(result.IsError);
+        Assert.Equal(3, result.Value.Roles.Count);
+        Assert.Equal(new[] { "Auditor", "Member", "TenantAdmin" }, result.Value.Roles);
+    }
+
     private static ClaimsPrincipal CreatePrincipalWithEmail(string email)
     {
         return new ClaimsPrincipal(new ClaimsIdentity([

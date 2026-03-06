@@ -13,13 +13,17 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+
 namespace Idmt.Plugin.Extensions;
 
 public delegate void CustomizeAuthentication(AuthenticationBuilder authenticationBuilder);
@@ -75,6 +79,9 @@ public static class ServiceCollectionExtensions
         // 9. Register Middleware
         RegisterMiddleware(services);
 
+        // 10. Configure Rate Limiting (auth endpoints only)
+        ConfigureRateLimiting(services, idmtOptions);
+
         return services;
     }
 
@@ -101,11 +108,16 @@ public static class ServiceCollectionExtensions
     {
         var idmtSection = configuration.GetSection("Idmt");
 
+        // Register the startup validator so misconfigured options surface immediately
+        // at application startup rather than on the first resolve of IOptions<IdmtOptions>.
+        services.AddSingleton<IValidateOptions<IdmtOptions>, IdmtOptionsValidator>();
+
         // If section doesn't exist and no custom configuration, return defaults
         if (!idmtSection.Exists() && configureOptions == null)
         {
             var defaultOptions = IdmtOptions.Default;
             services.Configure<IdmtOptions>(opts => { });
+            services.AddOptions<IdmtOptions>().ValidateOnStart();
             return defaultOptions;
         }
 
@@ -132,6 +144,9 @@ public static class ServiceCollectionExtensions
 
             configureOptions?.Invoke(opts);
         });
+
+        // Ensure validation is triggered eagerly at startup rather than on first resolve.
+        services.AddOptions<IdmtOptions>().ValidateOnStart();
 
         return idmtOptions;
     }
@@ -439,6 +454,25 @@ public static class ServiceCollectionExtensions
         // Register middleware as scoped services
         services.AddScoped<CurrentUserMiddleware>();
         services.AddScoped<ValidateBearerTokenTenantMiddleware>();
+    }
+
+    private static void ConfigureRateLimiting(IServiceCollection services, IdmtOptions idmtOptions)
+    {
+        if (!idmtOptions.RateLimiting.Enabled)
+        {
+            return;
+        }
+
+        services.AddRateLimiter(options =>
+        {
+            options.AddFixedWindowLimiter("idmt-auth", opt =>
+            {
+                opt.PermitLimit = idmtOptions.RateLimiting.PermitLimit;
+                opt.Window = TimeSpan.FromSeconds(idmtOptions.RateLimiting.WindowInSeconds);
+                opt.QueueLimit = 0;
+            });
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+        });
     }
 
     #endregion

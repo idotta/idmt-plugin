@@ -18,7 +18,7 @@ public static class GetUserInfo
         string Id,
         string Email,
         string UserName,
-        string Role,
+        IReadOnlyList<string> Roles,
         string TenantIdentifier,
         string TenantName
     );
@@ -44,8 +44,8 @@ public static class GetUserInfo
                 return IdmtErrors.User.NotFound;
             }
 
-            var role = (await userManager.GetRolesAsync(appUser)).FirstOrDefault();
-            if (role is null) return IdmtErrors.User.NoRolesAssigned;
+            var roles = (await userManager.GetRolesAsync(appUser)).OrderBy(r => r).ToList();
+            if (roles.Count == 0) return IdmtErrors.User.NoRolesAssigned;
 
             var tenant = await tenantStore.GetAsync(appUser.TenantId);
             if (tenant is null) return IdmtErrors.Tenant.NotFound;
@@ -54,7 +54,7 @@ public static class GetUserInfo
                 appUser.Id.ToString(),
                 appUser.Email ?? string.Empty,
                 appUser.UserName ?? string.Empty,
-                role,
+                roles,
                 tenant.Identifier ?? string.Empty,
                 tenant.Name ?? string.Empty
             );

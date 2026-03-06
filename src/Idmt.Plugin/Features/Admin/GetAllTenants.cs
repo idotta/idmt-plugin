@@ -1,12 +1,13 @@
 using ErrorOr;
-using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Idmt.Plugin.Features.Admin;
@@ -24,7 +25,7 @@ public static class GetAllTenants
     }
 
     internal sealed class GetAllTenantsHandler(
-        IMultiTenantStore<IdmtTenantInfo> tenantStore,
+        IdmtDbContext dbContext,
         ILogger<GetAllTenantsHandler> logger) : IGetAllTenantsHandler
     {
         public async Task<ErrorOr<PaginatedResponse<TenantInfoResponse>>> HandleAsync(
@@ -34,25 +35,23 @@ public static class GetAllTenants
         {
             try
             {
-                var tenants = await tenantStore.GetAllAsync();
+                // Build a server-side query — no in-memory materialisation before pagination.
+                var query = dbContext.Set<IdmtTenantInfo>()
+                    .Where(t => t.Identifier != MultiTenantOptions.DefaultTenantIdentifier)
+                    .OrderBy(t => t.Name);
 
-                // Apply the same filter and stable ordering as before, then paginate.
-                var filtered = tenants
-                    .Where(t => t is not null && !string.Equals(t.Identifier, MultiTenantOptions.DefaultTenantIdentifier, StringComparison.OrdinalIgnoreCase))
-                    .OrderBy(t => t.Name)
+                var totalCount = await query.CountAsync(cancellationToken);
+
+                var items = await query
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
                     .Select(t => new TenantInfoResponse(
-                        t!.Id ?? string.Empty,
+                        t.Id ?? string.Empty,
                         t.Identifier ?? string.Empty,
                         t.Name ?? string.Empty,
                         t.Plan ?? string.Empty,
                         t.IsActive))
-                    .ToList();
-
-                var totalCount = filtered.Count;
-                var items = filtered
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToList();
+                    .ToListAsync(cancellationToken);
 
                 var response = new PaginatedResponse<TenantInfoResponse>(
                     items,

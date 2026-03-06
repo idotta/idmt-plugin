@@ -386,7 +386,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         Assert.NotNull(userInfo);
         Assert.Equal(IdmtApiFactory.SysAdminEmail, userInfo!.Email);
         Assert.NotEmpty(userInfo.Id);
-        Assert.NotEmpty(userInfo.Role);
+        Assert.NotEmpty(userInfo.Roles);
         Assert.NotEmpty(userInfo.TenantIdentifier);
     }
 
@@ -408,7 +408,7 @@ public class ManageIntegrationTests : BaseIntegrationTest
         var infoResponse = await loginClient.GetAsync("/manage/info");
         var info = await infoResponse.Content.ReadFromJsonAsync<GetUserInfo.GetUserInfoResponse>();
 
-        Assert.Equal(IdmtDefaultRoleTypes.TenantAdmin, info!.Role);
+        Assert.Contains(IdmtDefaultRoleTypes.TenantAdmin, info!.Roles);
     }
 
     [Fact]

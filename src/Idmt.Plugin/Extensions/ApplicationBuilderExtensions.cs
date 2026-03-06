@@ -28,6 +28,8 @@ public static class ApplicationBuilderExtensions
     /// <returns>The application builder</returns>
     public static IApplicationBuilder UseIdmt(this IApplicationBuilder app)
     {
+        var idmtOptions = app.ApplicationServices.GetRequiredService<IOptions<IdmtOptions>>().Value;
+
         // Security headers
         app.Use(async (context, next) =>
         {
@@ -37,6 +39,13 @@ public static class ApplicationBuilderExtensions
             context.Response.Headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()";
             await next();
         });
+
+        // Rate limiting must be added before authentication so rejected requests
+        // never reach identity processing. Only registered when the feature is enabled.
+        if (idmtOptions.RateLimiting.Enabled)
+        {
+            app.UseRateLimiter();
+        }
 
         // Add multi-tenant middleware - must come before authentication
         app.UseMultiTenant();
@@ -84,14 +93,27 @@ public static class ApplicationBuilderExtensions
     }
 
     /// <summary>
-    /// Ensures the database is created and optionally migrated.
-    /// Only IdmtDbContext is used for migrations since it owns all table configurations.
-    /// IdmtTenantStoreDbContext shares the same database but doesn't manage schema.
+    /// Initializes the IDMT database schema according to the configured
+    /// <see cref="DatabaseOptions.DatabaseInitialization"/> mode.
+    ///
+    /// Only <see cref="IdmtDbContext"/> is used here because it owns all table
+    /// configurations. <see cref="IdmtTenantStoreDbContext"/> shares the same
+    /// physical database and connection, so no separate initialization is needed for it.
+    ///
+    /// <list type="bullet">
+    ///   <item><see cref="DatabaseInitializationMode.Migrate"/> — applies pending EF Core migrations.
+    ///   Recommended for production. Requires migrations to have been generated and added to
+    ///   the consuming project.</item>
+    ///   <item><see cref="DatabaseInitializationMode.EnsureCreated"/> — creates the schema without
+    ///   a migrations history table. Suitable for development, testing, and prototyping.
+    ///   Not compatible with migrations.</item>
+    ///   <item><see cref="DatabaseInitializationMode.None"/> — skips all automatic initialization.
+    ///   The consumer is responsible for managing the schema externally.</item>
+    /// </list>
     /// </summary>
     /// <param name="app">The application builder</param>
-    /// <param name="autoMigrate">Whether to automatically run migrations</param>
-    /// <returns>The application builder</returns>
-    public static async Task EnsureIdmtDatabaseAsync(this IApplicationBuilder app, bool autoMigrate = false)
+    /// <returns>A task that completes when database initialization is done</returns>
+    public static async Task EnsureIdmtDatabaseAsync(this IApplicationBuilder app)
     {
         using var scope = app.ApplicationServices.CreateScope();
         var services = scope.ServiceProvider;
@@ -99,28 +121,20 @@ public static class ApplicationBuilderExtensions
         var options = services.GetRequiredService<IOptions<IdmtOptions>>();
         var context = services.GetRequiredService<IdmtDbContext>();
 
-        var shouldMigrate = autoMigrate || options.Value.Database.AutoMigrate;
-
-        if (shouldMigrate)
+        switch (options.Value.Database.DatabaseInitialization)
         {
-            // Try to migrate, fall back to EnsureCreated if migrations not supported
-            try
-            {
+            case DatabaseInitializationMode.Migrate:
                 await context.Database.MigrateAsync();
-            }
-            catch (InvalidOperationException)
-            {
-                // Migrations not supported (e.g., in-memory database)
+                break;
+            case DatabaseInitializationMode.EnsureCreated:
                 await context.Database.EnsureCreatedAsync();
-            }
-        }
-        else
-        {
-            await context.Database.EnsureCreatedAsync();
+                break;
+            case DatabaseInitializationMode.None:
+                break;
         }
 
-        // NOTE: IdmtTenantStoreDbContext shares the same database/connection
-        // No separate initialization needed - it accesses tables created above
+        // NOTE: IdmtTenantStoreDbContext shares the same database/connection.
+        // No separate initialization needed — it accesses tables created above.
     }
 
     /// <summary>

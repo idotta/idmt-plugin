@@ -36,6 +36,11 @@ public class IdmtOptions
     /// </summary>
     public DatabaseOptions Database { get; set; } = new();
 
+    /// <summary>
+    /// Rate limiting configuration options for auth endpoints
+    /// </summary>
+    public RateLimitingOptions RateLimiting { get; set; } = new();
+
 }
 
 /// <summary>
@@ -237,12 +242,64 @@ public class MultiTenantOptions
 }
 
 /// <summary>
+/// Controls how the IDMT database schema is initialized on startup.
+/// </summary>
+public enum DatabaseInitializationMode
+{
+    /// <summary>
+    /// Use EF Core Migrations. Consumers must create and apply migrations themselves.
+    /// Recommended for production. Default.
+    /// </summary>
+    Migrate,
+
+    /// <summary>
+    /// Use EnsureCreated for quick setup. Not compatible with migrations.
+    /// Suitable for development, testing, and prototyping only.
+    /// </summary>
+    EnsureCreated,
+
+    /// <summary>
+    /// Skip automatic database initialization. Consumer manages the database schema externally.
+    /// </summary>
+    None
+}
+
+/// <summary>
 /// Database configuration options
 /// </summary>
 public class DatabaseOptions
 {
     /// <summary>
-    /// Auto-migrate database on startup
+    /// Controls how the database schema is initialized on startup.
+    /// <see cref="DatabaseInitializationMode.Migrate"/> runs EF Core migrations and is the
+    /// default for production use. <see cref="DatabaseInitializationMode.EnsureCreated"/> is
+    /// suitable for development, testing, and prototyping where migrations are not used.
+    /// <see cref="DatabaseInitializationMode.None"/> skips initialization entirely and leaves
+    /// schema management to the consumer.
     /// </summary>
-    public bool AutoMigrate { get; set; } = false;
+    public DatabaseInitializationMode DatabaseInitialization { get; set; } = DatabaseInitializationMode.Migrate;
+}
+
+/// <summary>
+/// Rate limiting configuration for IDMT auth endpoints.
+/// When enabled, a fixed-window limiter named "idmt-auth" is registered and applied
+/// to all authentication endpoints (login, token, forgot-password, etc.) to protect
+/// against brute-force and email-flooding attacks.
+/// </summary>
+public class RateLimitingOptions
+{
+    /// <summary>
+    /// Enable built-in rate limiting for auth endpoints. Default: true.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Maximum number of requests allowed per window for auth endpoints. Default: 10.
+    /// </summary>
+    public int PermitLimit { get; set; } = 10;
+
+    /// <summary>
+    /// Duration of the sliding window in seconds. Default: 60.
+    /// </summary>
+    public int WindowInSeconds { get; set; } = 60;
 }

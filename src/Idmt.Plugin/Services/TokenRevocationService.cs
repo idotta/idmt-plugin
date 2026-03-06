@@ -36,7 +36,29 @@ internal sealed class TokenRevocationService(
             });
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (existing is null)
+        {
+            // TOCTOU race: a concurrent logout for the same user+tenant won the
+            // insert race and triggered a unique constraint violation. Clear the
+            // tracker so the conflicting Add is no longer tracked, then reload
+            // the winner's record and slide its ExpiresAt forward.
+            // RevokedAt is intentionally left untouched — the winning insert
+            // already recorded the earliest revocation timestamp, which is
+            // correct: moving it forward would re-validate tokens issued between
+            // the two concurrent revocation calls.
+            dbContext.ChangeTracker.Clear();
+            var conflict = await dbContext.RevokedTokens.FindAsync([tokenId], cancellationToken);
+            if (conflict is not null)
+            {
+                conflict.ExpiresAt = expiresAt;
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
+
         logger.LogInformation("Revoked all refresh tokens for user {UserId} in tenant {TenantId}", userId, tenantId);
     }
 

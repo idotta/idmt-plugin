@@ -46,6 +46,11 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
         {
             { "Idmt:Application:ClientUrl", "http://localhost" },
             { "Idmt:Application:ApiPrefix", "" },
+            // Use EnsureCreated for integration tests — SQLite in-memory does not support
+            // migrations, and the test factory's SeedAsync initialises the schema directly
+            // via EnsureCreatedAsync before the seeding scope runs.
+            { "Idmt:Database:DatabaseInitialization", "EnsureCreated" },
+            { "Idmt:RateLimiting:Enabled", "false" },
         };
         // Add strategies as indexed array for proper deserialization
         for (int i = 0; i < _strategies.Length; i++)
