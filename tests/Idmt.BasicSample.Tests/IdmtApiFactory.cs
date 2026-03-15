@@ -50,7 +50,6 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
             // migrations, and the test factory's SeedAsync initialises the schema directly
             // via EnsureCreatedAsync before the seeding scope runs.
             { "Idmt:Database:DatabaseInitialization", "EnsureCreated" },
-            { "Idmt:RateLimiting:Enabled", "false" },
         };
         // Add strategies as indexed array for proper deserialization
         for (int i = 0; i < _strategies.Length; i++)

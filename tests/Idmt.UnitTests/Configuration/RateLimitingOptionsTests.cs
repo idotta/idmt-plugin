@@ -10,10 +10,10 @@ public class RateLimitingOptionsTests
     // ------------------------------------------------------------------
 
     [Fact]
-    public void Enabled_DefaultsToTrue()
+    public void Enabled_DefaultsToFalse()
     {
         var options = new RateLimitingOptions();
-        Assert.True(options.Enabled);
+        Assert.False(options.Enabled);
     }
 
     [Fact]
@@ -40,18 +40,18 @@ public class RateLimitingOptionsTests
         var idmtOptions = new IdmtOptions();
 
         Assert.NotNull(idmtOptions.RateLimiting);
-        Assert.True(idmtOptions.RateLimiting.Enabled);
+        Assert.False(idmtOptions.RateLimiting.Enabled);
         Assert.Equal(10, idmtOptions.RateLimiting.PermitLimit);
         Assert.Equal(60, idmtOptions.RateLimiting.WindowInSeconds);
     }
 
     [Fact]
-    public void IdmtOptions_Default_HasRateLimitingEnabled()
+    public void IdmtOptions_Default_HasRateLimitingDisabled()
     {
         var defaults = IdmtOptions.Default;
 
         Assert.NotNull(defaults.RateLimiting);
-        Assert.True(defaults.RateLimiting.Enabled);
+        Assert.False(defaults.RateLimiting.Enabled);
     }
 
     // ------------------------------------------------------------------

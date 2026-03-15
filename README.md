@@ -7,7 +7,7 @@ An opinionated .NET 10 library for self-hosted identity management and multi-ten
 - Dual authentication: cookie-based and bearer token (opaque), resolved automatically per request
 - Multi-tenancy via header, claim, route, or base-path strategies (Finbuckle.MultiTenant)
 - Vertical slice architecture — each endpoint is a self-contained handler
-- Per-IP fixed-window rate limiting on all auth endpoints
+- Optional per-IP fixed-window rate limiting on all auth endpoints (opt-in)
 - Token revocation on logout with background cleanup
 - Account lockout (5 failed attempts / 5-minute window)
 - PII masking in all structured log output
@@ -97,7 +97,7 @@ app.Run();
       "DatabaseInitialization": "Migrate"
     },
     "RateLimiting": {
-      "Enabled": true,
+      "Enabled": false,
       "PermitLimit": 10,
       "WindowInSeconds": 60
     }
@@ -111,7 +111,7 @@ app.Run();
 - `EmailConfirmationMode` — `ServerConfirm` sends a GET link that confirms directly on the server; `ClientForm` sends a link to `ClientUrl/ConfirmEmailFormPath` for SPA handling (default).
 - `DatabaseInitialization` — `Migrate` runs pending EF Core migrations (production default); `EnsureCreated` skips migrations (development/testing); `None` leaves schema management to the consumer.
 - `Strategies` — ordered list of tenant resolution strategies. Valid values: `header`, `claim`, `route`, `basepath`.
-- `RateLimiting` — per-IP fixed-window limiter applied to all `/auth` endpoints. Set `Enabled: false` to opt out.
+- `RateLimiting` — per-IP fixed-window limiter applied to all `/auth` endpoints. Disabled by default; set `Enabled: true` in production to protect against brute-force and email-flooding attacks.
 
 ---
 
@@ -121,7 +121,7 @@ All endpoints are mounted under `ApiPrefix` (default `/api/v1`).
 
 ### Authentication — `/auth`
 
-Rate-limited. All endpoints are public except `/auth/logout`.
+Rate-limited when enabled. All endpoints are public except `/auth/logout`.
 
 | Method | Path | Auth Required | Description |
 |--------|------|:---:|-------------|
@@ -212,7 +212,7 @@ When using bearer tokens, a middleware (`ValidateBearerTokenTenantMiddleware`) v
 
 ## Security
 
-- Per-IP fixed-window rate limiting on all `/auth` endpoints (configurable via `RateLimiting`)
+- Optional per-IP fixed-window rate limiting on all `/auth` endpoints (disabled by default; enable via `RateLimiting.Enabled`)
 - `SameSite=Strict` cookies by default — browser never sends the auth cookie on cross-site requests; `SameSiteMode.None` is blocked and falls back to `Strict`
 - Security headers on every response: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`
 - Token revocation on logout stored in the database; a background `IHostedService` periodically purges expired revoked tokens

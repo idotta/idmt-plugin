@@ -304,9 +304,10 @@ public class DatabaseOptions
 public class RateLimitingOptions
 {
     /// <summary>
-    /// Enable built-in rate limiting for auth endpoints. Default: true.
+    /// Enable built-in rate limiting for auth endpoints. Default: false.
+    /// Opt-in for production deployments to protect against brute-force and email-flooding attacks.
     /// </summary>
-    public bool Enabled { get; set; } = true;
+    public bool Enabled { get; set; } = false;
 
     /// <summary>
     /// Maximum number of requests allowed per window for auth endpoints. Default: 10.
