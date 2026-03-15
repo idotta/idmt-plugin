@@ -7,7 +7,7 @@ An opinionated .NET 10 library for self-hosted identity management and multi-ten
 - Dual authentication: cookie-based and bearer token (opaque), resolved automatically per request
 - Multi-tenancy via header, claim, route, or base-path strategies (Finbuckle.MultiTenant)
 - Vertical slice architecture — each endpoint is a self-contained handler
-- Per-IP fixed-window rate limiting on all auth endpoints
+- Optional per-IP fixed-window rate limiting on all auth endpoints (opt-in)
 - Token revocation on logout with background cleanup
 - Account lockout (5 failed attempts / 5-minute window)
 - PII masking in all structured log output
@@ -97,7 +97,7 @@ app.Run();
       "DatabaseInitialization": "Migrate"
     },
     "RateLimiting": {
-      "Enabled": true,
+      "Enabled": false,
       "PermitLimit": 10,
       "WindowInSeconds": 60
     }
@@ -111,7 +111,7 @@ app.Run();
 - `EmailConfirmationMode` — `ServerConfirm` sends a GET link that confirms directly on the server; `ClientForm` sends a link to `ClientUrl/ConfirmEmailFormPath` for SPA handling (default).
 - `DatabaseInitialization` — `Migrate` runs pending EF Core migrations (production default); `EnsureCreated` skips migrations (development/testing); `None` leaves schema management to the consumer.
 - `Strategies` — ordered list of tenant resolution strategies. Valid values: `header`, `claim`, `route`, `basepath`.
-- `RateLimiting` — per-IP fixed-window limiter applied to all `/auth` endpoints. Set `Enabled: false` to opt out.
+- `RateLimiting` — per-IP fixed-window limiter applied to all `/auth` endpoints. Disabled by default; set `Enabled: true` in production to protect against brute-force and email-flooding attacks.
 
 ---
 
@@ -121,7 +121,7 @@ All endpoints are mounted under `ApiPrefix` (default `/api/v1`).
 
 ### Authentication — `/auth`
 
-Rate-limited. All endpoints are public except `/auth/logout`.
+Rate-limited when enabled. All endpoints are public except `/auth/logout`.
 
 | Method | Path | Auth Required | Description |
 |--------|------|:---:|-------------|
@@ -134,6 +134,7 @@ Rate-limited. All endpoints are public except `/auth/logout`.
 | POST | /auth/resend-confirmation-email | - | Resend the confirmation email. |
 | POST | /auth/forgot-password | - | Send a password reset email. |
 | POST | /auth/reset-password | - | Reset password with a Base64URL-encoded token. |
+| POST | /auth/discover-tenants | - | Discover tenants associated with an email address. Accepts `{ email }` and returns a tenant list. |
 
 Login requests accept `email` or `username`, `password`, `rememberMe`, and optionally `twoFactorCode` / `twoFactorRecoveryCode`.
 
@@ -143,11 +144,11 @@ All endpoints require authentication.
 
 | Method | Path | Policy | Description |
 |--------|------|--------|-------------|
-| GET | /manage/info | Authenticated | Get the current user's profile. |
-| PUT | /manage/info | Authenticated | Update profile, email, or password. |
-| POST | /manage/users | TenantManager | Register a new user (invite flow — sends password-setup email). |
-| PUT | /manage/users/{id} | TenantManager | Activate or deactivate a user. |
-| DELETE | /manage/users/{id} | TenantManager | Soft-delete a user. |
+| GET | /manage/info | Default (authenticated) | Get the current user's profile. |
+| PUT | /manage/info | Default (authenticated) | Update profile, email, or password. |
+| POST | /manage/users | RequireTenantManager | Register a new user (invite flow — sends password-setup email). |
+| PUT | /manage/users/{userId:guid} | RequireTenantManager | Activate or deactivate a user. |
+| DELETE | /manage/users/{userId:guid} | RequireTenantManager | Delete a user. |
 
 ### Administration — `/admin`
 
@@ -156,11 +157,11 @@ All endpoints require the `RequireSysUser` policy (`SysAdmin` or `SysSupport` ro
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | /admin/tenants | Create a new tenant. |
-| DELETE | /admin/tenants/{identifier} | Soft-delete a tenant. |
+| DELETE | /admin/tenants/{tenantIdentifier} | Soft-delete a tenant. |
 | GET | /admin/tenants | List all tenants (paginated; query params: `page`, `pageSize`, max 100). |
-| GET | /admin/users/{id}/tenants | List tenants accessible by a user. |
-| POST | /admin/users/{id}/tenants/{identifier} | Grant a user access to a tenant. |
-| DELETE | /admin/users/{id}/tenants/{identifier} | Revoke a user's access to a tenant. |
+| GET | /admin/users/{userId:guid}/tenants | List tenants accessible by a user. |
+| POST | /admin/users/{userId:guid}/tenants/{tenantIdentifier} | Grant a user access to a tenant. |
+| DELETE | /admin/users/{userId:guid}/tenants/{tenantIdentifier} | Revoke a user's access to a tenant. |
 
 ### Health — `/healthz`
 
@@ -175,6 +176,8 @@ Requires `RequireSysUser`. Returns database connectivity status via ASP.NET Core
 | `RequireSysAdmin` | SysAdmin |
 | `RequireSysUser` | SysAdmin, SysSupport |
 | `RequireTenantManager` | SysAdmin, SysSupport, TenantAdmin |
+| `CookieOnly` | — (requires cookie authentication scheme) |
+| `BearerOnly` | — (requires bearer authentication scheme) |
 
 Default roles seeded at startup: `SysAdmin`, `SysSupport`, `TenantAdmin`. Add custom roles via `Identity.ExtraRoles` in configuration.
 
@@ -209,7 +212,7 @@ When using bearer tokens, a middleware (`ValidateBearerTokenTenantMiddleware`) v
 
 ## Security
 
-- Per-IP fixed-window rate limiting on all `/auth` endpoints (configurable via `RateLimiting`)
+- Optional per-IP fixed-window rate limiting on all `/auth` endpoints (disabled by default; enable via `RateLimiting.Enabled`)
 - `SameSite=Strict` cookies by default — browser never sends the auth cookie on cross-site requests; `SameSiteMode.None` is blocked and falls back to `Strict`
 - Security headers on every response: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`
 - Token revocation on logout stored in the database; a background `IHostedService` periodically purges expired revoked tokens
@@ -233,11 +236,11 @@ builder.Services.AddIdmt<MyDbContext>(
     {
         options.Application.ApiPrefix = "/api/v2";
     },
-    customizeAuth: auth =>
+    customizeAuthentication: auth =>
     {
         // Add additional authentication schemes
     },
-    customizeAuthz: authz =>
+    customizeAuthorization: authz =>
     {
         // Add additional authorization policies
     }

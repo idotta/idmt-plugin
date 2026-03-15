@@ -20,22 +20,22 @@ jobs:
         dotnet-version: 10.0.x
 
     - name: Restore dependencies
-      run: dotnet restore src/Idmt.slnx
+      run: dotnet restore Idmt.slnx
 
     - name: Format check
-      run: dotnet format src/Idmt.slnx --verify-no-changes --verbosity diagnostic
+      run: dotnet format Idmt.slnx --verify-no-changes --verbosity diagnostic
 
     - name: Build
-      run: dotnet build src/Idmt.slnx --no-restore --configuration Release /p:TreatWarningsAsErrors=true
+      run: dotnet build Idmt.slnx --no-restore --configuration Release /p:TreatWarningsAsErrors=true
     
     - name: Run analyzers
-      run: dotnet build src/Idmt.slnx --no-restore --configuration Release /p:RunAnalyzers=true /p:EnforceCodeStyleInBuild=true
+      run: dotnet build Idmt.slnx --no-restore --configuration Release /p:RunAnalyzers=true /p:EnforceCodeStyleInBuild=true
 
     - name: Test
-      run: dotnet test src/Idmt.slnx --no-build --configuration Release --verbosity normal
+      run: dotnet test Idmt.slnx --no-build --configuration Release --verbosity normal
 
     - name: Pack
-      run: dotnet pack src/Idmt.Plugin/Idmt.Plugin.csproj --no-build --configuration Release --output .
+      run: dotnet pack Idmt.Plugin/Idmt.Plugin.csproj --no-build --configuration Release --output .
 
     - name: Upload NuGet package
       uses: actions/upload-artifact@v4
