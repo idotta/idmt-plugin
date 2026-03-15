@@ -314,7 +314,7 @@ public class RateLimitingOptions
     public int PermitLimit { get; set; } = 10;
 
     /// <summary>
-    /// Duration of the sliding window in seconds. Default: 60.
+    /// Duration of the fixed window in seconds. Default: 60.
     /// </summary>
     public int WindowInSeconds { get; set; } = 60;
 }

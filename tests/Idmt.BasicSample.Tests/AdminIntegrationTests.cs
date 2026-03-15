@@ -1,8 +1,12 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Idmt.Plugin.Features.Admin;
+using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Features.Manage;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Idmt.BasicSample.Tests;
@@ -467,6 +471,87 @@ public class AdminIntegrationTests : BaseIntegrationTest
 
         // The handler returns ErrorType.Forbidden which maps to TypedResults.Forbid()
         Assert.Contains(deleteResponse.StatusCode, new[] { HttpStatusCode.Forbidden, HttpStatusCode.InternalServerError });
+    }
+
+    #endregion
+
+    #region Revoke Tenant Access Security Tests
+
+    [Fact]
+    public async Task RevokeTenantAccess_RefreshToken_IsRejectedAfterRevocation()
+    {
+        // Clean up any revoked tokens from other tests
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<IdmtDbContext>();
+            await db.RevokedTokens.ExecuteDeleteAsync();
+        }
+
+        var sysClient = await CreateAuthenticatedClientAsync();
+
+        // Create a second tenant
+        var secondTenantIdentifier = $"revoke-rt-{Guid.NewGuid():N}";
+        var createTenantResponse = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = secondTenantIdentifier,
+            Name = "Revoke RT Tenant"
+        });
+        await createTenantResponse.AssertSuccess();
+
+        // Register a user in the system tenant
+        var email = $"revoke-rt-{Guid.NewGuid():N}@example.com";
+        var password = "RevokeRT1!";
+        var (userId, _) = await RegisterAndSetPasswordAsync(sysClient, password, email: email, username: $"revokert{Guid.NewGuid():N}");
+
+        // Grant user access to the second tenant
+        var grantResponse = await sysClient.PostAsJsonAsync(
+            $"/admin/users/{userId}/tenants/{secondTenantIdentifier}",
+            new { ExpiresAt = (DateTime?)null });
+        await grantResponse.AssertSuccess();
+
+        // Login as that user to the second tenant
+        var tenantClient = Factory.CreateClientWithTenant(secondTenantIdentifier);
+        var loginResponse = await tenantClient.PostAsJsonAsync("/auth/token", new
+        {
+            Email = email,
+            Password = password
+        });
+        await loginResponse.AssertSuccess();
+        var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
+
+        tenantClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
+
+        // Verify refresh token works before revocation
+        var refreshBefore = await tenantClient.PostAsJsonAsync("/auth/refresh", new RefreshToken.RefreshTokenRequest(tokens.RefreshToken!));
+        await refreshBefore.AssertSuccess();
+        var refreshedTokens = await refreshBefore.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
+
+        // Revoke access to the second tenant
+        var revokeResponse = await sysClient.DeleteAsync($"/admin/users/{userId}/tenants/{secondTenantIdentifier}");
+        Assert.Equal(HttpStatusCode.NoContent, revokeResponse.StatusCode);
+
+        // Assert refresh token for that tenant now fails
+        var refreshAfter = await tenantClient.PostAsJsonAsync("/auth/refresh", new RefreshToken.RefreshTokenRequest(refreshedTokens!.RefreshToken!));
+        Assert.False(refreshAfter.IsSuccessStatusCode);
+    }
+
+    #endregion
+
+    #region Default Tenant Tests
+
+    [Fact]
+    public async Task DefaultTenant_ExistsAfterStartup()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+
+        // The GET /admin/tenants endpoint filters out the system tenant,
+        // so we verify the system tenant exists by checking the tenant store directly
+        using var scope = Factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<Finbuckle.MultiTenant.Abstractions.IMultiTenantStore<IdmtTenantInfo>>();
+        var tenant = await store.GetByIdentifierAsync(IdmtApiFactory.DefaultTenantIdentifier);
+
+        Assert.NotNull(tenant);
+        Assert.Equal(IdmtApiFactory.DefaultTenantIdentifier, tenant!.Identifier);
     }
 
     #endregion

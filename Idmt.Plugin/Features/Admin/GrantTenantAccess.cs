@@ -120,8 +120,9 @@ public static class GrantTenantAccess
                             Email = user.Email,
                             EmailConfirmed = user.EmailConfirmed,
                             PasswordHash = user.PasswordHash,
-                            SecurityStamp = user.SecurityStamp,
-                            ConcurrencyStamp = user.ConcurrencyStamp,
+                            // SecurityStamp and ConcurrencyStamp intentionally omitted —
+                            // UserManager.CreateAsync generates fresh values so that session
+                            // invalidation in one tenant does not affect the other.
                             PhoneNumber = user.PhoneNumber,
                             PhoneNumberConfirmed = user.PhoneNumberConfirmed,
                             TwoFactorEnabled = user.TwoFactorEnabled,

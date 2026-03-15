@@ -173,9 +173,15 @@ public static class ApplicationBuilderExtensions
     {
         var options = services.GetRequiredService<IOptions<IdmtOptions>>();
         var createTenantHandler = services.GetRequiredService<CreateTenant.ICreateTenantHandler>();
-        await createTenantHandler.HandleAsync(new CreateTenant.CreateTenantRequest(
+        var result = await createTenantHandler.HandleAsync(new CreateTenant.CreateTenantRequest(
             MultiTenantOptions.DefaultTenantIdentifier,
             options.Value.MultiTenant.DefaultTenantName));
+
+        if (result.IsError && result.FirstError.Code != "Tenant.AlreadyExists")
+        {
+            throw new InvalidOperationException(
+                $"Failed to seed default tenant '{MultiTenantOptions.DefaultTenantIdentifier}': {result.FirstError.Description}");
+        }
     }
 
     private static void VerifyUserStoreSupportsEmail(IApplicationBuilder app)

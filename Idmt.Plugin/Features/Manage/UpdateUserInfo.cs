@@ -35,6 +35,8 @@ public static class UpdateUserInfo
         IdmtDbContext dbContext,
         IIdmtLinkGenerator linkGenerator,
         IEmailSender<IdmtUser> emailSender,
+        ICurrentUserService currentUserService,
+        ITokenRevocationService tokenRevocationService,
         ILogger<UpdateUserInfoHandler> logger) : IUpdateUserInfoHandler
     {
         public async Task<ErrorOr<Success>> HandleAsync(
@@ -100,6 +102,12 @@ public static class UpdateUserInfo
                     var confirmToken = await userManager.GenerateEmailConfirmationTokenAsync(appUser);
                     var confirmLink = linkGenerator.GenerateConfirmEmailLink(request.NewEmail, confirmToken);
                     await emailSender.SendConfirmationLinkAsync(appUser, request.NewEmail, confirmLink);
+
+                    // Revoke existing bearer tokens so old refresh tokens cannot be used
+                    if (currentUserService.UserId is { } uid && currentUserService.TenantId is { } tid)
+                    {
+                        await tokenRevocationService.RevokeUserTokensAsync(uid, tid, cancellationToken);
+                    }
 
                     logger.LogInformation("Email changed for user. Confirmation email dispatched to new address.");
                     // hasChanges intentionally not set here: ChangeEmailAsync already persisted the

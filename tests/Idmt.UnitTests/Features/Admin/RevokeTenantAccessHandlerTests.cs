@@ -13,6 +13,7 @@ namespace Idmt.UnitTests.Features.Admin;
 public class RevokeTenantAccessHandlerTests : IDisposable
 {
     private readonly Mock<ITenantOperationService> _tenantOpsMock;
+    private readonly Mock<ITokenRevocationService> _tokenRevocationServiceMock;
     private readonly IdmtDbContext _dbContext;
     private readonly Mock<IMultiTenantStore<IdmtTenantInfo>> _tenantStoreMock;
     private readonly RevokeTenantAccess.RevokeTenantAccessHandler _handler;
@@ -20,6 +21,7 @@ public class RevokeTenantAccessHandlerTests : IDisposable
     public RevokeTenantAccessHandlerTests()
     {
         _tenantOpsMock = new Mock<ITenantOperationService>();
+        _tokenRevocationServiceMock = new Mock<ITokenRevocationService>();
 
         // InMemory DbContext
         var tenantAccessorMock = new Mock<IMultiTenantContextAccessor>();
@@ -45,6 +47,7 @@ public class RevokeTenantAccessHandlerTests : IDisposable
             _dbContext,
             _tenantStoreMock.Object,
             _tenantOpsMock.Object,
+            _tokenRevocationServiceMock.Object,
             NullLogger<RevokeTenantAccess.RevokeTenantAccessHandler>.Instance);
     }
 

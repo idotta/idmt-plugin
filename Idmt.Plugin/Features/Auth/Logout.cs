@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -27,6 +28,7 @@ public static class Logout
         SignInManager<IdmtUser> signInManager,
         ICurrentUserService currentUserService,
         IMultiTenantContextAccessor<IdmtTenantInfo> tenantContextAccessor,
+        IMultiTenantStore<IdmtTenantInfo> tenantStore,
         IOptions<IdmtOptions> idmtOptions,
         ITokenRevocationService tokenRevocationService)
         : ILogoutHandler
@@ -48,21 +50,33 @@ public static class Logout
                     else
                     {
                         // Fallback: the multi-tenant strategy did not resolve a tenant context
-                        // (e.g. header or route strategies at logout time). Read the tenant claim
-                        // from the bearer principal to produce a meaningful diagnostic. Token
-                        // revocation cannot proceed without the tenant DB Id, so log a warning
-                        // rather than silently succeeding with an unrevoked token.
+                        // (e.g. header or route strategies at logout time). Extract the tenant
+                        // identifier from the bearer principal's claims and resolve the tenant
+                        // via the store so revocation can still proceed.
                         var tenantClaimKey = idmtOptions.Value.MultiTenant.StrategyOptions
                             .GetValueOrDefault(IdmtMultiTenantStrategy.Claim, IdmtMultiTenantStrategy.DefaultClaim);
                         var tenantIdentifierFromClaim = currentUserService.User?.FindFirst(tenantClaimKey)?.Value;
 
-                        logger.LogWarning(
-                            "Token revocation skipped for user {UserId}: tenant context could not be resolved. " +
-                            "Tenant identifier from bearer claims: {TenantIdentifier}. " +
-                            "Ensure the multi-tenant strategy resolves during logout requests, " +
-                            "or add the claim strategy so the tenant can be resolved from the bearer token.",
-                            userId,
-                            tenantIdentifierFromClaim ?? "<not present in claims>");
+                        if (tenantIdentifierFromClaim is not null)
+                        {
+                            var resolvedTenant = await tenantStore.GetByIdentifierAsync(tenantIdentifierFromClaim);
+                            if (resolvedTenant?.Id is not null)
+                            {
+                                await tokenRevocationService.RevokeUserTokensAsync(userId, resolvedTenant.Id, cancellationToken);
+                            }
+                            else
+                            {
+                                logger.LogWarning(
+                                    "Token revocation skipped for user {UserId}: tenant identifier {TenantIdentifier} from bearer claims could not be resolved.",
+                                    userId, tenantIdentifierFromClaim);
+                            }
+                        }
+                        else
+                        {
+                            logger.LogWarning(
+                                "Token revocation skipped for user {UserId}: no tenant context resolved and no tenant claim present in bearer token.",
+                                userId);
+                        }
                     }
                 }
 

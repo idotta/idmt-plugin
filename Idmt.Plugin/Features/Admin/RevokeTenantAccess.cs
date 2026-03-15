@@ -31,6 +31,7 @@ public static class RevokeTenantAccess
         IdmtDbContext dbContext,
         IMultiTenantStore<IdmtTenantInfo> tenantStore,
         ITenantOperationService tenantOps,
+        ITokenRevocationService tokenRevocationService,
         ILogger<RevokeTenantAccessHandler> logger) : IRevokeTenantAccessHandler
     {
         public async Task<ErrorOr<Success>> HandleAsync(Guid userId, string tenantIdentifier, CancellationToken cancellationToken = default)
@@ -61,6 +62,9 @@ public static class RevokeTenantAccess
                 tenantAccess.IsActive = false;
                 dbContext.TenantAccess.Update(tenantAccess);
                 await dbContext.SaveChangesAsync(cancellationToken);
+
+                // Revoke any active bearer tokens so the user cannot refresh after access is removed
+                await tokenRevocationService.RevokeUserTokensAsync(userId, targetTenant.Id!, cancellationToken);
             }
             catch (Exception ex)
             {

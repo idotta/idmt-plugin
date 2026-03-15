@@ -151,7 +151,8 @@ public static class CreateTenant
                     _ => TypedResults.Problem(response.FirstError.Description, statusCode: StatusCodes.Status500InternalServerError),
                 };
             }
-            return TypedResults.Created($"/admin/tenants/{response.Value.Identifier}", response.Value);
+            var apiPrefix = context.RequestServices.GetRequiredService<IOptions<IdmtOptions>>().Value.Application.ApiPrefix ?? string.Empty;
+            return TypedResults.Created($"{apiPrefix}/admin/tenants/{response.Value.Identifier}", response.Value);
         })
         .WithSummary("Create Tenant")
         .WithDescription("Create a new tenant in the system or reactivate an existing inactive tenant");

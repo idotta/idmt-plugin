@@ -18,6 +18,8 @@ public class UpdateUserInfoHandlerTests : IDisposable
     private readonly Mock<UserManager<IdmtUser>> _userManagerMock;
     private readonly Mock<IIdmtLinkGenerator> _linkGeneratorMock;
     private readonly Mock<IEmailSender<IdmtUser>> _emailSenderMock;
+    private readonly Mock<ICurrentUserService> _handlerCurrentUserServiceMock;
+    private readonly Mock<ITokenRevocationService> _tokenRevocationServiceMock;
     private readonly IdmtDbContext _dbContext;
     private readonly UpdateUserInfo.UpdateUserInfoHandler _handler;
 
@@ -29,6 +31,8 @@ public class UpdateUserInfoHandlerTests : IDisposable
 
         _linkGeneratorMock = new Mock<IIdmtLinkGenerator>();
         _emailSenderMock = new Mock<IEmailSender<IdmtUser>>();
+        _handlerCurrentUserServiceMock = new Mock<ICurrentUserService>();
+        _tokenRevocationServiceMock = new Mock<ITokenRevocationService>();
 
         var tenantAccessorMock = new Mock<IMultiTenantContextAccessor>();
         var dummyTenant = new IdmtTenantInfo("system-test-tenant", "system-test", "System Test Tenant");
@@ -54,6 +58,8 @@ public class UpdateUserInfoHandlerTests : IDisposable
             _dbContext,
             _linkGeneratorMock.Object,
             _emailSenderMock.Object,
+            _handlerCurrentUserServiceMock.Object,
+            _tokenRevocationServiceMock.Object,
             NullLogger<UpdateUserInfo.UpdateUserInfoHandler>.Instance);
     }
 

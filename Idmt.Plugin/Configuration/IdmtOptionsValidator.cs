@@ -34,13 +34,14 @@ public sealed class IdmtOptionsValidator : IValidateOptions<IdmtOptions>
                 "Use an empty string \"\" to disable the prefix or provide a value such as \"/api/v1\".");
         }
 
-        // Rule 2: When EmailConfirmationMode is ClientForm, ClientUrl is required.
-        if (application.EmailConfirmationMode == EmailConfirmationMode.ClientForm &&
-            string.IsNullOrWhiteSpace(application.ClientUrl))
+        // Rule 2: ClientUrl is always required because password reset links always use
+        // client form URLs (GeneratePasswordResetLink), regardless of EmailConfirmationMode.
+        if (string.IsNullOrWhiteSpace(application.ClientUrl))
         {
             failures.Add(
-                $"{nameof(IdmtOptions.Application)}.{nameof(ApplicationOptions.ClientUrl)} must not be null or empty " +
-                $"when {nameof(ApplicationOptions.EmailConfirmationMode)} is {nameof(EmailConfirmationMode.ClientForm)}.");
+                $"{nameof(IdmtOptions.Application)}.{nameof(ApplicationOptions.ClientUrl)} must not be null or empty. " +
+                "It is required for password reset links and for email confirmation when " +
+                $"{nameof(ApplicationOptions.EmailConfirmationMode)} is {nameof(EmailConfirmationMode.ClientForm)}.");
         }
 
         // Rule 3: When ClientUrl is set, the client-side form paths must also be configured.

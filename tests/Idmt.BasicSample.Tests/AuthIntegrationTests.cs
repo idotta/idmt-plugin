@@ -344,6 +344,43 @@ public class AuthIntegrationTests : BaseIntegrationTest
         Assert.Contains(logoutResponse.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.Found });
     }
 
+    [Fact]
+    public async Task Logout_Bearer_RefreshToken_IsRejectedAfterLogout()
+    {
+        // Clean up any revoked tokens from other tests
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<IdmtDbContext>();
+            await db.RevokedTokens.ExecuteDeleteAsync();
+        }
+
+        var client = Factory.CreateClientWithTenant();
+
+        // Login to get access + refresh tokens
+        var loginResponse = await client.PostAsJsonAsync("/auth/token", new
+        {
+            Email = IdmtApiFactory.SysAdminEmail,
+            Password = IdmtApiFactory.SysAdminPassword
+        });
+        await loginResponse.AssertSuccess();
+        var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
+
+        // Verify refresh works before logout
+        var refreshBeforeLogout = await client.PostAsJsonAsync("/auth/refresh", new RefreshToken.RefreshTokenRequest(tokens.RefreshToken!));
+        await refreshBeforeLogout.AssertSuccess();
+        var refreshedTokens = await refreshBeforeLogout.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
+
+        // Logout with Bearer token
+        var logoutResponse = await client.PostAsync("/auth/logout", content: null);
+        Assert.Equal(HttpStatusCode.NoContent, logoutResponse.StatusCode);
+
+        // Assert refresh now fails after logout
+        var refreshAfterLogout = await client.PostAsJsonAsync("/auth/refresh", new RefreshToken.RefreshTokenRequest(refreshedTokens!.RefreshToken!));
+        Assert.False(refreshAfterLogout.IsSuccessStatusCode);
+    }
+
     #endregion
 
     #region Confirm Email Tests

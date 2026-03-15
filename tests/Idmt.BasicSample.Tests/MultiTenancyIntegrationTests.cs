@@ -212,6 +212,28 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
         Assert.Contains(infoResponseB.StatusCode, new[] { HttpStatusCode.NotFound, HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
     }
 
+    [Fact]
+    public async Task RefreshToken_FromTenantA_IsRejected_ByTenantB()
+    {
+        await EnsureTenantsExistAsync();
+
+        // Create a user in Tenant A
+        var email = $"refresh-cross-{Guid.NewGuid():N}@example.com";
+        var password = "CrossTenant1!";
+        await CreateUserInTenantAsync(TenantA, email, password);
+
+        // Login to Tenant A to get tokens
+        var clientA = Factory.CreateClientWithTenant(TenantA);
+        var loginResponse = await clientA.PostAsJsonAsync("/auth/token", new { Email = email, Password = password });
+        await loginResponse.AssertSuccess();
+        var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
+
+        // Try to refresh with Tenant B header - should fail
+        var clientB = Factory.CreateClientWithTenant(TenantB);
+        var refreshResponse = await clientB.PostAsJsonAsync("/auth/refresh", new RefreshToken.RefreshTokenRequest(tokens!.RefreshToken!));
+        Assert.False(refreshResponse.IsSuccessStatusCode);
+    }
+
     #endregion
 
     #region Route Strategy Tests

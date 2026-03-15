@@ -19,6 +19,7 @@ public class LogoutHandlerTests
     private readonly Mock<SignInManager<IdmtUser>> _signInManagerMock;
     private readonly Mock<ICurrentUserService> _currentUserServiceMock;
     private readonly Mock<IMultiTenantContextAccessor<IdmtTenantInfo>> _tenantContextAccessorMock;
+    private readonly Mock<IMultiTenantStore<IdmtTenantInfo>> _tenantStoreMock;
     private readonly IOptions<IdmtOptions> _idmtOptions;
     private readonly Mock<ITokenRevocationService> _tokenRevocationServiceMock;
     private readonly Logout.LogoutHandler _handler;
@@ -38,6 +39,7 @@ public class LogoutHandlerTests
         _loggerMock = new Mock<ILogger<Logout.LogoutHandler>>();
         _currentUserServiceMock = new Mock<ICurrentUserService>();
         _tenantContextAccessorMock = new Mock<IMultiTenantContextAccessor<IdmtTenantInfo>>();
+        _tenantStoreMock = new Mock<IMultiTenantStore<IdmtTenantInfo>>();
         _tokenRevocationServiceMock = new Mock<ITokenRevocationService>();
 
         // Default: no tenant context resolved. Tests that need a resolved tenant override this.
@@ -61,6 +63,7 @@ public class LogoutHandlerTests
             _signInManagerMock.Object,
             _currentUserServiceMock.Object,
             _tenantContextAccessorMock.Object,
+            _tenantStoreMock.Object,
             _idmtOptions,
             _tokenRevocationServiceMock.Object);
     }
@@ -155,17 +158,21 @@ public class LogoutHandlerTests
     }
 
     [Fact]
-    public async Task Logout_SkipsRevocationAndLogsWarning_WhenTenantContextIsNull()
+    public async Task Logout_RevokesViaFallback_WhenTenantContextIsNullButClaimResolvesToTenant()
     {
-        // Arrange: the multi-tenant strategy produced no context (e.g. header or route strategy
-        // does not fire during logout). The accessor default in the constructor returns null.
-        // The principal has a tenant claim that the warning should surface in its message.
+        // Arrange: the multi-tenant strategy produced no context, but the bearer principal
+        // carries a tenant claim. The fallback resolves the tenant from the store and revokes.
         var userId = Guid.NewGuid();
         var tenantIdentifierFromClaim = "acme-corp";
+        var tenantDbId = "acme-db-id";
         var principal = BuildPrincipalWithTenantClaim(TenantClaimKey, tenantIdentifierFromClaim);
 
         _currentUserServiceMock.SetupGet(c => c.UserId).Returns(userId);
         _currentUserServiceMock.SetupGet(c => c.User).Returns(principal);
+
+        _tenantStoreMock
+            .Setup(x => x.GetByIdentifierAsync(tenantIdentifierFromClaim))
+            .ReturnsAsync(new IdmtTenantInfo(tenantDbId, tenantIdentifierFromClaim, "Acme Corp"));
 
         _signInManagerMock
             .Setup(s => s.SignOutAsync())
@@ -174,14 +181,41 @@ public class LogoutHandlerTests
         // Act
         var result = await _handler.HandleAsync();
 
-        // Assert: sign-out still returns 204 — the user is signed out even without revocation
+        // Assert: revocation succeeds via fallback
+        Assert.False(result.IsError);
+        _tokenRevocationServiceMock.Verify(
+            x => x.RevokeUserTokensAsync(userId, tenantDbId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Logout_LogsWarning_WhenTenantContextIsNullAndClaimCannotBeResolved()
+    {
+        // Arrange: no tenant context and the claim identifier cannot be found in the store.
+        var userId = Guid.NewGuid();
+        var tenantIdentifierFromClaim = "unknown-tenant";
+        var principal = BuildPrincipalWithTenantClaim(TenantClaimKey, tenantIdentifierFromClaim);
+
+        _currentUserServiceMock.SetupGet(c => c.UserId).Returns(userId);
+        _currentUserServiceMock.SetupGet(c => c.User).Returns(principal);
+
+        // Store returns null — tenant not found
+        _tenantStoreMock
+            .Setup(x => x.GetByIdentifierAsync(tenantIdentifierFromClaim))
+            .ReturnsAsync((IdmtTenantInfo?)null);
+
+        _signInManagerMock
+            .Setup(s => s.SignOutAsync())
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _handler.HandleAsync();
+
+        // Assert: sign-out succeeds but revocation skipped
         Assert.False(result.IsError);
         _tokenRevocationServiceMock.Verify(
             x => x.RevokeUserTokensAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
-
-        // Assert: warning is logged and identifies the tenant from bearer claims so operators
-        // can diagnose the misconfigured strategy
         VerifyLogWarningContains(tenantIdentifierFromClaim);
     }
 
@@ -209,16 +243,18 @@ public class LogoutHandlerTests
             x => x.RevokeUserTokensAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
-        VerifyLogWarningContains("<not present in claims>");
+        VerifyLogWarningContains("no tenant context resolved");
     }
 
     [Fact]
-    public async Task Logout_LogsWarning_WhenTenantContextExistsButTenantInfoIsNull()
+    public async Task Logout_UsesClaimFallback_WhenTenantContextExistsButTenantInfoIsNull()
     {
         // Arrange: Finbuckle returned a context object (resolution ran) but found no matching
         // tenant store entry — TenantInfo is null, so Id cannot be resolved.
+        // The fallback reads the claim and resolves via the store.
         var userId = Guid.NewGuid();
-        var tenantIdentifierFromClaim = "unknown-tenant";
+        var tenantIdentifierFromClaim = "resolved-tenant";
+        var tenantDbId = "resolved-db-id";
         var principal = BuildPrincipalWithTenantClaim(TenantClaimKey, tenantIdentifierFromClaim);
 
         _currentUserServiceMock.SetupGet(c => c.UserId).Returns(userId);
@@ -230,6 +266,10 @@ public class LogoutHandlerTests
             .SetupGet(a => a.MultiTenantContext)
             .Returns(contextWithNullTenantInfo.Object);
 
+        _tenantStoreMock
+            .Setup(x => x.GetByIdentifierAsync(tenantIdentifierFromClaim))
+            .ReturnsAsync(new IdmtTenantInfo(tenantDbId, tenantIdentifierFromClaim, "Resolved Tenant"));
+
         _signInManagerMock
             .Setup(s => s.SignOutAsync())
             .Returns(Task.CompletedTask);
@@ -237,22 +277,22 @@ public class LogoutHandlerTests
         // Act
         var result = await _handler.HandleAsync();
 
-        // Assert
+        // Assert: revocation proceeds via fallback
         Assert.False(result.IsError);
         _tokenRevocationServiceMock.Verify(
-            x => x.RevokeUserTokensAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-
-        VerifyLogWarningContains(tenantIdentifierFromClaim);
+            x => x.RevokeUserTokensAsync(userId, tenantDbId, It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
-    public async Task Logout_UsesConfiguredClaimKey_WhenReadingTenantIdentifierForWarning()
+    public async Task Logout_UsesConfiguredClaimKey_WhenReadingTenantIdentifierForFallback()
     {
         // Arrange: a non-default claim key is configured; the handler must read the tenant
-        // identifier from the correct claim type when composing the warning message.
+        // identifier from the correct claim type for the fallback resolution.
         const string customClaimKey = "custom_tenant_claim";
         const string tenantIdentifierValue = "my-org";
+        const string tenantDbId = "my-org-db-id";
+        var userId = Guid.NewGuid();
 
         var options = Options.Create(new IdmtOptions
         {
@@ -266,10 +306,13 @@ public class LogoutHandlerTests
         });
 
         var principal = BuildPrincipalWithTenantClaim(customClaimKey, tenantIdentifierValue);
-        _currentUserServiceMock.SetupGet(c => c.UserId).Returns(Guid.NewGuid());
+        _currentUserServiceMock.SetupGet(c => c.UserId).Returns(userId);
         _currentUserServiceMock.SetupGet(c => c.User).Returns(principal);
 
-        // Tenant context remains null (default)
+        // Tenant context remains null (default) — triggers fallback
+        _tenantStoreMock
+            .Setup(x => x.GetByIdentifierAsync(tenantIdentifierValue))
+            .ReturnsAsync(new IdmtTenantInfo(tenantDbId, tenantIdentifierValue, "My Org"));
 
         _signInManagerMock
             .Setup(s => s.SignOutAsync())
@@ -280,14 +323,17 @@ public class LogoutHandlerTests
             _signInManagerMock.Object,
             _currentUserServiceMock.Object,
             _tenantContextAccessorMock.Object,
+            _tenantStoreMock.Object,
             options,
             _tokenRevocationServiceMock.Object);
 
         // Act
         await handlerWithCustomOptions.HandleAsync();
 
-        // Assert: warning contains the value from the custom claim key
-        VerifyLogWarningContains(tenantIdentifierValue);
+        // Assert: revocation called with correct tenant from custom claim key
+        _tokenRevocationServiceMock.Verify(
+            x => x.RevokeUserTokensAsync(userId, tenantDbId, It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     #region Helpers

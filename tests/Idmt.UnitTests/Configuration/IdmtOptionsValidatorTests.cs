@@ -122,16 +122,17 @@ public class IdmtOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_Succeeds_WhenServerConfirmModeAndClientUrlIsNull()
+    public void Validate_Fails_WhenServerConfirmModeAndClientUrlIsNull()
     {
-        // ClientUrl is only required for ClientForm mode; ServerConfirm does not need it.
+        // ClientUrl is always required because password reset links use client form URLs.
         var options = ValidOptions();
         options.Application.EmailConfirmationMode = EmailConfirmationMode.ServerConfirm;
         options.Application.ClientUrl = null;
 
         var result = Validate(options);
 
-        Assert.False(result.Failed);
+        Assert.True(result.Failed);
+        Assert.Contains(result.Failures!, f => f.Contains(nameof(ApplicationOptions.ClientUrl)));
     }
 
     // ---------------------------------------------------------------------------
@@ -206,9 +207,10 @@ public class IdmtOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_Succeeds_WhenClientUrlNullAndFormPathsAreNotChecked()
+    public void Validate_Fails_WhenClientUrlNullEvenWithServerConfirmMode()
     {
-        // When ClientUrl is null / not set, form paths are irrelevant and should not be checked.
+        // ClientUrl is always required. When it is null, the validation should fail
+        // for ClientUrl itself, but form paths are not checked since ClientUrl is not set.
         var options = ValidOptions();
         options.Application.EmailConfirmationMode = EmailConfirmationMode.ServerConfirm;
         options.Application.ClientUrl = null;
@@ -217,7 +219,8 @@ public class IdmtOptionsValidatorTests
 
         var result = Validate(options);
 
-        Assert.False(result.Failed);
+        Assert.True(result.Failed);
+        Assert.Contains(result.Failures!, f => f.Contains(nameof(ApplicationOptions.ClientUrl)));
     }
 
     // ---------------------------------------------------------------------------
@@ -343,8 +346,7 @@ public class IdmtOptionsValidatorTests
             {
                 ApiPrefix = null!,
                 EmailConfirmationMode = EmailConfirmationMode.ClientForm,
-                ClientUrl = null          // violates rule 2
-                                          // form paths are null but not checked because ClientUrl is null
+                ClientUrl = null          // violates rule 2 (always required)
             },
             MultiTenant = new MultiTenantOptions
             {
