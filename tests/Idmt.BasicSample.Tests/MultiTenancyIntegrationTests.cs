@@ -27,11 +27,21 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
 
     private async Task EnsureTenantsExistAsync()
     {
-        using var scope = Factory.Services.CreateScope();
-        var handler = scope.ServiceProvider.GetRequiredService<CreateTenant.ICreateTenantHandler>();
-
-        await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantA, TenantA));
-        await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantB, TenantB));
+        // Phase 1 / Step 9: CreateTenantHandler requires authenticated invoker. Drive via HTTP.
+        var sysClient = await CreateAuthenticatedClientAsync();
+        foreach (var tenantId in new[] { TenantA, TenantB })
+        {
+            var response = await sysClient.PostAsJsonAsync("/admin/tenants", new
+            {
+                Identifier = tenantId,
+                Name = tenantId
+            });
+            // Tenant may already exist (Conflict) — ignore that, fail otherwise.
+            if (!response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode.Conflict)
+            {
+                await response.AssertSuccess();
+            }
+        }
     }
 
     private async Task CreateUserInTenantAsync(string tenantIdentifier, string email, string password, string role = IdmtDefaultRoleTypes.TenantAdmin)
@@ -211,7 +221,10 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
         // Create user in Tenant A
         var emailA = $"crosstoken-{Guid.NewGuid():N}@example.com";
         var passwordA = "PasswordA1!";
-        await CreateUserInTenantAsync(TenantA, emailA, passwordA, IdmtDefaultRoleTypes.SysSupport);
+        // Phase 1 / Step 9: SysSupport is no longer seeded as a per-tenant IdentityRole. Use
+        // TenantAdmin (still seeded per-tenant by CreateTenant) — the role choice is irrelevant
+        // to the cross-tenant token rejection assertion.
+        await CreateUserInTenantAsync(TenantA, emailA, passwordA, IdmtDefaultRoleTypes.TenantAdmin);
 
         // Login as Tenant A user
         var clientA = Factory.CreateClientWithTenant(TenantA);

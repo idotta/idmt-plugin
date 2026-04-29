@@ -45,38 +45,55 @@ public class AdminIntegrationTests : BaseIntegrationTest
     [Fact]
     public async Task CreateTenant_handler_with_valid_data_succeeds()
     {
-        using var scope = Factory.Services.CreateScope();
-        var handler = scope.ServiceProvider.GetRequiredService<CreateTenant.ICreateTenantHandler>();
-
+        // Phase 1 / Step 9: CreateTenantHandler requires an authenticated invoker — drive it via the
+        // HTTP endpoint (already gated by RequireSysAdmin) instead of direct DI resolution.
+        var sysClient = await CreateAuthenticatedClientAsync();
         var tenantIdentifier = $"tenant-{Guid.NewGuid():N}";
-        var request = new CreateTenant.CreateTenantRequest(tenantIdentifier, "Test Tenant");
-        var result = await handler.HandleAsync(request);
 
-        Assert.False(result.IsError);
-        Assert.Equal(tenantIdentifier, result.Value.Identifier);
+        var response = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantIdentifier,
+            Name = "Test Tenant"
+        });
+        await response.AssertSuccess();
+
+        var body = await response.Content.ReadFromJsonAsync<CreateTenant.CreateTenantResponse>();
+        Assert.NotNull(body);
+        Assert.Equal(tenantIdentifier, body!.Identifier);
     }
 
     [Fact]
     public async Task CreateTenant_handler_with_duplicate_identifier_reactivates()
     {
-        using var scope = Factory.Services.CreateScope();
-        var handler = scope.ServiceProvider.GetRequiredService<CreateTenant.ICreateTenantHandler>();
-        var deleteHandler = scope.ServiceProvider.GetRequiredService<DeleteTenant.IDeleteTenantHandler>();
-
+        var sysClient = await CreateAuthenticatedClientAsync();
         var tenantIdentifier = $"tenant-{Guid.NewGuid():N}";
 
-        // Create initial tenant
-        var request = new CreateTenant.CreateTenantRequest(tenantIdentifier, "Test Tenant");
-        var result = await handler.HandleAsync(request);
-        var tenantId = result.Value!.Id;
+        // Create initial tenant via HTTP.
+        var createResponse = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantIdentifier,
+            Name = "Test Tenant"
+        });
+        await createResponse.AssertSuccess();
+        var created = await createResponse.Content.ReadFromJsonAsync<CreateTenant.CreateTenantResponse>();
+        var tenantId = created!.Id;
 
-        // Delete the tenant
-        await deleteHandler.HandleAsync(tenantIdentifier);
+        // Delete the tenant via direct DI (DeleteTenantHandler does not require an invoker).
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var deleteHandler = scope.ServiceProvider.GetRequiredService<DeleteTenant.IDeleteTenantHandler>();
+            await deleteHandler.HandleAsync(tenantIdentifier);
+        }
 
-        // Reactivate by creating again
-        var reactivateResult = await handler.HandleAsync(request);
-        Assert.False(reactivateResult.IsError);
-        Assert.Equal(tenantId, reactivateResult.Value.Id);
+        // Reactivate by creating again via HTTP.
+        var reactivateResponse = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantIdentifier,
+            Name = "Test Tenant"
+        });
+        await reactivateResponse.AssertSuccess();
+        var reactivated = await reactivateResponse.Content.ReadFromJsonAsync<CreateTenant.CreateTenantResponse>();
+        Assert.Equal(tenantId, reactivated!.Id);
     }
 
     #endregion
@@ -86,13 +103,18 @@ public class AdminIntegrationTests : BaseIntegrationTest
     [Fact]
     public async Task DeleteTenant_handler_with_valid_identifier_succeeds()
     {
-        using var scope = Factory.Services.CreateScope();
-        var createHandler = scope.ServiceProvider.GetRequiredService<CreateTenant.ICreateTenantHandler>();
-        var deleteHandler = scope.ServiceProvider.GetRequiredService<DeleteTenant.IDeleteTenantHandler>();
-
+        var sysClient = await CreateAuthenticatedClientAsync();
         var tenantIdentifier = $"tenant-{Guid.NewGuid():N}";
-        var request = new CreateTenant.CreateTenantRequest(tenantIdentifier, "Test Tenant");
-        await createHandler.HandleAsync(request);
+
+        var createResponse = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantIdentifier,
+            Name = "Test Tenant"
+        });
+        await createResponse.AssertSuccess();
+
+        using var scope = Factory.Services.CreateScope();
+        var deleteHandler = scope.ServiceProvider.GetRequiredService<DeleteTenant.IDeleteTenantHandler>();
 
         var deleted = await deleteHandler.HandleAsync(tenantIdentifier);
         Assert.False(deleted.IsError);

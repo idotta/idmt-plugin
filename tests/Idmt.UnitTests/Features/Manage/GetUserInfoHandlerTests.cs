@@ -174,6 +174,59 @@ public class GetUserInfoHandlerTests
         Assert.Equal(new[] { "Auditor", "Member", "TenantAdmin" }, result.Value.Roles);
     }
 
+    [Fact]
+    public async Task SysAdmin_WithNoPerTenantRoles_ReturnsSysAdminRole()
+    {
+        // Phase 1 (canonical identity): a SysAdmin user need not carry a per-tenant IdentityRole
+        // row — sys authority is sourced from IdmtUser.SysRole. The handler must surface SysAdmin
+        // in the Roles list so the user does not appear "role-less".
+        var principal = CreatePrincipalWithEmail("sysadmin@test.com");
+        var user = new IdmtUser
+        {
+            UserName = "sysadmin",
+            Email = "sysadmin@test.com",
+            IsActive = true,
+            SysRole = SysRoleKind.SysAdmin,
+        };
+        var tenant = new IdmtTenantInfo("tenant-1", "tenant-1", "Tenant One");
+
+        _userManagerMock.Setup(x => x.FindByEmailAsync("sysadmin@test.com")).ReturnsAsync(user);
+        _userManagerMock.Setup(x => x.GetRolesAsync(user)).ReturnsAsync([]);
+        SetTenantContext(tenant);
+
+        var result = await _handler.HandleAsync(principal);
+
+        Assert.False(result.IsError);
+        Assert.Single(result.Value.Roles);
+        Assert.Equal("SysAdmin", result.Value.Roles[0]);
+    }
+
+    [Fact]
+    public async Task SysAdmin_WithPerTenantRole_ReturnsBothRoles()
+    {
+        // Union path: per-tenant IdentityRole rows + SysRole both surface in the response.
+        var principal = CreatePrincipalWithEmail("dual@test.com");
+        var user = new IdmtUser
+        {
+            UserName = "dual",
+            Email = "dual@test.com",
+            IsActive = true,
+            SysRole = SysRoleKind.SysAdmin,
+        };
+        var tenant = new IdmtTenantInfo("tenant-1", "tenant-1", "Tenant One");
+
+        _userManagerMock.Setup(x => x.FindByEmailAsync("dual@test.com")).ReturnsAsync(user);
+        _userManagerMock.Setup(x => x.GetRolesAsync(user)).ReturnsAsync(["TenantAdmin"]);
+        SetTenantContext(tenant);
+
+        var result = await _handler.HandleAsync(principal);
+
+        Assert.False(result.IsError);
+        Assert.Equal(2, result.Value.Roles.Count);
+        Assert.Contains("SysAdmin", result.Value.Roles);
+        Assert.Contains("TenantAdmin", result.Value.Roles);
+    }
+
     private static ClaimsPrincipal CreatePrincipalWithEmail(string email)
     {
         return new ClaimsPrincipal(new ClaimsIdentity([

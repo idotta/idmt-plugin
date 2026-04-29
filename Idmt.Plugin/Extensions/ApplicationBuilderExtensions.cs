@@ -171,16 +171,68 @@ public static class ApplicationBuilderExtensions
 
     private static async Task SeedDefaultDataAsync(IServiceProvider services)
     {
+        // Phase 1 / Step 9: bootstrap the default tenant directly via the tenant store + role
+        // seeding rather than the admin CreateTenant handler. The handler now requires an
+        // authenticated invoker (HS-4 / V2-CRIT-2 fail-closed) so it cannot run during app
+        // startup where no HTTP context (and therefore no current user) exists.
         var options = services.GetRequiredService<IOptions<IdmtOptions>>();
-        var createTenantHandler = services.GetRequiredService<CreateTenant.ICreateTenantHandler>();
-        var result = await createTenantHandler.HandleAsync(new CreateTenant.CreateTenantRequest(
-            MultiTenantOptions.DefaultTenantIdentifier,
-            options.Value.MultiTenant.DefaultTenantName));
+        var tenantStore = services.GetRequiredService<Finbuckle.MultiTenant.Abstractions.IMultiTenantStore<IdmtTenantInfo>>();
+        var defaultIdentifier = MultiTenantOptions.DefaultTenantIdentifier;
 
-        if (result.IsError && result.FirstError.Code != "Tenant.AlreadyExists")
+        var existing = await tenantStore.GetByIdentifierAsync(defaultIdentifier);
+        IdmtTenantInfo defaultTenant;
+        if (existing is null)
+        {
+            defaultTenant = new IdmtTenantInfo(defaultIdentifier, options.Value.MultiTenant.DefaultTenantName);
+            if (!await tenantStore.AddAsync(defaultTenant))
+            {
+                throw new InvalidOperationException(
+                    $"Failed to seed default tenant '{defaultIdentifier}'.");
+            }
+        }
+        else if (!existing.IsActive)
+        {
+            defaultTenant = existing with { IsActive = true };
+            if (!await tenantStore.UpdateAsync(defaultTenant))
+            {
+                throw new InvalidOperationException(
+                    $"Failed to reactivate default tenant '{defaultIdentifier}'.");
+            }
+        }
+        else
+        {
+            defaultTenant = existing;
+        }
+
+        // Seed default roles inside the tenant scope.
+        var tenantOps = services.GetRequiredService<Idmt.Plugin.Services.ITenantOperationService>();
+        var roles = IdmtDefaultRoleTypes.DefaultRoles;
+        if (options.Value.Identity.ExtraRoles.Length > 0)
+        {
+            roles = [.. roles, .. options.Value.Identity.ExtraRoles];
+        }
+
+        var seedResult = await tenantOps.ExecuteInTenantScopeAsync(defaultTenant.Identifier!, async provider =>
+        {
+            var roleManager = provider.GetRequiredService<RoleManager<IdmtRole>>();
+            foreach (var role in roles)
+            {
+                if (!await roleManager.RoleExistsAsync(role))
+                {
+                    var createResult = await roleManager.CreateAsync(new IdmtRole(role));
+                    if (!createResult.Succeeded)
+                    {
+                        return Errors.IdmtErrors.Tenant.RoleSeedFailed;
+                    }
+                }
+            }
+            return ErrorOr.Result.Success;
+        }, requireActive: false);
+
+        if (seedResult.IsError)
         {
             throw new InvalidOperationException(
-                $"Failed to seed default tenant '{MultiTenantOptions.DefaultTenantIdentifier}': {result.FirstError.Description}");
+                $"Failed to seed default tenant '{defaultIdentifier}' roles: {seedResult.FirstError.Description}");
         }
     }
 

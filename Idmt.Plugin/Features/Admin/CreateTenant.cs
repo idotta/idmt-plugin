@@ -4,8 +4,10 @@ using FluentValidation;
 using Idmt.Plugin.Configuration;
 using Idmt.Plugin.Errors;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Persistence;
 using Idmt.Plugin.Services;
 using Idmt.Plugin.Validation;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -39,11 +41,22 @@ public static class CreateTenant
     internal sealed class CreateTenantHandler(
         IMultiTenantStore<IdmtTenantInfo> tenantStore,
         ITenantOperationService tenantOps,
+        ICurrentUserService currentUserService,
         IOptions<IdmtOptions> options,
         ILogger<CreateTenantHandler> logger) : ICreateTenantHandler
     {
         public async Task<ErrorOr<CreateTenantResponse>> HandleAsync(CreateTenantRequest request, CancellationToken cancellationToken = default)
         {
+            // V2-CRIT-2 / HS-4: capture invoker UserId in OUTER scope. CurrentUserService is Scoped
+            // and inside TenantOperationService.ExecuteInTenantScopeAsync's child DI scope,
+            // CurrentUserService.User is null (invariant #11). Reads inside the inner scope return
+            // null/Guid.Empty. Pass invokerUserId by value into the inner-scope work.
+            var invokerUserId = currentUserService.UserId;
+            if (invokerUserId is null)
+            {
+                return IdmtErrors.Auth.Unauthorized;
+            }
+
             IdmtTenantInfo resultTenant;
 
             try
@@ -71,6 +84,17 @@ public static class CreateTenant
                     {
                         return IdmtErrors.Tenant.CreationFailed;
                     }
+
+                    // V2-CRIT-2 defensive guard: IdmtTenantInfo's ctor assigns Id from
+                    // Guid.CreateVersion7() so this is non-null in the canonical path.
+                    // If a custom store contract ever reassigns Id post-AddAsync and leaves it
+                    // empty, fail hard before BootstrapTenantAsync would insert TenantAccess
+                    // with a null TenantId.
+                    if (string.IsNullOrEmpty(tenant.Id))
+                    {
+                        logger.LogError("Tenant store did not populate Id for tenant {Identifier}", request.Identifier);
+                        return IdmtErrors.Tenant.CreationFailed;
+                    }
                     resultTenant = tenant;
                 }
             }
@@ -82,7 +106,7 @@ public static class CreateTenant
 
             try
             {
-                bool ok = await GuaranteeTenantRolesAsync(resultTenant);
+                bool ok = await BootstrapTenantAsync(resultTenant, invokerUserId.Value);
                 if (!ok)
                 {
                     return IdmtErrors.Tenant.RoleSeedFailed;
@@ -90,7 +114,7 @@ public static class CreateTenant
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error seeding roles for tenant {Identifier}", request.Identifier);
+                logger.LogError(ex, "Error bootstrapping tenant {Identifier}", request.Identifier);
                 return IdmtErrors.Tenant.RoleSeedFailed;
             }
 
@@ -100,7 +124,12 @@ public static class CreateTenant
                 resultTenant.Name ?? string.Empty);
         }
 
-        private async Task<bool> GuaranteeTenantRolesAsync(IdmtTenantInfo tenantInfo)
+        /// <summary>
+        /// Seeds default per-tenant roles AND grants the invoker (SysAdmin) <see cref="TenantAccess"/>
+        /// in a single inner-scope SaveChanges. Without the auto-TenantAccess the invoker would be
+        /// locked out of the tenant they just created (Phase 1 uniform TenantAccess gate).
+        /// </summary>
+        private async Task<bool> BootstrapTenantAsync(IdmtTenantInfo tenantInfo, Guid invokerUserId)
         {
             var roles = IdmtDefaultRoleTypes.DefaultRoles;
             if (options.Value.Identity.ExtraRoles.Length > 0)
@@ -111,17 +140,55 @@ public static class CreateTenant
             var result = await tenantOps.ExecuteInTenantScopeAsync(tenantInfo.Identifier!, async provider =>
             {
                 var roleManager = provider.GetRequiredService<RoleManager<IdmtRole>>();
-                foreach (var role in roles)
+                var dbContext = provider.GetRequiredService<IdmtDbContext>();
+                var tenantId = tenantInfo.Id!;
+
+                // V2-CRIT-1: wrap role seeding + invoker TenantAccess insertion in a single
+                // ambient transaction. RoleManager.CreateAsync persists each role internally via
+                // the same DbContext, so the ambient transaction governs every role row plus the
+                // TenantAccess row — if any step throws or fails, all changes roll back together.
+                // Without this wrap, partial role rows could persist while TenantAccess insert
+                // fails, locking the invoker out of the tenant they just bootstrapped.
+                await using var transaction = await dbContext.Database.BeginTransactionAsync();
+                try
                 {
-                    if (!await roleManager.RoleExistsAsync(role))
+                    foreach (var role in roles)
                     {
-                        var createResult = await roleManager.CreateAsync(new IdmtRole(role));
-                        if (!createResult.Succeeded)
+                        if (!await roleManager.RoleExistsAsync(role))
                         {
-                            return IdmtErrors.Tenant.RoleSeedFailed;
+                            var createResult = await roleManager.CreateAsync(new IdmtRole(role));
+                            if (!createResult.Succeeded)
+                            {
+                                await transaction.RollbackAsync();
+                                return IdmtErrors.Tenant.RoleSeedFailed;
+                            }
                         }
                     }
+
+                    // HS-4 / V2-CRIT-2: invoker auto-TenantAccess in same inner DI scope as role seeding.
+                    // Phase 1 uniform gate requires every accessor (incl. SysAdmin) to have a TenantAccess row.
+                    var alreadyHasAccess = await dbContext.TenantAccess
+                        .AnyAsync(ta => ta.UserId == invokerUserId && ta.TenantId == tenantId);
+                    if (!alreadyHasAccess)
+                    {
+                        dbContext.TenantAccess.Add(new TenantAccess
+                        {
+                            UserId = invokerUserId,
+                            TenantId = tenantId,
+                            IsActive = true,
+                            ExpiresAt = null
+                        });
+                        await dbContext.SaveChangesAsync();
+                    }
+
+                    await transaction.CommitAsync();
                 }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+
                 return Result.Success;
             }, requireActive: false);
 

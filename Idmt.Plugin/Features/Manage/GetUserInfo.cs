@@ -46,8 +46,18 @@ public static class GetUserInfo
                 return IdmtErrors.User.NotFound;
             }
 
-            var roles = (await userManager.GetRolesAsync(appUser)).OrderBy(r => r).ToList();
-            if (roles.Count == 0) return IdmtErrors.User.NoRolesAssigned;
+            // Phase 1: per-tenant IdentityRole rows for SysAdmin/SysSupport are no longer seeded.
+            // Sys-level authority is carried by IdmtUser.SysRole (emitted as a Role claim by
+            // IdmtUserClaimsPrincipalFactory). Surface it in the Roles list so callers with sys
+            // authority but no per-tenant IdentityRole assignment do not appear "role-less".
+            var perTenantRoles = await userManager.GetRolesAsync(appUser);
+            var rolesSet = new SortedSet<string>(perTenantRoles, StringComparer.Ordinal);
+            if (appUser.SysRole != SysRoleKind.None)
+            {
+                rolesSet.Add(appUser.SysRole.ToString());
+            }
+            if (rolesSet.Count == 0) return IdmtErrors.User.NoRolesAssigned;
+            var roles = rolesSet.ToList();
 
             // Phase 1: tenant is sourced from ambient context — IdmtUser is global and no
             // longer carries TenantId.

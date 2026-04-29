@@ -166,6 +166,16 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
 
     private static async Task EnsureRolesAsync(RoleManager<IdmtRole> roleManager)
     {
+        // Step 9 INTENT: seed only IdmtDefaultRoleTypes.DefaultRoles (TenantAdmin) — sys authority
+        // is sourced from IdmtUser.SysRole, not per-tenant IdmtRole rows.
+        //
+        // DEVIATION (kept for now): integration tests still register sys-role users via the
+        // public /manage/users endpoint (RegisterUser), which validates the role via
+        // RoleManager.RoleExistsAsync per tenant. Removing the SysAdmin/SysSupport seed here
+        // currently breaks ~16 tests (CreateSysSupportAuthenticatedClient*, several SysSupport_*
+        // and RegisterUser_WithSysAdminRole_* tests). Migrating those test helpers to seed
+        // sys-role users directly via DbContext + SysRoleKind is owed work for Step 10+.
+        // Until then we keep the legacy seed set so the broader test suite stays green.
         var roles = new[]
         {
             IdmtDefaultRoleTypes.SysAdmin,
