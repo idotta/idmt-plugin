@@ -44,7 +44,7 @@ public static class GrantTenantAccess
         {
             if (currentUserService.UserId is null)
             {
-                return IdmtErrors.General.Unexpected;
+                return IdmtErrors.Auth.Unauthorized;
             }
 
             if (userId == currentUserService.UserId.Value)
@@ -228,7 +228,7 @@ public static class GrantTenantAccess
 
     public static RouteHandlerBuilder MapGrantTenantAccessEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapPost("/users/{userId:guid}/tenants/{tenantIdentifier}", async Task<Results<Ok, BadRequest, NotFound, InternalServerError>> (
+        return endpoints.MapPost("/users/{userId:guid}/tenants/{tenantIdentifier}", async Task<Results<Ok, BadRequest, NotFound, ForbidHttpResult, UnauthorizedHttpResult, InternalServerError>> (
             Guid userId,
             string tenantIdentifier,
             [FromBody] GrantAccessRequest request,
@@ -242,6 +242,8 @@ public static class GrantTenantAccess
                 {
                     ErrorType.Validation => TypedResults.BadRequest(),
                     ErrorType.NotFound => TypedResults.NotFound(),
+                    ErrorType.Forbidden => TypedResults.Forbid(),
+                    ErrorType.Unauthorized => TypedResults.Unauthorized(),
                     _ => TypedResults.InternalServerError(),
                 };
             }

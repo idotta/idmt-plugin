@@ -681,24 +681,24 @@ public class AdminIntegrationTests : BaseIntegrationTest
     }
 
     [Fact]
-    public async Task SysAdmin_grant_access_to_self_returns_400_with_SelfTarget()
+    public async Task SysAdmin_grant_access_to_self_returns_403_with_SelfTarget()
     {
         var sysClient = await CreateAuthenticatedClientAsync();
         var sysAdminId = await GetSysAdminUserIdAsync();
         var response = await sysClient.PostAsJsonAsync(
             $"/admin/users/{sysAdminId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
             new { ExpiresAt = (DateTime?)null });
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
-    public async Task SysAdmin_revoke_access_from_self_returns_400_with_SelfTarget()
+    public async Task SysAdmin_revoke_access_from_self_returns_403_with_SelfTarget()
     {
         var sysClient = await CreateAuthenticatedClientAsync();
         var sysAdminId = await GetSysAdminUserIdAsync();
         var response = await sysClient.DeleteAsync(
             $"/admin/users/{sysAdminId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]

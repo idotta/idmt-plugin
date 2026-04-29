@@ -39,7 +39,7 @@ public static class RevokeTenantAccess
         {
             if (currentUserService.UserId is null)
             {
-                return IdmtErrors.General.Unexpected;
+                return IdmtErrors.Auth.Unauthorized;
             }
 
             if (userId == currentUserService.UserId.Value)
@@ -107,7 +107,7 @@ public static class RevokeTenantAccess
 
     public static RouteHandlerBuilder MapRevokeTenantAccessEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantIdentifier}", async Task<Results<NoContent, BadRequest, NotFound, InternalServerError>> (
+        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantIdentifier}", async Task<Results<NoContent, BadRequest, NotFound, ForbidHttpResult, UnauthorizedHttpResult, InternalServerError>> (
             Guid userId,
             string tenantIdentifier,
             IRevokeTenantAccessHandler handler,
@@ -120,6 +120,8 @@ public static class RevokeTenantAccess
                 {
                     ErrorType.Validation => TypedResults.BadRequest(),
                     ErrorType.NotFound => TypedResults.NotFound(),
+                    ErrorType.Forbidden => TypedResults.Forbid(),
+                    ErrorType.Unauthorized => TypedResults.Unauthorized(),
                     _ => TypedResults.InternalServerError(),
                 };
             }
