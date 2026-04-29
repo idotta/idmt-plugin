@@ -104,7 +104,7 @@ public abstract class BaseIntegrationTest : IClassFixture<IdmtApiFactory>, IDisp
         using var publicClient = Factory.CreateClient();
         var resetResponse = await publicClient.PostAsJsonAsync(
             "/auth/reset-password",
-            new { TenantIdentifier = tenantIdentifier, Email = email, Token = EncodeToken(resetToken), NewPassword = password });
+            new { Email = email, Token = EncodeToken(resetToken), NewPassword = password });
         await resetResponse.AssertSuccess();
 
         return (userId, email);

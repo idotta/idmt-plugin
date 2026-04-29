@@ -350,7 +350,7 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
         using var publicClient = Factory.CreateClient();
         var resetResponse = await publicClient.PostAsJsonAsync(
             "/auth/reset-password",
-            new { TenantIdentifier = TenantA, Email = emailA, Token = EncodeToken(setupToken), NewPassword = setupPassword });
+            new { Email = emailA, Token = EncodeToken(setupToken), NewPassword = setupPassword });
         await resetResponse.AssertSuccess();
 
         // 3. Login in Tenant A (Success)

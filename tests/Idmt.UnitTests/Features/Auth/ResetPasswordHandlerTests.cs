@@ -1,7 +1,5 @@
-using ErrorOr;
 using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Models;
-using Idmt.Plugin.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -10,20 +8,22 @@ namespace Idmt.UnitTests.Features.Auth;
 
 public class ResetPasswordHandlerTests
 {
-    private readonly Mock<ITenantOperationService> _tenantOpsMock;
-    private readonly ResetPassword.ResetPasswordHandler _handler;
-
-    public ResetPasswordHandlerTests()
+    private static Mock<UserManager<IdmtUser>> CreateUserManagerMock()
     {
-        _tenantOpsMock = new Mock<ITenantOperationService>();
+        return new Mock<UserManager<IdmtUser>>(
+            new Mock<IUserStore<IdmtUser>>().Object,
+            null!, null!, null!, null!, null!, null!, null!, null!);
+    }
 
-        _handler = new ResetPassword.ResetPasswordHandler(
-            _tenantOpsMock.Object,
+    private static ResetPassword.ResetPasswordHandler CreateHandler(Mock<UserManager<IdmtUser>> userManagerMock)
+    {
+        return new ResetPassword.ResetPasswordHandler(
+            userManagerMock.Object,
             NullLogger<ResetPassword.ResetPasswordHandler>.Instance);
     }
 
     [Fact]
-    public async Task ReturnsResetFailed_WhenUserIsInactive()
+    public async Task Handle_InactiveUser_ReturnsResetFailed()
     {
         // Arrange
         var user = new IdmtUser
@@ -31,22 +31,18 @@ public class ResetPasswordHandlerTests
             UserName = "inactive",
             Email = "inactive@test.com",
             IsActive = false,
-
         };
 
-        var userManagerMock = new Mock<UserManager<IdmtUser>>(
-            new Mock<IUserStore<IdmtUser>>().Object, null!, null!, null!, null!, null!, null!, null!, null!);
-
+        var userManagerMock = CreateUserManagerMock();
         userManagerMock
             .Setup(u => u.FindByEmailAsync("inactive@test.com"))
             .ReturnsAsync(user);
 
-        SetupTenantOpsToInvokeLambda(userManagerMock);
-
-        var request = new ResetPassword.ResetPasswordRequest("test-tenant", "inactive@test.com", "token", "NewPass123!");
+        var handler = CreateHandler(userManagerMock);
+        var request = new ResetPassword.ResetPasswordRequest("inactive@test.com", "token", "NewPass123!");
 
         // Act
-        var result = await _handler.HandleAsync(request);
+        var result = await handler.HandleAsync(request);
 
         // Assert
         Assert.True(result.IsError);
@@ -54,7 +50,27 @@ public class ResetPasswordHandlerTests
     }
 
     [Fact]
-    public async Task ReturnsResetFailed_WhenIdentityResetFails()
+    public async Task Handle_NonExistentEmail_ReturnsResetFailed()
+    {
+        // Arrange
+        var userManagerMock = CreateUserManagerMock();
+        userManagerMock
+            .Setup(u => u.FindByEmailAsync(It.IsAny<string>()))
+            .ReturnsAsync((IdmtUser?)null);
+
+        var handler = CreateHandler(userManagerMock);
+        var request = new ResetPassword.ResetPasswordRequest("nobody@test.com", "token", "NewPass123!");
+
+        // Act
+        var result = await handler.HandleAsync(request);
+
+        // Assert
+        Assert.True(result.IsError);
+        Assert.Equal("Password.ResetFailed", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task Handle_InvalidToken_ReturnsResetFailed()
     {
         // Arrange
         var user = new IdmtUser
@@ -62,12 +78,9 @@ public class ResetPasswordHandlerTests
             UserName = "testuser",
             Email = "test@test.com",
             IsActive = true,
-
         };
 
-        var userManagerMock = new Mock<UserManager<IdmtUser>>(
-            new Mock<IUserStore<IdmtUser>>().Object, null!, null!, null!, null!, null!, null!, null!, null!);
-
+        var userManagerMock = CreateUserManagerMock();
         userManagerMock
             .Setup(u => u.FindByEmailAsync("test@test.com"))
             .ReturnsAsync(user);
@@ -76,12 +89,11 @@ public class ResetPasswordHandlerTests
             .Setup(u => u.ResetPasswordAsync(user, "bad-token", "NewPass123!"))
             .ReturnsAsync(IdentityResult.Failed(new IdentityError { Code = "InvalidToken", Description = "Invalid token" }));
 
-        SetupTenantOpsToInvokeLambda(userManagerMock);
-
-        var request = new ResetPassword.ResetPasswordRequest("test-tenant", "test@test.com", "bad-token", "NewPass123!");
+        var handler = CreateHandler(userManagerMock);
+        var request = new ResetPassword.ResetPasswordRequest("test@test.com", "bad-token", "NewPass123!");
 
         // Act
-        var result = await _handler.HandleAsync(request);
+        var result = await handler.HandleAsync(request);
 
         // Assert
         Assert.True(result.IsError);
@@ -89,21 +101,19 @@ public class ResetPasswordHandlerTests
     }
 
     [Fact]
-    public async Task SetsEmailConfirmed_WhenUserEmailWasUnconfirmed()
+    public async Task Handle_ValidToken_ResetsPassword_NoEmailConfirmedFlip()
     {
-        // Arrange
+        // C7 regression: password reset MUST NOT mutate EmailConfirmed.
+        // Arrange — pre-seed user with EmailConfirmed = false.
         var user = new IdmtUser
         {
             UserName = "testuser",
             Email = "test@test.com",
             IsActive = true,
             EmailConfirmed = false,
-
         };
 
-        var userManagerMock = new Mock<UserManager<IdmtUser>>(
-            new Mock<IUserStore<IdmtUser>>().Object, null!, null!, null!, null!, null!, null!, null!, null!);
-
+        var userManagerMock = CreateUserManagerMock();
         userManagerMock
             .Setup(u => u.FindByEmailAsync("test@test.com"))
             .ReturnsAsync(user);
@@ -112,42 +122,89 @@ public class ResetPasswordHandlerTests
             .Setup(u => u.ResetPasswordAsync(user, "valid-token", "NewPass123!"))
             .ReturnsAsync(IdentityResult.Success);
 
-        userManagerMock
-            .Setup(u => u.UpdateAsync(user))
-            .ReturnsAsync(IdentityResult.Success);
-
-        SetupTenantOpsToInvokeLambda(userManagerMock);
-
-        var request = new ResetPassword.ResetPasswordRequest("test-tenant", "test@test.com", "valid-token", "NewPass123!");
+        var handler = CreateHandler(userManagerMock);
+        var request = new ResetPassword.ResetPasswordRequest("test@test.com", "valid-token", "NewPass123!");
 
         // Act
-        var result = await _handler.HandleAsync(request);
+        var result = await handler.HandleAsync(request);
+
+        // Assert
+        Assert.False(result.IsError);
+        Assert.False(user.EmailConfirmed);
+    }
+
+    [Fact]
+    public async Task Handle_ValidToken_ResetsPassword_PreservesEmailConfirmedTrue()
+    {
+        // Regression: handler should not flip EmailConfirmed in either direction.
+        var user = new IdmtUser
+        {
+            UserName = "testuser",
+            Email = "test@test.com",
+            IsActive = true,
+            EmailConfirmed = true,
+        };
+
+        var userManagerMock = CreateUserManagerMock();
+        userManagerMock
+            .Setup(u => u.FindByEmailAsync("test@test.com"))
+            .ReturnsAsync(user);
+
+        userManagerMock
+            .Setup(u => u.ResetPasswordAsync(user, "valid-token", "NewPass123!"))
+            .ReturnsAsync(IdentityResult.Success);
+
+        var handler = CreateHandler(userManagerMock);
+        var request = new ResetPassword.ResetPasswordRequest("test@test.com", "valid-token", "NewPass123!");
+
+        // Act
+        var result = await handler.HandleAsync(request);
 
         // Assert
         Assert.False(result.IsError);
         Assert.True(user.EmailConfirmed);
-        userManagerMock.Verify(u => u.UpdateAsync(user), Times.Once);
     }
 
-    #region Helpers
-
-    private void SetupTenantOpsToInvokeLambda(Mock<UserManager<IdmtUser>> userManagerMock)
+    [Fact]
+    public async Task Handle_NoLongerInvokesUpdateAsyncForEmailConfirmedFlip()
     {
-        _tenantOpsMock
-            .Setup(t => t.ExecuteInTenantScopeAsync(
-                It.IsAny<string>(),
-                It.IsAny<Func<IServiceProvider, Task<ErrorOr<Success>>>>(),
-                It.IsAny<bool>()))
-            .Returns<string, Func<IServiceProvider, Task<ErrorOr<Success>>>, bool>(
-                async (_, operation, _) =>
-                {
-                    var serviceProviderMock = new Mock<IServiceProvider>();
-                    serviceProviderMock
-                        .Setup(sp => sp.GetService(typeof(UserManager<IdmtUser>)))
-                        .Returns(userManagerMock.Object);
-                    return await operation(serviceProviderMock.Object);
-                });
+        // C7 regression: handler must not call UpdateAsync to flip EmailConfirmed.
+        var user = new IdmtUser
+        {
+            UserName = "testuser",
+            Email = "test@test.com",
+            IsActive = true,
+            EmailConfirmed = false,
+        };
+
+        var userManagerMock = CreateUserManagerMock();
+        userManagerMock
+            .Setup(u => u.FindByEmailAsync("test@test.com"))
+            .ReturnsAsync(user);
+
+        userManagerMock
+            .Setup(u => u.ResetPasswordAsync(user, "valid-token", "NewPass123!"))
+            .ReturnsAsync(IdentityResult.Success);
+
+        var handler = CreateHandler(userManagerMock);
+        var request = new ResetPassword.ResetPasswordRequest("test@test.com", "valid-token", "NewPass123!");
+
+        // Act
+        var result = await handler.HandleAsync(request);
+
+        // Assert
+        Assert.False(result.IsError);
+        userManagerMock.Verify(u => u.UpdateAsync(It.IsAny<IdmtUser>()), Times.Never);
     }
 
-    #endregion
+    [Fact]
+    public void Handler_Constructor_DoesNotDependOnTenantOperationService()
+    {
+        // Regression: ctor signature should accept UserManager + ILogger only.
+        var ctors = typeof(ResetPassword.ResetPasswordHandler).GetConstructors();
+        Assert.Single(ctors);
+        var paramTypes = ctors[0].GetParameters().Select(p => p.ParameterType).ToArray();
+        Assert.Contains(paramTypes, t => t == typeof(UserManager<IdmtUser>));
+        Assert.DoesNotContain(paramTypes, t => t.Name == "ITenantOperationService");
+    }
 }

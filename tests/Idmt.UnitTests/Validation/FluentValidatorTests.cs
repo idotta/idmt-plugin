@@ -194,7 +194,7 @@ public class FluentValidatorTests
     public void ResetPasswordRequestValidator_Fails_WithWeakPassword()
     {
         var validator = new ResetPasswordRequestValidator(DefaultOptions());
-        var request = new ResetPassword.ResetPasswordRequest("tenant1", "user@example.com", "valid-token", "weak");
+        var request = new ResetPassword.ResetPasswordRequest("user@example.com", "valid-token", "weak");
         var result = validator.TestValidate(request);
         result.ShouldHaveValidationErrorFor(x => x.NewPassword);
     }

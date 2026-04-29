@@ -11,14 +11,13 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Idmt.Plugin.Features.Auth;
 
 public static class ResetPassword
 {
-    public sealed record ResetPasswordRequest(string TenantIdentifier, string Email, string Token, string NewPassword);
+    public sealed record ResetPasswordRequest(string Email, string Token, string NewPassword);
 
     public interface IResetPasswordHandler
     {
@@ -26,43 +25,37 @@ public static class ResetPassword
     }
 
     internal sealed class ResetPasswordHandler(
-        ITenantOperationService tenantOps,
+        UserManager<IdmtUser> userManager,
         ILogger<ResetPasswordHandler> logger) : IResetPasswordHandler
     {
         public async Task<ErrorOr<Success>> HandleAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
         {
-            return await tenantOps.ExecuteInTenantScopeAsync(request.TenantIdentifier, async provider =>
+            try
             {
-                var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
-                try
+                var user = await userManager.FindByEmailAsync(request.Email);
+                if (user is null || !user.IsActive)
                 {
-                    var user = await userManager.FindByEmailAsync(request.Email);
-                    if (user is null || !user.IsActive)
-                    {
-                        return IdmtErrors.Password.ResetFailed;
-                    }
-
-                    var result = await userManager.ResetPasswordAsync(user, request.Token, request.NewPassword);
-
-                    if (!result.Succeeded)
-                    {
-                        return IdmtErrors.Password.ResetFailed;
-                    }
-
-                    if (!user.EmailConfirmed)
-                    {
-                        user.EmailConfirmed = true;
-                        await userManager.UpdateAsync(user);
-                    }
-
-                    return Result.Success;
+                    return IdmtErrors.Password.ResetFailed;
                 }
-                catch (Exception ex)
+
+                var result = await userManager.ResetPasswordAsync(user, request.Token, request.NewPassword);
+
+                if (!result.Succeeded)
                 {
-                    logger.LogError(ex, "An error occurred during password reset for {Email}", PiiMasker.MaskEmail(request.Email));
-                    return IdmtErrors.General.Unexpected;
+                    return IdmtErrors.Password.ResetFailed;
                 }
-            });
+
+                // Note: Per security audit C7, password reset proves possession of the
+                // current Email mailbox at token-issue time only. Do NOT mutate
+                // EmailConfirmed here — that flag must be set exclusively via the
+                // ConfirmEmail flow.
+                return Result.Success;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "An error occurred during password reset for {Email}", PiiMasker.MaskEmail(request.Email));
+                return IdmtErrors.General.Unexpected;
+            }
         }
     }
 
