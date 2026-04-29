@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Http;
@@ -17,6 +18,7 @@ public class TokenLoginHandlerTests
     private readonly Mock<UserManager<IdmtUser>> _userManagerMock;
     private readonly Mock<SignInManager<IdmtUser>> _signInManagerMock;
     private readonly Mock<IMultiTenantContextAccessor> _tenantAccessorMock;
+    private readonly Mock<ITenantAccessService> _tenantAccessServiceMock;
     private readonly Mock<IOptionsMonitor<BearerTokenOptions>> _bearerOptionsMock;
     private readonly Mock<TimeProvider> _timeProviderMock;
     private readonly Login.TokenLoginHandler _handler;
@@ -42,6 +44,11 @@ public class TokenLoginHandlerTests
             Mock.Of<IUserConfirmation<IdmtUser>>());
 
         _tenantAccessorMock = new Mock<IMultiTenantContextAccessor>();
+        _tenantAccessServiceMock = new Mock<ITenantAccessService>();
+        // Default: TenantAccess gate passes — individual tests override as needed.
+        _tenantAccessServiceMock
+            .Setup(x => x.CanAccessTenantAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
         _bearerOptionsMock = new Mock<IOptionsMonitor<BearerTokenOptions>>();
         _timeProviderMock = new Mock<TimeProvider>();
         _timeProviderMock.Setup(x => x.GetUtcNow()).Returns(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
@@ -50,6 +57,7 @@ public class TokenLoginHandlerTests
             _userManagerMock.Object,
             _signInManagerMock.Object,
             _tenantAccessorMock.Object,
+            _tenantAccessServiceMock.Object,
             _bearerOptionsMock.Object,
             _timeProviderMock.Object,
             NullLogger<Login.TokenLoginHandler>.Instance);
@@ -195,5 +203,52 @@ public class TokenLoginHandlerTests
 
         Assert.True(result.IsError);
         Assert.Equal("General.Unexpected", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task Handle_NoTenantAccess_ReturnsUnauthorized()
+    {
+        SetupActiveTenant();
+        SetupBearerTokenOptions();
+        var user = CreateActiveUser();
+        _userManagerMock.Setup(x => x.FindByEmailAsync("test@example.com")).ReturnsAsync(user);
+        _signInManagerMock.Setup(x => x.CheckPasswordSignInAsync(user, "Password123!", true))
+            .ReturnsAsync(SignInResult.Success);
+
+        // TenantAccess gate denies — tokens must not be issued.
+        _tenantAccessServiceMock
+            .Setup(x => x.CanAccessTenantAsync(user.Id, "tenant-id", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _handler.HandleAsync(CreateRequest());
+
+        Assert.True(result.IsError);
+        Assert.Equal("Auth.Unauthorized", result.FirstError.Code);
+        // Token issuance must not have been attempted.
+        _signInManagerMock.Verify(x => x.CreateUserPrincipalAsync(It.IsAny<IdmtUser>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_HasTenantAccess_Succeeds()
+    {
+        SetupActiveTenant();
+        SetupBearerTokenOptions();
+        var user = CreateActiveUser();
+        _userManagerMock.Setup(x => x.FindByEmailAsync("test@example.com")).ReturnsAsync(user);
+        _signInManagerMock.Setup(x => x.CheckPasswordSignInAsync(user, "Password123!", true))
+            .ReturnsAsync(SignInResult.Success);
+        _signInManagerMock.Setup(x => x.CreateUserPrincipalAsync(user))
+            .ReturnsAsync(new ClaimsPrincipal(new ClaimsIdentity()));
+        _userManagerMock.Setup(x => x.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+
+        _tenantAccessServiceMock
+            .Setup(x => x.CanAccessTenantAsync(user.Id, "tenant-id", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var result = await _handler.HandleAsync(CreateRequest());
+
+        Assert.False(result.IsError);
+        Assert.Equal("test-access-token", result.Value.AccessToken);
+        _tenantAccessServiceMock.Verify(x => x.CanAccessTenantAsync(user.Id, "tenant-id", It.IsAny<CancellationToken>()), Times.Once);
     }
 }

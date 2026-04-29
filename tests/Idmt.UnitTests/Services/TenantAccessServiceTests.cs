@@ -198,4 +198,124 @@ public class TenantAccessServiceTests
 
         Assert.True(result);
     }
+
+    // -----------------------------------------------------------------------
+    // Phase 1 / Step 10: locked decision #4 — TenantAccess gate is uniform.
+    // SysRole != None must NOT short-circuit the check. Even SysAdmin needs an
+    // active TenantAccess row to reach a tenant. These tests pin that invariant
+    // so that any future "fast-path" that re-introduces a SysRole bypass fails.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task CanAccessTenantAsync_SysAdminUser_NoTenantAccessRow_ReturnsFalse()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = "tenant1";
+
+        _dbContext.Users.Add(new IdmtUser
+        {
+            Id = userId,
+            UserName = "sysadmin@example.com",
+            Email = "sysadmin@example.com",
+            SysRole = SysRoleKind.SysAdmin
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.CanAccessTenantAsync(userId, tenantId);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task CanAccessTenantAsync_SysSupportUser_NoTenantAccessRow_ReturnsFalse()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = "tenant1";
+
+        _dbContext.Users.Add(new IdmtUser
+        {
+            Id = userId,
+            UserName = "syssupport@example.com",
+            Email = "syssupport@example.com",
+            SysRole = SysRoleKind.SysSupport
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.CanAccessTenantAsync(userId, tenantId);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task CanAccessTenantAsync_SysAdminUser_WithActiveTenantAccess_ReturnsTrue()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = "tenant1";
+
+        _dbContext.Users.Add(new IdmtUser
+        {
+            Id = userId,
+            UserName = "sysadmin@example.com",
+            Email = "sysadmin@example.com",
+            SysRole = SysRoleKind.SysAdmin
+        });
+        _dbContext.TenantAccess.Add(new TenantAccess
+        {
+            UserId = userId,
+            TenantId = tenantId,
+            IsActive = true
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.CanAccessTenantAsync(userId, tenantId);
+
+        // Uniform with normal users — SysAdmin gets through only because of the row.
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task CanAccessTenantAsync_NormalUser_WithActiveTenantAccess_ReturnsTrue()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = "tenant1";
+
+        _dbContext.Users.Add(new IdmtUser
+        {
+            Id = userId,
+            UserName = "user@example.com",
+            Email = "user@example.com",
+            SysRole = SysRoleKind.None
+        });
+        _dbContext.TenantAccess.Add(new TenantAccess
+        {
+            UserId = userId,
+            TenantId = tenantId,
+            IsActive = true
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.CanAccessTenantAsync(userId, tenantId);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task CanAccessTenantAsync_NormalUser_NoTenantAccess_ReturnsFalse()
+    {
+        var userId = Guid.NewGuid();
+        var tenantId = "tenant1";
+
+        _dbContext.Users.Add(new IdmtUser
+        {
+            Id = userId,
+            UserName = "user@example.com",
+            Email = "user@example.com",
+            SysRole = SysRoleKind.None
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.CanAccessTenantAsync(userId, tenantId);
+
+        Assert.False(result);
+    }
 }

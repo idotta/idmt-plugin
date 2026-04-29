@@ -105,6 +105,35 @@ public class AuthIntegrationTests : BaseIntegrationTest
         await response.AssertSuccess();
     }
 
+    [Fact]
+    public async Task POST_Login_UserHasNoTenantAccess_Returns401()
+    {
+        // Phase 1 / Step 10: TenantAccess gate uniformly enforced at login.
+        // User registered + password set in tenant A only, no TenantAccess for tenant B.
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var tenantBIdentifier = $"step10-cookie-{Guid.NewGuid():N}";
+        var createResponse = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantBIdentifier,
+            Name = "Step10 Cookie Tenant"
+        });
+        await createResponse.AssertSuccess();
+
+        var email = $"step10-cookie-{Guid.NewGuid():N}@example.com";
+        const string password = "Step10Cookie1!";
+        var (_, _) = await RegisterAndSetPasswordAsync(sysClient, password, email: email);
+
+        // Tenant A login succeeds (sanity).
+        var clientA = Factory.CreateClientWithTenant();
+        var loginA = await clientA.PostAsJsonAsync("/auth/login", new { Email = email, Password = password });
+        await loginA.AssertSuccess();
+
+        // Tenant B login is denied — no TenantAccess row.
+        var clientB = Factory.CreateClientWithTenant(tenantBIdentifier);
+        var loginB = await clientB.PostAsJsonAsync("/auth/login", new { Email = email, Password = password });
+        Assert.Equal(HttpStatusCode.Unauthorized, loginB.StatusCode);
+    }
+
     #endregion
 
     #region Token Tests (Bearer Token-based)
@@ -193,6 +222,34 @@ public class AuthIntegrationTests : BaseIntegrationTest
         Assert.NotNull(tokens);
         Assert.Equal("Bearer", tokens!.TokenType);
         Assert.True(tokens.ExpiresIn > 0, "ExpiresIn should be a positive number of seconds");
+    }
+
+    [Fact]
+    public async Task POST_Token_UserHasNoTenantAccess_Returns401()
+    {
+        // Phase 1 / Step 10: TenantAccess gate uniformly enforced at /auth/token.
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var tenantBIdentifier = $"step10-token-{Guid.NewGuid():N}";
+        var createResponse = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantBIdentifier,
+            Name = "Step10 Token Tenant"
+        });
+        await createResponse.AssertSuccess();
+
+        var email = $"step10-token-{Guid.NewGuid():N}@example.com";
+        const string password = "Step10Token1!";
+        var (_, _) = await RegisterAndSetPasswordAsync(sysClient, password, email: email);
+
+        // Tenant A token issuance succeeds.
+        var clientA = Factory.CreateClientWithTenant();
+        var tokenA = await clientA.PostAsJsonAsync("/auth/token", new { Email = email, Password = password });
+        await tokenA.AssertSuccess();
+
+        // Tenant B token issuance is denied — no TenantAccess row.
+        var clientB = Factory.CreateClientWithTenant(tenantBIdentifier);
+        var tokenB = await clientB.PostAsJsonAsync("/auth/token", new { Email = email, Password = password });
+        Assert.Equal(HttpStatusCode.Unauthorized, tokenB.StatusCode);
     }
 
     [Fact]

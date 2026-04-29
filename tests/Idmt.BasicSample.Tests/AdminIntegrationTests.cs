@@ -369,12 +369,14 @@ public class AdminIntegrationTests : BaseIntegrationTest
     }
 
     [Fact]
-    public async Task GetUserTenants_returns_empty_for_user_without_access()
+    public async Task GetUserTenants_returns_only_registering_tenant_for_freshly_registered_user()
     {
+        // Phase 1 / Step 10: registration auto-grants TenantAccess in the registering tenant.
+        // A user registered against the default (sys) tenant has exactly one TenantAccess row —
+        // that tenant.
         var sysClient = await CreateAuthenticatedClientAsync();
         var email = $"notenants-{Guid.NewGuid():N}@example.com";
 
-        // Register user without granting tenant access
         var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
@@ -383,13 +385,13 @@ public class AdminIntegrationTests : BaseIntegrationTest
         });
         var userId = Guid.Parse((await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>())!.UserId!);
 
-        // Get user tenants
         var response = await sysClient.GetAsync($"/admin/users/{userId}/tenants");
         await response.AssertSuccess();
 
         var paginated = await response.Content.ReadFromJsonAsync<PaginatedResponse<TenantInfoResponse>>();
         Assert.NotNull(paginated);
-        Assert.Empty(paginated!.Items);
+        Assert.Single(paginated!.Items);
+        Assert.Equal(IdmtApiFactory.DefaultTenantIdentifier, paginated.Items[0].Identifier);
     }
 
     [Fact]
