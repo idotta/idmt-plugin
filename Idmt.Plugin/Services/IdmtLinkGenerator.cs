@@ -42,14 +42,17 @@ public sealed class IdmtLinkGenerator(
         string url;
         if (mode == EmailConfirmationMode.ServerConfirm)
         {
+            // Locked decision (Phase 1, Step 8): tenantIdentifier intentionally NOT embedded
+            // as a query parameter. Tenant routing relies on path/host strategy or claim-based
+            // resolution, not URL query params.
             var routeValues = new RouteValueDictionary
             {
-                ["tenantIdentifier"] = tenantIdentifier,
                 ["email"] = email,
                 ["token"] = encodedToken,
             };
 
-            // Add route strategy parameter if route strategy is active
+            // Add route strategy parameter if route strategy is active (path-based tenant
+            // routing, e.g., /{tenant}/confirm-email). This is the route segment, NOT a query.
             AddTenantRouteParameter(routeValues, tenantIdentifier);
 
             url = linkGenerator.GetUriByName(httpContext, IdmtEndpointNames.ConfirmEmailDirect, routeValues)
@@ -60,7 +63,6 @@ public sealed class IdmtLinkGenerator(
             url = BuildClientFormUrl(
                 options.Value.Application.ClientUrl,
                 options.Value.Application.ConfirmEmailFormPath,
-                tenantIdentifier,
                 email,
                 encodedToken);
         }
@@ -117,12 +119,11 @@ public sealed class IdmtLinkGenerator(
         }
 
         var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
-        var tenantIdentifier = multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Identifier ?? string.Empty;
 
+        // Locked decision (Phase 1, Step 8): no tenantIdentifier in URL query params.
         var url = BuildClientFormUrl(
             options.Value.Application.ClientUrl,
             options.Value.Application.ResetPasswordFormPath,
-            tenantIdentifier,
             email,
             encodedToken);
 
@@ -133,16 +134,16 @@ public sealed class IdmtLinkGenerator(
         return url;
     }
 
-    private static string BuildClientFormUrl(string? clientUrl, string formPath, string tenantIdentifier, string email, string encodedToken)
+    private static string BuildClientFormUrl(string? clientUrl, string formPath, string email, string encodedToken)
     {
         if (string.IsNullOrEmpty(clientUrl))
         {
             throw new InvalidOperationException("Client URL is not configured.");
         }
 
+        // Locked decision (Phase 1, Step 8): no tenantIdentifier in URL query params.
         var queryParams = new Dictionary<string, string?>
         {
-            ["tenantIdentifier"] = tenantIdentifier,
             ["email"] = email,
             ["token"] = encodedToken,
         };
@@ -157,7 +158,12 @@ public sealed class IdmtLinkGenerator(
         var routeParam = options.Value.MultiTenant.StrategyOptions
             .GetValueOrDefault(IdmtMultiTenantStrategy.Route, IdmtMultiTenantStrategy.DefaultRouteParameter);
 
-        // Only add if different from "tenantIdentifier" to avoid duplication
+        // Locked decision (Phase 1, Step 8): tenantIdentifier must NOT surface as a query param.
+        // The configured route-strategy param ("tenantIdentifier" by default) would become a query
+        // string when the endpoint has no matching {tenantIdentifier} route token — so skip it.
+        // Custom route-strategy names (e.g., "tenant") are populated; if the endpoint declares a
+        // matching route token they fill the path segment, otherwise they become a benign
+        // non-tenantIdentifier query param.
         if (!string.Equals(routeParam, "tenantIdentifier", StringComparison.Ordinal))
         {
             routeValues[routeParam] = tenantIdentifier;

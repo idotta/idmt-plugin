@@ -85,7 +85,9 @@ public class IdmtLinkGeneratorTests
         Assert.NotNull(capturedRouteValues);
         Assert.Equal(email, capturedRouteValues!["email"]?.ToString());
         Assert.Equal(expectedEncodedToken, capturedRouteValues["token"]?.ToString());
-        Assert.Equal(_tenantInfo.Identifier, capturedRouteValues["tenantIdentifier"]?.ToString());
+        // Locked decision (Phase 1, Step 8): tenantIdentifier intentionally NOT included
+        // as a route value (would become a ?tenantIdentifier= query param on this route).
+        Assert.False(capturedRouteValues.ContainsKey("tenantIdentifier"));
     }
 
     [Fact]
@@ -104,13 +106,34 @@ public class IdmtLinkGeneratorTests
         Assert.Equal(expectedBase, uri.GetLeftPart(UriPartial.Path));
 
         var query = QueryHelpers.ParseQuery(uri.Query);
-        Assert.Equal(_tenantInfo.Identifier, query["tenantIdentifier"].ToString());
+        // Locked decision (Phase 1, Step 8): no tenantIdentifier in URL query params.
+        Assert.False(query.ContainsKey("tenantIdentifier"));
         Assert.Equal(email, query["email"].ToString());
 
         // Token should be Base64URL-encoded
         var encodedToken = query["token"].ToString();
         var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(encodedToken));
         Assert.Equal(token, decodedToken);
+    }
+
+    [Fact]
+    public void GenerateConfirmEmailLink_DoesNotEmbedTenantIdentifier()
+    {
+        // Locked decision (Phase 1, Step 8): tenantIdentifier stripped from confirm-email URL.
+        const string email = "user@example.com";
+        const string token = "confirm-token";
+        _options.Application.EmailConfirmationMode = EmailConfirmationMode.ClientForm;
+        _options.Application.ClientUrl = "https://client.example";
+        _options.Application.ConfirmEmailFormPath = "/confirm-email";
+
+        var result = _service.GenerateConfirmEmailLink(email, token);
+        var uri = new Uri(result);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+
+        Assert.True(query.ContainsKey("email"));
+        Assert.True(query.ContainsKey("token"));
+        Assert.False(query.ContainsKey("tenantIdentifier"));
+        Assert.DoesNotContain("tenantIdentifier", result, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -128,13 +151,33 @@ public class IdmtLinkGeneratorTests
         Assert.Equal(expectedBase, uri.GetLeftPart(UriPartial.Path));
 
         var query = QueryHelpers.ParseQuery(uri.Query);
-        Assert.Equal(_tenantInfo.Identifier, query["tenantIdentifier"].ToString());
+        // Locked decision (Phase 1, Step 8): no tenantIdentifier in URL query params.
+        Assert.False(query.ContainsKey("tenantIdentifier"));
         Assert.Equal(email, query["email"].ToString());
 
         // Token should be Base64URL-encoded
         var encodedToken = query["token"].ToString();
         var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(encodedToken));
         Assert.Equal(token, decodedToken);
+    }
+
+    [Fact]
+    public void GeneratePasswordResetLink_DoesNotEmbedTenantIdentifier()
+    {
+        // Locked decision (Phase 1, Step 8): tenantIdentifier stripped from reset-password URL.
+        const string email = "user@example.com";
+        const string token = "reset-token";
+        _options.Application.ClientUrl = "https://client.example";
+        _options.Application.ResetPasswordFormPath = "/reset-password";
+
+        var result = _service.GeneratePasswordResetLink(email, token);
+        var uri = new Uri(result);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+
+        Assert.True(query.ContainsKey("email"));
+        Assert.True(query.ContainsKey("token"));
+        Assert.False(query.ContainsKey("tenantIdentifier"));
+        Assert.DoesNotContain("tenantIdentifier", result, StringComparison.Ordinal);
     }
 
     [Fact]
