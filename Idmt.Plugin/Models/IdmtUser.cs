@@ -20,6 +20,16 @@ public class IdmtUser : IdentityUser<Guid>, IAuditable
     public string TenantId { get; set; } = null!;
 
     /// <summary>
+    /// System-level role assignment for this user. Defaults to <see cref="SysRoleKind.None"/>.
+    /// </summary>
+    public SysRoleKind SysRole { get; set; } = SysRoleKind.None;
+
+    /// <summary>
+    /// Email address staged for an out-of-band confirmation email change. Null when no change pending.
+    /// </summary>
+    public string? PendingEmail { get; set; }
+
+    /// <summary>
     /// Soft delete flag - inactive users are considered deleted.
     /// </summary>
     public bool IsActive { get; set; } = true;
