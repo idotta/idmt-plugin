@@ -404,11 +404,64 @@ public class AuthIntegrationTests : BaseIntegrationTest
         var confirmToken = await GenerateEmailConfirmationTokenAsync(newEmail);
         var encodedToken = EncodeToken(confirmToken);
 
-        // Confirm email via POST /confirm-email with Base64URL-encoded token
-        using var publicClient = Factory.CreateClient();
+        // Confirm email via POST /confirm-email with Base64URL-encoded token.
+        // Body shape is { Email, Token } — tenant resolved via header (per consumer config).
+        using var publicClient = Factory.CreateClientWithTenant();
         var confirmResponse = await publicClient.PostAsJsonAsync(
             "/auth/confirm-email",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = newEmail, Token = encodedToken });
+            new { Email = newEmail, Token = encodedToken });
+
+        await confirmResponse.AssertSuccess();
+    }
+
+    [Fact]
+    public async Task ConfirmEmail_BodyWithExtraTenantIdentifier_IsIgnored()
+    {
+        // Backward-compat: ASP.NET Core JSON deserializer silently ignores unknown
+        // members by default. A legacy client sending TenantIdentifier in body is
+        // still accepted; the tenant is resolved from the request scope only.
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var newEmail = $"confirm-extra-{Guid.NewGuid():N}@example.com";
+
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
+        {
+            Email = newEmail,
+            Username = $"confirmextra{Guid.NewGuid():N}",
+            Role = IdmtDefaultRoleTypes.TenantAdmin
+        });
+        await registerResponse.AssertSuccess();
+
+        var confirmToken = await GenerateEmailConfirmationTokenAsync(newEmail);
+        var encodedToken = EncodeToken(confirmToken);
+
+        using var publicClient = Factory.CreateClientWithTenant();
+        var confirmResponse = await publicClient.PostAsJsonAsync(
+            "/auth/confirm-email",
+            new { TenantIdentifier = "nonexistent-tenant", Email = newEmail, Token = encodedToken });
+
+        await confirmResponse.AssertSuccess();
+    }
+
+    [Fact]
+    public async Task ConfirmEmail_Get_NoTenantIdentifierInQuery_Succeeds()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var newEmail = $"confirm-get-{Guid.NewGuid():N}@example.com";
+
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
+        {
+            Email = newEmail,
+            Username = $"confirmget{Guid.NewGuid():N}",
+            Role = IdmtDefaultRoleTypes.TenantAdmin
+        });
+        await registerResponse.AssertSuccess();
+
+        var confirmToken = await GenerateEmailConfirmationTokenAsync(newEmail);
+        var encodedToken = EncodeToken(confirmToken);
+
+        using var publicClient = Factory.CreateClientWithTenant();
+        var url = $"/auth/confirm-email?email={Uri.EscapeDataString(newEmail)}&token={Uri.EscapeDataString(encodedToken)}";
+        var confirmResponse = await publicClient.GetAsync(url);
 
         await confirmResponse.AssertSuccess();
     }
@@ -417,24 +470,11 @@ public class AuthIntegrationTests : BaseIntegrationTest
     public async Task ConfirmEmail_with_invalid_token_fails()
     {
         var newEmail = $"invalid-{Guid.NewGuid():N}@example.com";
-        using var publicClient = Factory.CreateClient();
+        using var publicClient = Factory.CreateClientWithTenant();
 
         var confirmResponse = await publicClient.PostAsJsonAsync(
             "/auth/confirm-email",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = newEmail, Token = "invalid-token" });
-
-        Assert.False(confirmResponse.IsSuccessStatusCode);
-    }
-
-    [Fact]
-    public async Task ConfirmEmail_with_invalid_tenant_fails()
-    {
-        var newEmail = $"confirm-{Guid.NewGuid():N}@example.com";
-        using var publicClient = Factory.CreateClient();
-
-        var confirmResponse = await publicClient.PostAsJsonAsync(
-            "/auth/confirm-email",
-            new { TenantIdentifier = "nonexistent-tenant", Email = newEmail, Token = "some-token" });
+            new { Email = newEmail, Token = "invalid-token" });
 
         Assert.False(confirmResponse.IsSuccessStatusCode);
     }
@@ -442,11 +482,11 @@ public class AuthIntegrationTests : BaseIntegrationTest
     [Fact]
     public async Task ConfirmEmail_with_missing_email_fails()
     {
-        using var publicClient = Factory.CreateClient();
+        using var publicClient = Factory.CreateClientWithTenant();
 
         var confirmResponse = await publicClient.PostAsJsonAsync(
             "/auth/confirm-email",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = "", Token = "some-token" });
+            new { Email = "", Token = "some-token" });
 
         Assert.False(confirmResponse.IsSuccessStatusCode);
     }
@@ -455,11 +495,11 @@ public class AuthIntegrationTests : BaseIntegrationTest
     public async Task ConfirmEmail_with_missing_token_fails()
     {
         var newEmail = $"confirm-{Guid.NewGuid():N}@example.com";
-        using var publicClient = Factory.CreateClient();
+        using var publicClient = Factory.CreateClientWithTenant();
 
         var confirmResponse = await publicClient.PostAsJsonAsync(
             "/auth/confirm-email",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = newEmail, Token = "" });
+            new { Email = newEmail, Token = "" });
 
         Assert.False(confirmResponse.IsSuccessStatusCode);
     }

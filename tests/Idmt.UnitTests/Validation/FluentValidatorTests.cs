@@ -154,9 +154,8 @@ public class FluentValidatorTests
     public void ConfirmEmailRequestValidator_Fails_WithEmptyFields()
     {
         var validator = new ConfirmEmailRequestValidator();
-        var request = new ConfirmEmail.ConfirmEmailRequest("", "", "");
+        var request = new ConfirmEmail.ConfirmEmailRequest("", "");
         var result = validator.TestValidate(request);
-        result.ShouldHaveValidationErrorFor(x => x.TenantIdentifier);
         result.ShouldHaveValidationErrorFor(x => x.Email);
         result.ShouldHaveValidationErrorFor(x => x.Token);
     }
