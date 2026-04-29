@@ -91,7 +91,7 @@ public class UpdateUserInfoHandlerTests : IDisposable
         {
             UserName = "inactive",
             Email = "inactive@test.com",
-            TenantId = "tenant-1",
+
             IsActive = false
         };
         _userManagerMock.Setup(x => x.FindByEmailAsync("inactive@test.com")).ReturnsAsync(user);
@@ -116,7 +116,7 @@ public class UpdateUserInfoHandlerTests : IDisposable
         {
             UserName = "currentname",
             Email = "user@test.com",
-            TenantId = "tenant-1",
+
             IsActive = true
         };
         _userManagerMock.Setup(x => x.FindByEmailAsync("user@test.com")).ReturnsAsync(user);
@@ -145,7 +145,7 @@ public class UpdateUserInfoHandlerTests : IDisposable
         {
             UserName = "testuser",
             Email = "old@test.com",
-            TenantId = "tenant-1",
+
             IsActive = true,
             EmailConfirmed = true
         };
@@ -196,7 +196,7 @@ public class UpdateUserInfoHandlerTests : IDisposable
         {
             UserName = "testuser",
             Email = "old@test.com",
-            TenantId = "tenant-1",
+
             IsActive = true,
             EmailConfirmed = true
         };
@@ -236,7 +236,7 @@ public class UpdateUserInfoHandlerTests : IDisposable
         {
             UserName = "oldname",
             Email = "old@test.com",
-            TenantId = "tenant-1",
+
             IsActive = true,
             EmailConfirmed = true
         };
@@ -280,7 +280,7 @@ public class UpdateUserInfoHandlerTests : IDisposable
         {
             UserName = "testuser",
             Email = "same@test.com",
-            TenantId = "tenant-1",
+
             IsActive = true,
             EmailConfirmed = true
         };
@@ -308,7 +308,7 @@ public class UpdateUserInfoHandlerTests : IDisposable
         {
             UserName = "currentname",
             Email = "user@test.com",
-            TenantId = "tenant-1",
+
             IsActive = true
         };
         _userManagerMock.Setup(x => x.FindByEmailAsync("user@test.com")).ReturnsAsync(user);
@@ -338,7 +338,7 @@ public class UpdateUserInfoHandlerTests : IDisposable
         {
             UserName = "testuser",
             Email = "old@test.com",
-            TenantId = "tenant-1",
+
             IsActive = true,
             EmailConfirmed = true
         };

@@ -117,7 +117,7 @@ public class GrantTenantAccessHandlerTests : IDisposable
             Id = userId,
             UserName = "testuser",
             Email = "test@test.com",
-            TenantId = "sys-id"
+
         });
         await _dbContext.SaveChangesAsync();
 
@@ -144,7 +144,7 @@ public class GrantTenantAccessHandlerTests : IDisposable
             Id = userId,
             UserName = "noroles",
             Email = "noroles@test.com",
-            TenantId = "sys-id"
+
         });
         await _dbContext.SaveChangesAsync();
 
@@ -177,7 +177,7 @@ public class GrantTenantAccessHandlerTests : IDisposable
             Id = userId,
             UserName = "existinguser",
             Email = "existing@test.com",
-            TenantId = "sys-id"
+
         });
 
         // Pre-existing inactive access record
@@ -253,7 +253,7 @@ public class GrantTenantAccessHandlerTests : IDisposable
                 Id = userId,
                 UserName = "compuser",
                 Email = "comp@test.com",
-                TenantId = "sys-id"
+
             });
             await seedContext.SaveChangesAsync();
         }

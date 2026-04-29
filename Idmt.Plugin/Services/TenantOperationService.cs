@@ -20,6 +20,7 @@ internal sealed class TenantOperationService(IServiceProvider serviceProvider) :
         var setter = serviceProvider.GetRequiredService<IMultiTenantContextSetter>();
         var previousContext = accessor.MultiTenantContext;
 
+        // invariant: inner-scope CurrentUserService.User intentionally null. See plan H2.
         using var scope = serviceProvider.CreateScope();
         var provider = scope.ServiceProvider;
 

@@ -58,7 +58,7 @@ public class UnregisterHandlerTests
             Id = userId,
             UserName = "target@test.com",
             Email = "target@test.com",
-            TenantId = "tenant-1"
+
         };
         SetupUsersQueryable([user]);
         _userManagerMock.Setup(x => x.GetRolesAsync(user)).ReturnsAsync(["SysAdmin"]);
@@ -83,7 +83,7 @@ public class UnregisterHandlerTests
             Id = userId,
             UserName = "target@test.com",
             Email = "target@test.com",
-            TenantId = "tenant-1"
+
         };
         SetupUsersQueryable([user]);
         _userManagerMock.Setup(x => x.GetRolesAsync(user)).ReturnsAsync(["TenantAdmin"]);

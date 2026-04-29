@@ -44,34 +44,25 @@ public static class DiscoverTenants
                 var normalizedEmail = request.Email.ToUpperInvariant();
                 var now = timeProvider.GetUtcNow();
 
-                // Find all tenant IDs where the user has a direct account.
-                // IgnoreQueryFilters bypasses Finbuckle's automatic tenant filter
-                // so we can search across all tenants.
-                var directTenantIds = await dbContext.Users
-                    .IgnoreQueryFilters()
-                    .Where(u => u.NormalizedEmail == normalizedEmail && u.IsActive)
-                    .Select(u => u.TenantId)
-                    .Distinct()
-                    .ToListAsync(cancellationToken);
-
-                // Find tenant IDs granted via TenantAccess (cross-tenant grants).
-                // First find user IDs matching the email, then look up their access grants.
+                // Phase 1: IdmtUser is global; tenant membership lives in TenantAccess.
+                // Find user IDs matching the email, then look up their (active, unexpired) access grants.
                 var userIds = await dbContext.Users
-                    .IgnoreQueryFilters()
                     .Where(u => u.NormalizedEmail == normalizedEmail && u.IsActive)
                     .Select(u => u.Id)
                     .ToListAsync(cancellationToken);
 
-                var accessTenantIds = await dbContext.TenantAccess
+                if (userIds.Count == 0)
+                {
+                    return new DiscoverTenantsResponse([]);
+                }
+
+                var allTenantIds = await dbContext.TenantAccess
                     .Where(ta => userIds.Contains(ta.UserId)
                                  && ta.IsActive
                                  && (ta.ExpiresAt == null || ta.ExpiresAt > now))
                     .Select(ta => ta.TenantId)
                     .Distinct()
                     .ToListAsync(cancellationToken);
-
-                // Union all tenant IDs
-                var allTenantIds = directTenantIds.Union(accessTenantIds).ToList();
 
                 if (allTenantIds.Count == 0)
                 {

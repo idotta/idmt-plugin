@@ -49,7 +49,7 @@ public class ConfirmEmailHandlerTests
     public async Task ReturnsConfirmationFailed_WhenTokenIsInvalid()
     {
         // Arrange
-        var user = new IdmtUser { UserName = "test", Email = "test@test.com", TenantId = "t1" };
+        var user = new IdmtUser { UserName = "test", Email = "test@test.com" };
 
         var userManagerMock = new Mock<UserManager<IdmtUser>>(
             new Mock<IUserStore<IdmtUser>>().Object, null!, null!, null!, null!, null!, null!, null!, null!);

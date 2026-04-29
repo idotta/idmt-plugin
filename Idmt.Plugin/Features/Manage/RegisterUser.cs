@@ -70,7 +70,6 @@ public static class RegisterUser
                 Email = request.Email,
                 EmailConfirmed = false,
                 IsActive = true,
-                TenantId = tenantId,
                 LastLoginAt = null,
             };
 

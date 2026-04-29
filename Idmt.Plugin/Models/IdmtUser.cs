@@ -15,11 +15,6 @@ public class IdmtUser : IdentityUser<Guid>, IAuditable
     public override string? ConcurrencyStamp { get; set; } = Guid.NewGuid().ToString();
 
     /// <summary>
-    /// The tenant this user belongs to.
-    /// </summary>
-    public string TenantId { get; set; } = null!;
-
-    /// <summary>
     /// System-level role assignment for this user. Defaults to <see cref="SysRoleKind.None"/>.
     /// </summary>
     public SysRoleKind SysRole { get; set; } = SysRoleKind.None;
@@ -43,5 +38,9 @@ public class IdmtUser : IdentityUser<Guid>, IAuditable
 
     public string GetName() => nameof(IdmtUser);
 
-    public string? GetTenantId() => TenantId;
+    /// <summary>
+    /// Returns null because <see cref="IdmtUser"/> is a global entity post Phase 1
+    /// (canonical identity migration). Audit rows for IdmtUser mutations carry no TenantId.
+    /// </summary>
+    public string? GetTenantId() => null;
 }

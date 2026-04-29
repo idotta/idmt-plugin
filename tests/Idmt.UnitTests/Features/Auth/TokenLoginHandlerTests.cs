@@ -79,7 +79,6 @@ public class TokenLoginHandlerTests
             Id = Guid.NewGuid(),
             Email = "test@example.com",
             UserName = "testuser",
-            TenantId = "tenant-id",
             IsActive = true
         };
 

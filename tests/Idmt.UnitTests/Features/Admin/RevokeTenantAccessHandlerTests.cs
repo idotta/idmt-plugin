@@ -64,7 +64,7 @@ public class RevokeTenantAccessHandlerTests : IDisposable
             Id = userId,
             UserName = "testuser",
             Email = "test@test.com",
-            TenantId = "sys-id"
+
         });
         await _dbContext.SaveChangesAsync();
 
@@ -95,7 +95,7 @@ public class RevokeTenantAccessHandlerTests : IDisposable
             Id = userId,
             UserName = "scopeuser",
             Email = "scope@test.com",
-            TenantId = "sys-id"
+
         });
 
         _dbContext.TenantAccess.Add(new TenantAccess

@@ -31,7 +31,7 @@ public class ResetPasswordHandlerTests
             UserName = "inactive",
             Email = "inactive@test.com",
             IsActive = false,
-            TenantId = "t1"
+
         };
 
         var userManagerMock = new Mock<UserManager<IdmtUser>>(
@@ -62,7 +62,7 @@ public class ResetPasswordHandlerTests
             UserName = "testuser",
             Email = "test@test.com",
             IsActive = true,
-            TenantId = "t1"
+
         };
 
         var userManagerMock = new Mock<UserManager<IdmtUser>>(
@@ -98,7 +98,7 @@ public class ResetPasswordHandlerTests
             Email = "test@test.com",
             IsActive = true,
             EmailConfirmed = false,
-            TenantId = "t1"
+
         };
 
         var userManagerMock = new Mock<UserManager<IdmtUser>>(
