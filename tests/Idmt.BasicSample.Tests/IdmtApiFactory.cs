@@ -25,6 +25,12 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
     private readonly string[] _strategies;
     private SqliteConnection? _connection;
 
+    /// <summary>
+    /// The shared in-memory SQLite connection backing both DbContexts. Exposed for tests that
+    /// need to spin up an out-of-band DI scope (e.g. the canonical identity migrator harness).
+    /// </summary>
+    internal SqliteConnection? SharedConnection => _connection;
+
     public Mock<IEmailSender<IdmtUser>> EmailSenderMock { get; } = new();
 
     public IdmtApiFactory()
