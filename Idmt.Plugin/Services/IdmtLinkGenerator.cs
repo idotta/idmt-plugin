@@ -13,6 +13,14 @@ public interface IIdmtLinkGenerator
 {
     string GenerateConfirmEmailLink(string email, string token);
     string GeneratePasswordResetLink(string email, string token);
+
+    /// <summary>
+    /// Generates a confirm-email-change link to be sent to the staged new email address.
+    /// Links to the client form at <see cref="ApplicationOptions.ConfirmEmailChangeFormPath"/> with
+    /// query parameters: email (current), newEmail (staged), and token (Base64URL-encoded).
+    /// Per locked decision (Phase 1, Step 7): tenantIdentifier is intentionally NOT embedded.
+    /// </summary>
+    string GenerateConfirmEmailChangeLink(string currentEmail, string newEmail, string token);
 }
 
 public sealed class IdmtLinkGenerator(
@@ -59,6 +67,43 @@ public sealed class IdmtLinkGenerator(
 
         logger.LogInformation("Confirm email link generated for {Email}. Tenant: {TenantId}.",
             PiiMasker.MaskEmail(email),
+            multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty);
+
+        return url;
+    }
+
+    public string GenerateConfirmEmailChangeLink(string currentEmail, string newEmail, string token)
+    {
+        if (httpContextAccessor.HttpContext is null)
+        {
+            throw new InvalidOperationException("No HTTP context was found.");
+        }
+
+        if (string.IsNullOrEmpty(options.Value.Application.ClientUrl))
+        {
+            throw new InvalidOperationException("Client URL is not configured.");
+        }
+
+        var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+
+        // Locked decision (Phase 1, Step 7): no tenantIdentifier in URL.
+        var queryParams = new Dictionary<string, string?>
+        {
+            ["email"] = currentEmail,
+            ["newEmail"] = newEmail,
+            ["token"] = encodedToken,
+        };
+
+        var clientUrl = options.Value.Application.ClientUrl!;
+        var formPath = options.Value.Application.ConfirmEmailChangeFormPath;
+        var url = QueryHelpers.AddQueryString(
+            $"{clientUrl.TrimEnd('/')}/{formPath.TrimStart('/')}",
+            queryParams);
+
+        logger.LogInformation(
+            "Confirm email change link generated. Current: {CurrentEmail}. New: {NewEmail}. Tenant: {TenantId}.",
+            PiiMasker.MaskEmail(currentEmail),
+            PiiMasker.MaskEmail(newEmail),
             multiTenantContextAccessor.MultiTenantContext?.TenantInfo?.Id ?? string.Empty);
 
         return url;

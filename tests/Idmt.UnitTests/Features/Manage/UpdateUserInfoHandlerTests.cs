@@ -91,7 +91,6 @@ public class UpdateUserInfoHandlerTests : IDisposable
         {
             UserName = "inactive",
             Email = "inactive@test.com",
-
             IsActive = false
         };
         _userManagerMock.Setup(x => x.FindByEmailAsync("inactive@test.com")).ReturnsAsync(user);
@@ -108,20 +107,13 @@ public class UpdateUserInfoHandlerTests : IDisposable
     }
 
     [Fact]
-    public async Task SkipsUpdate_WhenNoFieldsChanged()
+    public async Task SkipsEmailFlow_WhenNoFieldsChanged()
     {
         // Arrange
         var principal = CreatePrincipalWithEmail("user@test.com");
-        var user = new IdmtUser
-        {
-            UserName = "currentname",
-            Email = "user@test.com",
-
-            IsActive = true
-        };
+        var user = await SeedUserAsync(email: "user@test.com", username: "currentname");
         _userManagerMock.Setup(x => x.FindByEmailAsync("user@test.com")).ReturnsAsync(user);
 
-        // Request with no changes (all null)
         var request = new UpdateUserInfo.UpdateUserInfoRequest();
 
         // Act
@@ -129,36 +121,22 @@ public class UpdateUserInfoHandlerTests : IDisposable
 
         // Assert
         Assert.False(result.IsError);
-        _userManagerMock.Verify(x => x.UpdateAsync(It.IsAny<IdmtUser>()), Times.Never);
+        Assert.False(result.Value.EmailChangePending);
+        _userManagerMock.Verify(x => x.GenerateChangeEmailTokenAsync(It.IsAny<IdmtUser>(), It.IsAny<string>()), Times.Never);
     }
 
-    /// <summary>
-    /// Verifies the critical fix: after a successful email change, a confirmation email is sent
-    /// to the new address so the user has a recovery path and is not permanently locked out.
-    /// </summary>
     [Fact]
-    public async Task SendsConfirmationEmail_WhenEmailChanged()
+    public async Task DoesNotMutateEmail_WhenEmailChangeRequested_StagesPendingEmail()
     {
-        // Arrange
+        // Arrange — invariant: user.Email column is NOT mutated; only PendingEmail is set.
         var principal = CreatePrincipalWithEmail("old@test.com");
-        var user = new IdmtUser
-        {
-            UserName = "testuser",
-            Email = "old@test.com",
-
-            IsActive = true,
-            EmailConfirmed = true
-        };
+        var user = await SeedUserAsync(email: "old@test.com", username: "testuser", emailConfirmed: true);
         _userManagerMock.Setup(x => x.FindByEmailAsync("old@test.com")).ReturnsAsync(user);
         _userManagerMock.Setup(x => x.GenerateChangeEmailTokenAsync(user, "new@test.com"))
             .ReturnsAsync("change-token");
-        _userManagerMock.Setup(x => x.ChangeEmailAsync(user, "new@test.com", "change-token"))
-            .ReturnsAsync(IdentityResult.Success);
-        _userManagerMock.Setup(x => x.GenerateEmailConfirmationTokenAsync(user))
-            .ReturnsAsync("confirm-token");
         _linkGeneratorMock
-            .Setup(x => x.GenerateConfirmEmailLink("new@test.com", "confirm-token"))
-            .Returns("https://example.com/confirm?token=confirm-token");
+            .Setup(x => x.GenerateConfirmEmailChangeLink("old@test.com", "new@test.com", "change-token"))
+            .Returns("https://example.com/confirm-email-change?token=change-token");
 
         var request = new UpdateUserInfo.UpdateUserInfoRequest(NewEmail: "new@test.com");
 
@@ -167,49 +145,59 @@ public class UpdateUserInfoHandlerTests : IDisposable
 
         // Assert
         Assert.False(result.IsError);
+        Assert.True(result.Value.EmailChangePending);
+        Assert.Equal("old@test.com", user.Email);
+        Assert.Equal("new@test.com", user.PendingEmail);
 
-        // The link generator must be called with the NEW email address and the fresh confirm token
+        // ChangeEmailAsync MUST NOT be invoked at the staging step.
+        _userManagerMock.Verify(
+            x => x.ChangeEmailAsync(It.IsAny<IdmtUser>(), It.IsAny<string>(), It.IsAny<string>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SendsConfirmationLinkToNewEmail_WhenEmailChangeRequested()
+    {
+        // Arrange
+        var principal = CreatePrincipalWithEmail("old@test.com");
+        var user = await SeedUserAsync(email: "old@test.com", username: "testuser", emailConfirmed: true);
+        _userManagerMock.Setup(x => x.FindByEmailAsync("old@test.com")).ReturnsAsync(user);
+        _userManagerMock.Setup(x => x.GenerateChangeEmailTokenAsync(user, "new@test.com"))
+            .ReturnsAsync("change-token");
+        _linkGeneratorMock
+            .Setup(x => x.GenerateConfirmEmailChangeLink("old@test.com", "new@test.com", "change-token"))
+            .Returns("https://example.com/confirm-email-change?token=change-token");
+
+        var request = new UpdateUserInfo.UpdateUserInfoRequest(NewEmail: "new@test.com");
+
+        // Act
+        var result = await _handler.HandleAsync(request, principal);
+
+        // Assert
+        Assert.False(result.IsError);
         _linkGeneratorMock.Verify(
-            x => x.GenerateConfirmEmailLink("new@test.com", "confirm-token"),
+            x => x.GenerateConfirmEmailChangeLink("old@test.com", "new@test.com", "change-token"),
             Times.Once);
-
-        // The email sender must be called with the NEW email address and the generated link
         _emailSenderMock.Verify(
             x => x.SendConfirmationLinkAsync(
                 user,
                 "new@test.com",
-                "https://example.com/confirm?token=confirm-token"),
+                "https://example.com/confirm-email-change?token=change-token"),
             Times.Once);
     }
 
-    /// <summary>
-    /// Verifies the critical fix: when only the email changes, UpdateAsync must NOT be called.
-    /// ChangeEmailAsync already persists the change; a second UpdateAsync would write with a
-    /// stale concurrency stamp and could silently corrupt the user record.
-    /// </summary>
     [Fact]
-    public async Task DoesNotCallUpdateAsync_WhenOnlyEmailChanged()
+    public async Task ReturnsResultEmailChangePendingTrue_WhenEmailChangeRequested()
     {
         // Arrange
         var principal = CreatePrincipalWithEmail("old@test.com");
-        var user = new IdmtUser
-        {
-            UserName = "testuser",
-            Email = "old@test.com",
-
-            IsActive = true,
-            EmailConfirmed = true
-        };
+        var user = await SeedUserAsync(email: "old@test.com", username: "testuser", emailConfirmed: true);
         _userManagerMock.Setup(x => x.FindByEmailAsync("old@test.com")).ReturnsAsync(user);
         _userManagerMock.Setup(x => x.GenerateChangeEmailTokenAsync(user, "new@test.com"))
             .ReturnsAsync("change-token");
-        _userManagerMock.Setup(x => x.ChangeEmailAsync(user, "new@test.com", "change-token"))
-            .ReturnsAsync(IdentityResult.Success);
-        _userManagerMock.Setup(x => x.GenerateEmailConfirmationTokenAsync(user))
-            .ReturnsAsync("confirm-token");
         _linkGeneratorMock
-            .Setup(x => x.GenerateConfirmEmailLink("new@test.com", "confirm-token"))
-            .Returns("https://example.com/confirm?token=confirm-token");
+            .Setup(x => x.GenerateConfirmEmailChangeLink("old@test.com", "new@test.com", "change-token"))
+            .Returns("https://example.com/confirm-email-change");
 
         var request = new UpdateUserInfo.UpdateUserInfoRequest(NewEmail: "new@test.com");
 
@@ -218,57 +206,203 @@ public class UpdateUserInfoHandlerTests : IDisposable
 
         // Assert
         Assert.False(result.IsError);
-
-        // UpdateAsync must NOT be called — ChangeEmailAsync already saved the email change
-        _userManagerMock.Verify(x => x.UpdateAsync(It.IsAny<IdmtUser>()), Times.Never);
+        Assert.True(result.Value.EmailChangePending);
     }
 
-    /// <summary>
-    /// Verifies that when both username and email change in the same request, UpdateAsync is
-    /// still called exactly once for the username change (ChangeEmailAsync handles the email).
-    /// </summary>
     [Fact]
-    public async Task CallsUpdateAsync_WhenUsernameAndEmailBothChanged()
+    public async Task ReturnsResultEmailChangePendingFalse_WhenNoEmailChangeRequested()
     {
         // Arrange
-        var principal = CreatePrincipalWithEmail("old@test.com");
-        var user = new IdmtUser
-        {
-            UserName = "oldname",
-            Email = "old@test.com",
-
-            IsActive = true,
-            EmailConfirmed = true
-        };
-        _userManagerMock.Setup(x => x.FindByEmailAsync("old@test.com")).ReturnsAsync(user);
+        var principal = CreatePrincipalWithEmail("user@test.com");
+        var user = await SeedUserAsync(email: "user@test.com", username: "currentname");
+        _userManagerMock.Setup(x => x.FindByEmailAsync("user@test.com")).ReturnsAsync(user);
         _userManagerMock.Setup(x => x.SetUserNameAsync(user, "newname"))
-            .ReturnsAsync(IdentityResult.Success);
-        _userManagerMock.Setup(x => x.GenerateChangeEmailTokenAsync(user, "new@test.com"))
-            .ReturnsAsync("change-token");
-        _userManagerMock.Setup(x => x.ChangeEmailAsync(user, "new@test.com", "change-token"))
-            .ReturnsAsync(IdentityResult.Success);
-        _userManagerMock.Setup(x => x.GenerateEmailConfirmationTokenAsync(user))
-            .ReturnsAsync("confirm-token");
-        _linkGeneratorMock
-            .Setup(x => x.GenerateConfirmEmailLink("new@test.com", "confirm-token"))
-            .Returns("https://example.com/confirm?token=confirm-token");
-        _userManagerMock.Setup(x => x.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+            .ReturnsAsync(IdentityResult.Success)
+            .Callback(() => user.UserName = "newname");
 
-        var request = new UpdateUserInfo.UpdateUserInfoRequest(NewUsername: "newname", NewEmail: "new@test.com");
+        var request = new UpdateUserInfo.UpdateUserInfoRequest(NewUsername: "newname");
 
         // Act
         var result = await _handler.HandleAsync(request, principal);
 
         // Assert
         Assert.False(result.IsError);
+        Assert.False(result.Value.EmailChangePending);
+    }
 
-        // UpdateAsync must be called exactly once for the username change
-        _userManagerMock.Verify(x => x.UpdateAsync(user), Times.Once);
+    /// <summary>
+    /// F25 (CD-1 regression): when both NewPassword and NewEmail are requested, the
+    /// change-email token must validate at confirm time. The handler MUST flush + reload
+    /// AFTER ChangePasswordAsync rotates SecurityStamp and BEFORE
+    /// GenerateChangeEmailTokenAsync, so the token binds to the post-rotation stamp.
+    /// </summary>
+    [Fact]
+    public async Task PasswordAndEmailChange_TokenStillValidAtConfirmTime()
+    {
+        // Arrange
+        var principal = CreatePrincipalWithEmail("old@test.com");
+        var user = await SeedUserAsync(email: "old@test.com", username: "testuser", emailConfirmed: true);
+        _userManagerMock.Setup(x => x.FindByEmailAsync("old@test.com")).ReturnsAsync(user);
 
-        // Confirmation email must still be sent for the email change
-        _emailSenderMock.Verify(
-            x => x.SendConfirmationLinkAsync(user, "new@test.com", It.IsAny<string>()),
-            Times.Once);
+        // Simulate ChangePasswordAsync rotating the SecurityStamp.
+        var stampAtPasswordChange = string.Empty;
+        _userManagerMock.Setup(x => x.ChangePasswordAsync(user, "OldP@ss1!", "NewP@ss1!"))
+            .ReturnsAsync(IdentityResult.Success)
+            .Callback(() =>
+            {
+                user.SecurityStamp = Guid.NewGuid().ToString();
+                stampAtPasswordChange = user.SecurityStamp;
+            });
+
+        // Token generation must observe the rotated stamp.
+        var stampAtTokenGen = string.Empty;
+        _userManagerMock.Setup(x => x.GenerateChangeEmailTokenAsync(user, "new@test.com"))
+            .ReturnsAsync(() =>
+            {
+                stampAtTokenGen = user.SecurityStamp ?? string.Empty;
+                return $"change-token-{user.SecurityStamp}";
+            });
+
+        _linkGeneratorMock.Setup(x => x.GenerateConfirmEmailChangeLink(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .Returns("https://example.com/confirm-email-change");
+
+        var request = new UpdateUserInfo.UpdateUserInfoRequest(
+            OldPassword: "OldP@ss1!",
+            NewPassword: "NewP@ss1!",
+            NewEmail: "new@test.com");
+
+        // Act
+        var result = await _handler.HandleAsync(request, principal);
+
+        // Assert
+        Assert.False(result.IsError);
+        Assert.True(result.Value.EmailChangePending);
+
+        // Token must be generated AFTER password change rotates stamp.
+        Assert.False(string.IsNullOrEmpty(stampAtPasswordChange));
+        Assert.Equal(stampAtPasswordChange, stampAtTokenGen);
+
+        // Now simulate the user clicking the link — confirm time. Identity's
+        // ChangeEmailAsync validates the token against the user's CURRENT stamp.
+        // Stamp has not rotated again, so the token validates.
+        _userManagerMock.Setup(x => x.ChangeEmailAsync(user, "new@test.com", $"change-token-{stampAtPasswordChange}"))
+            .ReturnsAsync(IdentityResult.Success);
+
+        var confirmHandler = new Idmt.Plugin.Features.Auth.ConfirmEmailChange.ConfirmEmailChangeHandler(
+            _userManagerMock.Object,
+            _dbContext,
+            NullLogger<Idmt.Plugin.Features.Auth.ConfirmEmailChange.ConfirmEmailChangeHandler>.Instance);
+
+        var confirmRequest = new Idmt.Plugin.Features.Auth.ConfirmEmailChange.ConfirmEmailChangeRequest(
+            Email: "old@test.com",
+            NewEmail: "new@test.com",
+            Token: $"change-token-{stampAtPasswordChange}");
+
+        var confirmResult = await confirmHandler.HandleAsync(confirmRequest);
+        Assert.False(confirmResult.IsError);
+    }
+
+    /// <summary>
+    /// F44 (CD-1 widened): same coupling for username + email change.
+    /// </summary>
+    [Fact]
+    public async Task UsernameAndEmailChange_TokenStillValidAtConfirmTime()
+    {
+        // Arrange
+        var principal = CreatePrincipalWithEmail("old@test.com");
+        var user = await SeedUserAsync(email: "old@test.com", username: "oldname", emailConfirmed: true);
+        _userManagerMock.Setup(x => x.FindByEmailAsync("old@test.com")).ReturnsAsync(user);
+
+        // Simulate SetUserNameAsync rotating the stamp.
+        var stampAfterUsername = string.Empty;
+        _userManagerMock.Setup(x => x.SetUserNameAsync(user, "newname"))
+            .ReturnsAsync(IdentityResult.Success)
+            .Callback(() =>
+            {
+                user.UserName = "newname";
+                user.SecurityStamp = Guid.NewGuid().ToString();
+                stampAfterUsername = user.SecurityStamp;
+            });
+
+        var stampAtTokenGen = string.Empty;
+        _userManagerMock.Setup(x => x.GenerateChangeEmailTokenAsync(user, "new@test.com"))
+            .ReturnsAsync(() =>
+            {
+                stampAtTokenGen = user.SecurityStamp ?? string.Empty;
+                return $"change-token-{user.SecurityStamp}";
+            });
+
+        _linkGeneratorMock.Setup(x => x.GenerateConfirmEmailChangeLink(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .Returns("https://example.com/confirm-email-change");
+
+        var request = new UpdateUserInfo.UpdateUserInfoRequest(
+            NewUsername: "newname",
+            NewEmail: "new@test.com");
+
+        // Act
+        var result = await _handler.HandleAsync(request, principal);
+
+        // Assert
+        Assert.False(result.IsError);
+        Assert.True(result.Value.EmailChangePending);
+        Assert.False(string.IsNullOrEmpty(stampAfterUsername));
+        Assert.Equal(stampAfterUsername, stampAtTokenGen);
+
+        _userManagerMock.Setup(x => x.ChangeEmailAsync(user, "new@test.com", $"change-token-{stampAfterUsername}"))
+            .ReturnsAsync(IdentityResult.Success);
+
+        var confirmHandler = new Idmt.Plugin.Features.Auth.ConfirmEmailChange.ConfirmEmailChangeHandler(
+            _userManagerMock.Object,
+            _dbContext,
+            NullLogger<Idmt.Plugin.Features.Auth.ConfirmEmailChange.ConfirmEmailChangeHandler>.Instance);
+
+        var confirmRequest = new Idmt.Plugin.Features.Auth.ConfirmEmailChange.ConfirmEmailChangeRequest(
+            Email: "old@test.com",
+            NewEmail: "new@test.com",
+            Token: $"change-token-{stampAfterUsername}");
+
+        var confirmResult = await confirmHandler.HandleAsync(confirmRequest);
+        Assert.False(confirmResult.IsError);
+    }
+
+    /// <summary>
+    /// Verifies the ordering invariant: GenerateChangeEmailTokenAsync runs strictly
+    /// AFTER ChangePasswordAsync. Use a sequence to assert the exact call order.
+    /// </summary>
+    [Fact]
+    public async Task FlushReloadOrderingPreserved_GenerateTokenAfterPasswordChange()
+    {
+        // Arrange
+        var principal = CreatePrincipalWithEmail("old@test.com");
+        var user = await SeedUserAsync(email: "old@test.com", username: "testuser", emailConfirmed: true);
+        _userManagerMock.Setup(x => x.FindByEmailAsync("old@test.com")).ReturnsAsync(user);
+
+        var sequence = new MockSequence();
+        _userManagerMock.InSequence(sequence)
+            .Setup(x => x.ChangePasswordAsync(user, "OldP@ss1!", "NewP@ss1!"))
+            .ReturnsAsync(IdentityResult.Success);
+        _userManagerMock.InSequence(sequence)
+            .Setup(x => x.GenerateChangeEmailTokenAsync(user, "new@test.com"))
+            .ReturnsAsync("change-token");
+
+        _linkGeneratorMock.Setup(x => x.GenerateConfirmEmailChangeLink(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .Returns("https://example.com/confirm-email-change");
+
+        var request = new UpdateUserInfo.UpdateUserInfoRequest(
+            OldPassword: "OldP@ss1!",
+            NewPassword: "NewP@ss1!",
+            NewEmail: "new@test.com");
+
+        // Act
+        var result = await _handler.HandleAsync(request, principal);
+
+        // Assert: sequence will throw if ordering is violated.
+        Assert.False(result.IsError);
+        _userManagerMock.Verify(x => x.ChangePasswordAsync(user, "OldP@ss1!", "NewP@ss1!"), Times.Once);
+        _userManagerMock.Verify(x => x.GenerateChangeEmailTokenAsync(user, "new@test.com"), Times.Once);
     }
 
     [Fact]
@@ -276,17 +410,9 @@ public class UpdateUserInfoHandlerTests : IDisposable
     {
         // Arrange
         var principal = CreatePrincipalWithEmail("same@test.com");
-        var user = new IdmtUser
-        {
-            UserName = "testuser",
-            Email = "same@test.com",
-
-            IsActive = true,
-            EmailConfirmed = true
-        };
+        var user = await SeedUserAsync(email: "same@test.com", username: "testuser", emailConfirmed: true);
         _userManagerMock.Setup(x => x.FindByEmailAsync("same@test.com")).ReturnsAsync(user);
 
-        // Request with same email as current
         var request = new UpdateUserInfo.UpdateUserInfoRequest(NewEmail: "same@test.com");
 
         // Act
@@ -294,9 +420,13 @@ public class UpdateUserInfoHandlerTests : IDisposable
 
         // Assert
         Assert.False(result.IsError);
-        _userManagerMock.Verify(x => x.ChangeEmailAsync(It.IsAny<IdmtUser>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
-        _userManagerMock.Verify(x => x.UpdateAsync(It.IsAny<IdmtUser>()), Times.Never);
-        _emailSenderMock.Verify(x => x.SendConfirmationLinkAsync(It.IsAny<IdmtUser>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        Assert.False(result.Value.EmailChangePending);
+        _userManagerMock.Verify(
+            x => x.GenerateChangeEmailTokenAsync(It.IsAny<IdmtUser>(), It.IsAny<string>()),
+            Times.Never);
+        _emailSenderMock.Verify(
+            x => x.SendConfirmationLinkAsync(It.IsAny<IdmtUser>(), It.IsAny<string>(), It.IsAny<string>()),
+            Times.Never);
     }
 
     [Fact]
@@ -304,16 +434,9 @@ public class UpdateUserInfoHandlerTests : IDisposable
     {
         // Arrange
         var principal = CreatePrincipalWithEmail("user@test.com");
-        var user = new IdmtUser
-        {
-            UserName = "currentname",
-            Email = "user@test.com",
-
-            IsActive = true
-        };
+        var user = await SeedUserAsync(email: "user@test.com", username: "currentname");
         _userManagerMock.Setup(x => x.FindByEmailAsync("user@test.com")).ReturnsAsync(user);
 
-        // Request with same username as current
         var request = new UpdateUserInfo.UpdateUserInfoRequest(NewUsername: "currentname");
 
         // Act
@@ -321,32 +444,54 @@ public class UpdateUserInfoHandlerTests : IDisposable
 
         // Assert
         Assert.False(result.IsError);
+        Assert.False(result.Value.EmailChangePending);
         _userManagerMock.Verify(x => x.SetUserNameAsync(It.IsAny<IdmtUser>(), It.IsAny<string>()), Times.Never);
-        _userManagerMock.Verify(x => x.UpdateAsync(It.IsAny<IdmtUser>()), Times.Never);
     }
 
-    /// <summary>
-    /// Verifies that a failed ChangeEmailAsync rolls back the transaction and returns an error
-    /// without attempting to send a confirmation email.
-    /// </summary>
     [Fact]
-    public async Task ReturnsUpdateFailed_WhenChangeEmailFails()
+    public async Task ReturnsPasswordResetFailed_WhenChangePasswordFails()
     {
         // Arrange
-        var principal = CreatePrincipalWithEmail("old@test.com");
-        var user = new IdmtUser
-        {
-            UserName = "testuser",
-            Email = "old@test.com",
+        var principal = CreatePrincipalWithEmail("user@test.com");
+        var user = await SeedUserAsync(email: "user@test.com", username: "testuser");
+        _userManagerMock.Setup(x => x.FindByEmailAsync("user@test.com")).ReturnsAsync(user);
+        _userManagerMock.Setup(x => x.ChangePasswordAsync(user, "OldP@ss1!", "NewP@ss1!"))
+            .ReturnsAsync(IdentityResult.Failed(new IdentityError { Code = "Bad", Description = "no" }));
 
-            IsActive = true,
-            EmailConfirmed = true
-        };
+        var request = new UpdateUserInfo.UpdateUserInfoRequest(
+            OldPassword: "OldP@ss1!",
+            NewPassword: "NewP@ss1!");
+
+        // Act
+        var result = await _handler.HandleAsync(request, principal);
+
+        // Assert
+        Assert.True(result.IsError);
+        Assert.Equal("Password.ResetFailed", result.FirstError.Code);
+
+        // Email flow must NOT be triggered when password change failed.
+        _emailSenderMock.Verify(
+            x => x.SendConfirmationLinkAsync(It.IsAny<IdmtUser>(), It.IsAny<string>(), It.IsAny<string>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_EmailOnlyChangeRequested_DoesNotRevokeTokens()
+    {
+        // Arrange — email-only change must NOT revoke bearer tokens at staging time.
+        // Revocation happens naturally at confirm time via SecurityStamp rotation.
+        var userId = Guid.NewGuid();
+        var principal = CreatePrincipalWithEmail("old@test.com");
+        var user = await SeedUserAsync(email: "old@test.com", username: "testuser", emailConfirmed: true);
         _userManagerMock.Setup(x => x.FindByEmailAsync("old@test.com")).ReturnsAsync(user);
         _userManagerMock.Setup(x => x.GenerateChangeEmailTokenAsync(user, "new@test.com"))
             .ReturnsAsync("change-token");
-        _userManagerMock.Setup(x => x.ChangeEmailAsync(user, "new@test.com", "change-token"))
-            .ReturnsAsync(IdentityResult.Failed(new IdentityError { Code = "Error", Description = "Change failed" }));
+        _linkGeneratorMock.Setup(x => x.GenerateConfirmEmailChangeLink(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .Returns("https://example.com/confirm-email-change");
+
+        _handlerCurrentUserServiceMock.SetupGet(x => x.UserId).Returns(userId);
+        _handlerCurrentUserServiceMock.SetupGet(x => x.TenantId).Returns("tenant-1");
 
         var request = new UpdateUserInfo.UpdateUserInfoRequest(NewEmail: "new@test.com");
 
@@ -354,13 +499,87 @@ public class UpdateUserInfoHandlerTests : IDisposable
         var result = await _handler.HandleAsync(request, principal);
 
         // Assert
-        Assert.True(result.IsError);
-        Assert.Equal("User.UpdateFailed", result.FirstError.Code);
-
-        // No confirmation email should be sent when the change itself failed
-        _emailSenderMock.Verify(
-            x => x.SendConfirmationLinkAsync(It.IsAny<IdmtUser>(), It.IsAny<string>(), It.IsAny<string>()),
+        Assert.False(result.IsError);
+        Assert.True(result.Value.EmailChangePending);
+        _tokenRevocationServiceMock.Verify(
+            x => x.RevokeUserTokensAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_PasswordChangeRequested_RevokesTokens()
+    {
+        // Arrange — credentials path must still revoke (regression).
+        var userId = Guid.NewGuid();
+        var principal = CreatePrincipalWithEmail("user@test.com");
+        var user = await SeedUserAsync(email: "user@test.com", username: "testuser");
+        _userManagerMock.Setup(x => x.FindByEmailAsync("user@test.com")).ReturnsAsync(user);
+        _userManagerMock.Setup(x => x.ChangePasswordAsync(user, "OldP@ss1!", "NewP@ss1!"))
+            .ReturnsAsync(IdentityResult.Success);
+
+        _handlerCurrentUserServiceMock.SetupGet(x => x.UserId).Returns(userId);
+        _handlerCurrentUserServiceMock.SetupGet(x => x.TenantId).Returns("tenant-1");
+
+        var request = new UpdateUserInfo.UpdateUserInfoRequest(
+            OldPassword: "OldP@ss1!",
+            NewPassword: "NewP@ss1!");
+
+        // Act
+        var result = await _handler.HandleAsync(request, principal);
+
+        // Assert
+        Assert.False(result.IsError);
+        _tokenRevocationServiceMock.Verify(
+            x => x.RevokeUserTokensAsync(userId, "tenant-1", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_UsernameChangeRequested_RevokesTokens()
+    {
+        // Arrange — username change rotates SecurityStamp, must revoke bearer tokens.
+        var userId = Guid.NewGuid();
+        var principal = CreatePrincipalWithEmail("user@test.com");
+        var user = await SeedUserAsync(email: "user@test.com", username: "oldname");
+        _userManagerMock.Setup(x => x.FindByEmailAsync("user@test.com")).ReturnsAsync(user);
+        _userManagerMock.Setup(x => x.SetUserNameAsync(user, "newname"))
+            .ReturnsAsync(IdentityResult.Success)
+            .Callback(() => user.UserName = "newname");
+
+        _handlerCurrentUserServiceMock.SetupGet(x => x.UserId).Returns(userId);
+        _handlerCurrentUserServiceMock.SetupGet(x => x.TenantId).Returns("tenant-1");
+
+        var request = new UpdateUserInfo.UpdateUserInfoRequest(NewUsername: "newname");
+
+        // Act
+        var result = await _handler.HandleAsync(request, principal);
+
+        // Assert
+        Assert.False(result.IsError);
+        _tokenRevocationServiceMock.Verify(
+            x => x.RevokeUserTokensAsync(userId, "tenant-1", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// Helper: persists a user to the in-memory IdmtDbContext so that EF tracks the entity.
+    /// Required because the new staging path calls dbContext.Entry(user).ReloadAsync, which
+    /// only works on tracked entities.
+    /// </summary>
+    private async Task<IdmtUser> SeedUserAsync(string email, string username, bool emailConfirmed = false)
+    {
+        var user = new IdmtUser
+        {
+            Email = email,
+            NormalizedEmail = email.ToUpperInvariant(),
+            UserName = username,
+            NormalizedUserName = username.ToUpperInvariant(),
+            EmailConfirmed = emailConfirmed,
+            IsActive = true,
+        };
+        _dbContext.Users.Add(user);
+        await _dbContext.SaveChangesAsync();
+        return user;
     }
 
     private static ClaimsPrincipal CreatePrincipalWithEmail(string email)

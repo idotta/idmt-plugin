@@ -87,6 +87,7 @@ public class ApplicationOptions
 
     public string ResetPasswordFormPath { get; set; } = "/reset-password";
     public string ConfirmEmailFormPath { get; set; } = "/confirm-email";
+    public string ConfirmEmailChangeFormPath { get; set; } = "/confirm-email-change";
 
     /// <summary>
     /// Controls how email confirmation links are generated.

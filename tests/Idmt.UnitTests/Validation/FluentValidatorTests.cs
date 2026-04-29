@@ -162,6 +162,57 @@ public class FluentValidatorTests
 
     #endregion
 
+    #region ConfirmEmailChangeRequestValidator
+
+    [Fact]
+    public void ConfirmEmailChangeRequestValidator_Fails_WithEmptyFields()
+    {
+        var validator = new ConfirmEmailChangeRequestValidator();
+        var request = new ConfirmEmailChange.ConfirmEmailChangeRequest("", "", "");
+        var result = validator.TestValidate(request);
+        result.ShouldHaveValidationErrorFor(x => x.Email);
+        result.ShouldHaveValidationErrorFor(x => x.NewEmail);
+        result.ShouldHaveValidationErrorFor(x => x.Token);
+    }
+
+    [Fact]
+    public void ConfirmEmailChangeRequestValidator_Fails_WithInvalidEmail()
+    {
+        var validator = new ConfirmEmailChangeRequestValidator();
+        var request = new ConfirmEmailChange.ConfirmEmailChangeRequest("not-an-email", "new@example.com", "token");
+        var result = validator.TestValidate(request);
+        result.ShouldHaveValidationErrorFor(x => x.Email);
+    }
+
+    [Fact]
+    public void ConfirmEmailChangeRequestValidator_Fails_WithInvalidNewEmail()
+    {
+        var validator = new ConfirmEmailChangeRequestValidator();
+        var request = new ConfirmEmailChange.ConfirmEmailChangeRequest("user@example.com", "not-an-email", "token");
+        var result = validator.TestValidate(request);
+        result.ShouldHaveValidationErrorFor(x => x.NewEmail);
+    }
+
+    [Fact]
+    public void ConfirmEmailChangeRequestValidator_Fails_WithEmptyToken()
+    {
+        var validator = new ConfirmEmailChangeRequestValidator();
+        var request = new ConfirmEmailChange.ConfirmEmailChangeRequest("user@example.com", "new@example.com", "");
+        var result = validator.TestValidate(request);
+        result.ShouldHaveValidationErrorFor(x => x.Token);
+    }
+
+    [Fact]
+    public void ConfirmEmailChangeRequestValidator_Passes_WithValidData()
+    {
+        var validator = new ConfirmEmailChangeRequestValidator();
+        var request = new ConfirmEmailChange.ConfirmEmailChangeRequest("user@example.com", "new@example.com", "valid-token");
+        var result = validator.TestValidate(request);
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    #endregion
+
     #region ForgotPasswordRequestValidator
 
     [Fact]

@@ -475,6 +475,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<Logout.ILogoutHandler, Logout.LogoutHandler>();
         services.AddScoped<RefreshToken.IRefreshTokenHandler, RefreshToken.RefreshTokenHandler>();
         services.AddScoped<ConfirmEmail.IConfirmEmailHandler, ConfirmEmail.ConfirmEmailHandler>();
+        services.AddScoped<ConfirmEmailChange.IConfirmEmailChangeHandler, ConfirmEmailChange.ConfirmEmailChangeHandler>();
         services.AddScoped<ResendConfirmationEmail.IResendConfirmationEmailHandler, ResendConfirmationEmail.ResendConfirmationEmailHandler>();
         services.AddScoped<ForgotPassword.IForgotPasswordHandler, ForgotPassword.ForgotPasswordHandler>();
         services.AddScoped<ResetPassword.IResetPasswordHandler, ResetPassword.ResetPasswordHandler>();
