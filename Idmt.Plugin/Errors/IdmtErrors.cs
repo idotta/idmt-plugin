@@ -149,5 +149,9 @@ public static class IdmtErrors
         public static Error Unexpected => Error.Unexpected(
             code: "General.Unexpected",
             description: "An unexpected error occurred");
+
+        public static Error SelfTarget => Error.Validation(
+            code: "General.SelfTarget",
+            description: "Operation cannot target the current user");
     }
 }

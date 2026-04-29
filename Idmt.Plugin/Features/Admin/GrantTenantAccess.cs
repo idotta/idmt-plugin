@@ -35,12 +35,23 @@ public static class GrantTenantAccess
         UserManager<IdmtUser> userManager,
         IMultiTenantStore<IdmtTenantInfo> tenantStore,
         ITenantOperationService tenantOps,
+        ICurrentUserService currentUserService,
         TimeProvider timeProvider,
         ILogger<GrantTenantAccessHandler> logger
         ) : IGrantTenantAccessHandler
     {
         public async Task<ErrorOr<Success>> HandleAsync(Guid userId, string tenantIdentifier, DateTimeOffset? expiresAt = null, CancellationToken cancellationToken = default)
         {
+            if (currentUserService.UserId is null)
+            {
+                return IdmtErrors.General.Unexpected;
+            }
+
+            if (userId == currentUserService.UserId.Value)
+            {
+                return IdmtErrors.General.SelfTarget;
+            }
+
             if (expiresAt.HasValue && expiresAt.Value <= timeProvider.GetUtcNow())
             {
                 return Error.Validation("ExpiresAt", "Expiration date must be in the future");
@@ -236,7 +247,7 @@ public static class GrantTenantAccess
             }
             return TypedResults.Ok();
         })
-        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
+        .RequireAuthorization(IdmtAuthOptions.RequireSysAdminPolicy)
         .WithSummary("Grant user access to a tenant");
     }
 }

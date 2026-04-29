@@ -32,10 +32,21 @@ public static class RevokeTenantAccess
         IMultiTenantStore<IdmtTenantInfo> tenantStore,
         ITenantOperationService tenantOps,
         ITokenRevocationService tokenRevocationService,
+        ICurrentUserService currentUserService,
         ILogger<RevokeTenantAccessHandler> logger) : IRevokeTenantAccessHandler
     {
         public async Task<ErrorOr<Success>> HandleAsync(Guid userId, string tenantIdentifier, CancellationToken cancellationToken = default)
         {
+            if (currentUserService.UserId is null)
+            {
+                return IdmtErrors.General.Unexpected;
+            }
+
+            if (userId == currentUserService.UserId.Value)
+            {
+                return IdmtErrors.General.SelfTarget;
+            }
+
             IdmtUser? user;
 
             try
@@ -96,7 +107,7 @@ public static class RevokeTenantAccess
 
     public static RouteHandlerBuilder MapRevokeTenantAccessEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantIdentifier}", async Task<Results<NoContent, NotFound, InternalServerError>> (
+        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantIdentifier}", async Task<Results<NoContent, BadRequest, NotFound, InternalServerError>> (
             Guid userId,
             string tenantIdentifier,
             IRevokeTenantAccessHandler handler,
@@ -107,13 +118,14 @@ public static class RevokeTenantAccess
             {
                 return result.FirstError.Type switch
                 {
+                    ErrorType.Validation => TypedResults.BadRequest(),
                     ErrorType.NotFound => TypedResults.NotFound(),
                     _ => TypedResults.InternalServerError(),
                 };
             }
             return TypedResults.NoContent();
         })
-        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
+        .RequireAuthorization(IdmtAuthOptions.RequireSysAdminPolicy)
         .WithSummary("Revoke user access from a tenant");
     }
 }

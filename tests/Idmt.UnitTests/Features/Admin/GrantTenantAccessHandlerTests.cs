@@ -30,6 +30,7 @@ public class GrantTenantAccessHandlerTests : IDisposable
         // Set up InMemory DbContext
         var tenantAccessorMock = new Mock<IMultiTenantContextAccessor>();
         var currentUserServiceMock = new Mock<ICurrentUserService>();
+        currentUserServiceMock.SetupGet(x => x.UserId).Returns(Guid.NewGuid());
         var dummyTenant = new IdmtTenantInfo("sys-id", "system-test", "System Test");
         var dummyContext = new MultiTenantContext<IdmtTenantInfo>(dummyTenant);
         tenantAccessorMock.SetupGet(x => x.MultiTenantContext).Returns(dummyContext);
@@ -57,6 +58,7 @@ public class GrantTenantAccessHandlerTests : IDisposable
             _userManagerMock.Object,
             _tenantStoreMock.Object,
             _tenantOpsMock.Object,
+            currentUserServiceMock.Object,
             _timeProvider,
             NullLogger<GrantTenantAccess.GrantTenantAccessHandler>.Instance);
     }
@@ -229,6 +231,7 @@ public class GrantTenantAccessHandlerTests : IDisposable
 
         var tenantAccessorMock = new Mock<IMultiTenantContextAccessor>();
         var currentUserServiceMock = new Mock<ICurrentUserService>();
+        currentUserServiceMock.SetupGet(x => x.UserId).Returns(Guid.NewGuid());
         var dummyTenant = new IdmtTenantInfo("sys-id", "system-test", "System Test");
         var dummyContext = new MultiTenantContext<IdmtTenantInfo>(dummyTenant);
         tenantAccessorMock.SetupGet(x => x.MultiTenantContext).Returns(dummyContext);
@@ -297,6 +300,7 @@ public class GrantTenantAccessHandlerTests : IDisposable
             userManagerMock.Object,
             tenantStoreMock.Object,
             tenantOpsMock.Object,
+            currentUserServiceMock.Object,
             _timeProvider,
             NullLogger<GrantTenantAccess.GrantTenantAccessHandler>.Instance);
 

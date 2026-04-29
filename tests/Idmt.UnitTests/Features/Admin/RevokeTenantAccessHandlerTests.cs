@@ -26,6 +26,7 @@ public class RevokeTenantAccessHandlerTests : IDisposable
         // InMemory DbContext
         var tenantAccessorMock = new Mock<IMultiTenantContextAccessor>();
         var currentUserServiceMock = new Mock<ICurrentUserService>();
+        currentUserServiceMock.SetupGet(x => x.UserId).Returns(Guid.NewGuid());
         var dummyTenant = new IdmtTenantInfo("sys-id", "system-test", "System Test");
         var dummyContext = new MultiTenantContext<IdmtTenantInfo>(dummyTenant);
         tenantAccessorMock.SetupGet(x => x.MultiTenantContext).Returns(dummyContext);
@@ -48,6 +49,7 @@ public class RevokeTenantAccessHandlerTests : IDisposable
             _tenantStoreMock.Object,
             _tenantOpsMock.Object,
             _tokenRevocationServiceMock.Object,
+            currentUserServiceMock.Object,
             NullLogger<RevokeTenantAccess.RevokeTenantAccessHandler>.Instance);
     }
 

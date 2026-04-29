@@ -154,6 +154,7 @@ public static class CreateTenant
             var apiPrefix = context.RequestServices.GetRequiredService<IOptions<IdmtOptions>>().Value.Application.ApiPrefix ?? string.Empty;
             return TypedResults.Created($"{apiPrefix}/admin/tenants/{response.Value.Identifier}", response.Value);
         })
+        .RequireAuthorization(IdmtAuthOptions.RequireSysAdminPolicy)
         .WithSummary("Create Tenant")
         .WithDescription("Create a new tenant in the system or reactivate an existing inactive tenant");
     }

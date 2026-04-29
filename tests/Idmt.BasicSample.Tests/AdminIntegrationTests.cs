@@ -6,6 +6,7 @@ using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Features.Manage;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -557,6 +558,182 @@ public class AdminIntegrationTests : BaseIntegrationTest
     #endregion
 
     #region Grant Tenant Access Validation Tests
+
+    private async Task<HttpClient> CreateSysSupportAuthenticatedClientAsync()
+    {
+        var sysAdminClient = await CreateAuthenticatedClientAsync();
+        var password = "SysSup1!";
+        var (_, email) = await RegisterAndSetPasswordAsync(
+            sysAdminClient,
+            password,
+            role: IdmtDefaultRoleTypes.SysSupport);
+
+        var client = Factory.CreateClientWithTenant();
+        var loginResponse = await client.PostAsJsonAsync("/auth/token", new
+        {
+            Email = email,
+            Password = password
+        });
+        await loginResponse.AssertSuccess();
+        var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
+        return client;
+    }
+
+    private async Task<(HttpClient Client, Guid UserId)> CreateSysSupportAuthenticatedClientWithIdAsync()
+    {
+        var sysAdminClient = await CreateAuthenticatedClientAsync();
+        var password = "SysSup1!";
+        var (userId, email) = await RegisterAndSetPasswordAsync(
+            sysAdminClient,
+            password,
+            role: IdmtDefaultRoleTypes.SysSupport);
+
+        var client = Factory.CreateClientWithTenant();
+        var loginResponse = await client.PostAsJsonAsync("/auth/token", new
+        {
+            Email = email,
+            Password = password
+        });
+        await loginResponse.AssertSuccess();
+        var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
+        return (client, Guid.Parse(userId));
+    }
+
+    private async Task<Guid> GetSysAdminUserIdAsync()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider;
+
+        var store = provider.GetRequiredService<Finbuckle.MultiTenant.Abstractions.IMultiTenantStore<IdmtTenantInfo>>();
+        var tenant = await store.GetByIdentifierAsync(IdmtApiFactory.DefaultTenantIdentifier)
+            ?? throw new InvalidOperationException("Default tenant not found");
+
+        var setter = provider.GetRequiredService<Finbuckle.MultiTenant.Abstractions.IMultiTenantContextSetter>();
+        setter.MultiTenantContext = new Finbuckle.MultiTenant.Abstractions.MultiTenantContext<IdmtTenantInfo>(tenant);
+
+        var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
+        var sysAdmin = await userManager.FindByEmailAsync(IdmtApiFactory.SysAdminEmail)
+            ?? throw new InvalidOperationException("Sysadmin not found");
+        return sysAdmin.Id;
+    }
+
+    #region Role-based authorization tests (C2)
+
+    [Fact]
+    public async Task SysSupport_cannot_create_tenant_returns_403()
+    {
+        var client = await CreateSysSupportAuthenticatedClientAsync();
+        var response = await client.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = $"ss-create-{Guid.NewGuid():N}",
+            Name = "SS Forbidden"
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysSupport_cannot_delete_tenant_returns_403()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var target = $"ss-del-{Guid.NewGuid():N}";
+        await sysClient.PostAsJsonAsync("/admin/tenants", new { Identifier = target, Name = "SS Del" });
+
+        var ssClient = await CreateSysSupportAuthenticatedClientAsync();
+        var response = await ssClient.DeleteAsync($"/admin/tenants/{target}");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysSupport_cannot_grant_tenant_access_returns_403()
+    {
+        var (ssClient, _) = await CreateSysSupportAuthenticatedClientWithIdAsync();
+        var response = await ssClient.PostAsJsonAsync(
+            $"/admin/users/{Guid.NewGuid()}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
+            new { ExpiresAt = (DateTime?)null });
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysSupport_cannot_revoke_tenant_access_returns_403()
+    {
+        var (ssClient, _) = await CreateSysSupportAuthenticatedClientWithIdAsync();
+        var response = await ssClient.DeleteAsync(
+            $"/admin/users/{Guid.NewGuid()}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysSupport_can_list_all_tenants_returns_200()
+    {
+        var ssClient = await CreateSysSupportAuthenticatedClientAsync();
+        var response = await ssClient.GetAsync("/admin/tenants");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysSupport_can_get_user_tenants_returns_200()
+    {
+        var ssClient = await CreateSysSupportAuthenticatedClientAsync();
+        var response = await ssClient.GetAsync($"/admin/users/{Guid.NewGuid()}/tenants");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysAdmin_grant_access_to_self_returns_400_with_SelfTarget()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var sysAdminId = await GetSysAdminUserIdAsync();
+        var response = await sysClient.PostAsJsonAsync(
+            $"/admin/users/{sysAdminId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
+            new { ExpiresAt = (DateTime?)null });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysAdmin_revoke_access_from_self_returns_400_with_SelfTarget()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var sysAdminId = await GetSysAdminUserIdAsync();
+        var response = await sysClient.DeleteAsync(
+            $"/admin/users/{sysAdminId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Unauthenticated_caller_gets_401_on_admin_write()
+    {
+        var client = Factory.CreateClientWithTenant();
+        var response = await client.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = $"anon-{Guid.NewGuid():N}",
+            Name = "Anon"
+        });
+        Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
+    }
+
+    [Fact]
+    public async Task Unauthenticated_caller_gets_401_on_admin_read()
+    {
+        var client = Factory.CreateClientWithTenant();
+        var response = await client.GetAsync("/admin/tenants");
+        Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
+    }
+
+    [Fact]
+    public async Task SysAdmin_can_create_tenant_returns_201()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var response = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = $"sa-create-{Guid.NewGuid():N}",
+            Name = "SA Create"
+        });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    #endregion
 
     [Fact]
     public async Task GrantTenantAccess_Returns400_WhenExpiresAtIsInPast()
