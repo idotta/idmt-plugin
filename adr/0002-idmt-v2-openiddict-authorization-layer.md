@@ -638,8 +638,9 @@ If items 1 through 4 do not compose cleanly, the "own the policy, rent the
 protocol" cost basis must be re-evaluated before the rewrite begins.
 
 **Prototype outcome.** All seven items passed on .NET 10 with OpenIddict 7.5.0,
-Finbuckle.MultiTenant 10.0.3, and SQLite (16 tests). Corrections and scoped
-stand-ins the spike surfaced, folded into this ADR:
+Finbuckle.MultiTenant 10.0.3, and SQLite, plus a follow-on gate 8 that proved the
+real browser-login flow (19 tests total). Corrections and scoped stand-ins the
+spike surfaced, folded into this ADR:
 
 - §2.7 is corrected: OpenIddict 7.5.0 *does* expose `RevokeBySubjectAsync`, and a
   token entry has no audience column. Single-tenant revocation is by authorization
@@ -650,21 +651,26 @@ stand-ins the spike surfaced, folded into this ADR:
   subtraction; resolve-time mutation remains uncatchable, as
   [§2.9](#29-the-opinionated-and-customizable-seam) already concedes.
 - Gate 7 proves server-side session resolution, the shared validation path, and
-  anti-forgery rejection. The spike acquired the session's reference token via a
-  first-party client-credentials back-channel (subject = client; user identity in
-  the server-side session). Carrying subject = user in the token, and validating
-  the `SameSite` value against a real redirect-return, belong to the deferred
-  auth-code + PKCE work (§7.1). The single-instance topology proves revocation
-  correctness, not the bounded-staleness scale-out window (§7.1 backplane).
+  anti-forgery rejection.
+- Gate 8 proves the real browser login: authorization code + PKCE (enforced, not
+  decorative) through an interactive authorization-server session, the BFF
+  exchanging the code server-side and storing the reference token in the session.
+  The issued token's **subject is the authenticated user** — this supersedes gate
+  7's client-credentials back-channel stand-in (subject = client) and resolves the
+  §7.1 first-party-auth question. The remaining stand-in scope is small: the
+  single-instance topology proves revocation correctness, not the bounded-staleness
+  scale-out window (§7.1 backplane), and a real cross-site `SameSite` redirect was
+  not exercised in-process.
 
 ### 7.1 Open questions
 
 The following remain undecided and are tracked separately from the gate.
 
-- **First-party and machine-client authentication** without the password grant.
-  Decide between the client-credentials flow, a code exchange, or both. (The
-  prototype used client-credentials as a back-channel stand-in for the BFF session;
-  the production browser flow is auth-code + PKCE, still to be built.)
+- **Machine-client authentication** without the password grant. The browser flow
+  is settled: gate 8 proved **authorization code + PKCE** with a server-side BFF
+  session, so interactive login is no longer open. What remains is the
+  machine-to-machine choice (client credentials, as the spike's resource clients
+  use, and/or a code exchange) for non-interactive callers.
 - **Out-of-process resource servers.** v2 assumes the resource API is co-hosted
   with the OpenIddict server so the local validation handler enforces revocation
   ([§2.3](#23-openiddict-as-the-protocol-engine)). Decide whether to support a

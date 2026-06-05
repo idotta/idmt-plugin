@@ -76,9 +76,12 @@ public static class SpikeWiring
             .AddServer(o =>
             {
                 o.SetTokenEndpointUris("/connect/token");
+                o.SetAuthorizationEndpointUris("/connect/authorize");
 
                 o.AllowClientCredentialsFlow();
                 o.AllowRefreshTokenFlow();
+                // Gate 8: real interactive browser login for the BFF.
+                o.AllowAuthorizationCodeFlow();
                 // No public token-exchange grant: support tokens are minted
                 // server-side via the token manager so the audit write can share
                 // the token-store transaction (see SupportTokenService). The
@@ -96,6 +99,7 @@ public static class SpikeWiring
 
                 o.UseAspNetCore()
                     .EnableTokenEndpointPassthrough()
+                    .EnableAuthorizationEndpointPassthrough()
                     .DisableTransportSecurityRequirement(); // spike runs over HTTP
             })
             .AddValidation(o =>
@@ -120,10 +124,20 @@ public static class SpikeWiring
         // invariant was subtracted after the lock.
         services.AddTransient<IStartupFilter, IdmtSelfCheckStartupFilter>();
 
-        services.AddAuthentication(OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
+        services.AddAuthentication(OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)
+            // Gate 8: the authorization server's own interactive login session,
+            // read by /connect/authorize. Distinct from bff_session and from the
+            // OpenIddict validation scheme (the API default).
+            .AddCookie(AuthServer.LoginScheme, o =>
+            {
+                o.Cookie.HttpOnly = true;
+                o.Cookie.SameSite = SameSiteMode.Lax;
+                o.Cookie.Name = "as_login";
+            });
         services.AddAuthorization();
 
         services.AddBff();
+        services.AddAuthCodeFlow();
 
         return services;
     }

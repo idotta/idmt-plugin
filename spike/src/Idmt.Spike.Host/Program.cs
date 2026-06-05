@@ -6,6 +6,7 @@ using Idmt.Spike.Host.Seeding;
 using Idmt.Spike.Host.Server;
 using Idmt.Spike.Host.Wiring;
 using Microsoft.AspNetCore;
+using Microsoft.AspNetCore.Authentication;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -32,10 +33,22 @@ app.UseAuthorization();
 
 // Token endpoint: client-credentials passthrough. IDMT stamps the per-tenant
 // audience from the request "tenant" parameter (gates 1, 3, 4).
-app.MapPost("/connect/token", (HttpContext ctx) =>
+app.MapPost("/connect/token", async (HttpContext ctx) =>
 {
     var request = ctx.GetOpenIddictServerRequest()
         ?? throw new InvalidOperationException("Not an OpenIddict token request.");
+
+    // Gate 8: authorization_code exchange. OpenIddict has already validated the
+    // code and its PKCE verifier; the stored principal (subject = user, audiences
+    // from authorize) is recovered and re-signed to issue the reference token.
+    if (request.IsAuthorizationCodeGrantType())
+    {
+        var result = await ctx.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+        return Results.SignIn(
+            result.Principal!,
+            properties: null,
+            authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+    }
 
     if (!request.IsClientCredentialsGrantType())
     {
@@ -87,6 +100,7 @@ app.MapGet("/api/whoami", (ClaimsPrincipal user) =>
     .RequireAuthorization();
 
 app.MapBffEndpoints();
+app.MapAuthCodeEndpoints();
 
 app.Run();
 

@@ -13,6 +13,10 @@ public static class IdmtSpikeSeeder
     public const string ClientId = "spike-client";
     public const string ClientSecret = "spike-secret";
 
+    // Gate 8: a public SPA/BFF client that logs in via authorization code + PKCE.
+    public const string SpaClientId = "spike-spa";
+    public const string SpaRedirectUri = "http://localhost/bff/callback";
+
     public const string TenantA = "acme";
     public const string TenantB = "globex";
 
@@ -58,6 +62,30 @@ public static class IdmtSpikeSeeder
                     Permissions.GrantTypes.ClientCredentials,
                     Permissions.Prefixes.Scope + "api",
                     Permissions.Prefixes.Scope + "support",
+                },
+            }, ct);
+        }
+
+        // Public PKCE SPA/BFF client (gate 8).
+        if (await apps.FindByClientIdAsync(SpaClientId, ct) is null)
+        {
+            await apps.CreateAsync(new OpenIddictApplicationDescriptor
+            {
+                ClientId = SpaClientId,
+                ClientType = ClientTypes.Public,
+                RedirectUris = { new Uri(SpaRedirectUri) },
+                Permissions =
+                {
+                    Permissions.Endpoints.Authorization,
+                    Permissions.Endpoints.Token,
+                    Permissions.GrantTypes.AuthorizationCode,
+                    Permissions.GrantTypes.RefreshToken,
+                    Permissions.ResponseTypes.Code,
+                    Permissions.Prefixes.Scope + "api",
+                },
+                Requirements =
+                {
+                    Requirements.Features.ProofKeyForCodeExchange,
                 },
             }, ct);
         }

@@ -30,6 +30,16 @@ public static class BffEndpoints
     public const string CookieName = "bff_session";
     public const string ProtectorPurpose = "idmt.bff.session";
 
+    /// <summary>Sets the opaque, httpOnly BFF session cookie (the browser's only handle).</summary>
+    public static void AppendSessionCookie(HttpContext ctx, string protectedSessionId) =>
+        ctx.Response.Cookies.Append(CookieName, protectedSessionId, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Lax, // Strict would drop on the auth-code redirect-return.
+            Secure = false,              // spike runs HTTP
+            IsEssential = true,
+        });
+
     public static IServiceCollection AddBff(this IServiceCollection services)
     {
         services.AddAntiforgery(o => o.HeaderName = "X-CSRF-TOKEN");
@@ -104,13 +114,7 @@ public static class BffEndpoints
 
             var sessionId = store.Create(user.Id, body.Tenant, token);
             var protectedId = dp.CreateProtector(ProtectorPurpose).Protect(sessionId);
-            ctx.Response.Cookies.Append(CookieName, protectedId, new CookieOptions
-            {
-                HttpOnly = true,
-                SameSite = SameSiteMode.Lax, // Strict would drop on the deferred auth-code redirect-return (§7.1).
-                Secure = false,              // spike runs HTTP
-                IsEssential = true,
-            });
+            AppendSessionCookie(ctx, protectedId);
 
             return Results.Ok(new LoginResponse());
         });
