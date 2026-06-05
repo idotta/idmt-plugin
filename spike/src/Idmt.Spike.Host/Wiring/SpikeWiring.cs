@@ -2,8 +2,10 @@ using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Finbuckle.MultiTenant.EntityFrameworkCore.Extensions;
 using Finbuckle.MultiTenant.Extensions;
 using Idmt.Spike.Host.Auth;
+using Idmt.Spike.Host.Bff;
 using Idmt.Spike.Host.Domain;
 using Idmt.Spike.Host.Persistence;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -108,8 +110,20 @@ public static class SpikeWiring
 
         services.AddScoped<TenantAudienceValidationHandler>();
 
+        // §2.9 layer 1: last-registered post-configuration re-applies the locked
+        // options, so a customization that ran before this (e.g. through a builder
+        // hook) cannot subtract them — the lock runs later and wins.
+        services.PostConfigure<OpenIddict.Server.OpenIddictServerOptions>(o => o.UseReferenceAccessTokens = true);
+        services.PostConfigure<OpenIddict.Validation.OpenIddictValidationOptions>(o => o.EnableTokenEntryValidation = true);
+
+        // §2.9 layer 2: a startup self-check fails host start if any locked
+        // invariant was subtracted after the lock.
+        services.AddTransient<IStartupFilter, IdmtSelfCheckStartupFilter>();
+
         services.AddAuthentication(OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
         services.AddAuthorization();
+
+        services.AddBff();
 
         return services;
     }

@@ -1,7 +1,7 @@
 # ADR 0002 — IDMT v2: OpenIddict-based multi-tenant authorization layer
 
-- **Status:** Proposed — pending prototype gate (see [§7](#7-prototype-gate-and-open-questions))
-- **Date:** June 4, 2026
+- **Status:** Accepted — prototype gate passed (see [§7](#7-prototype-gate-and-open-questions))
+- **Date:** June 4, 2026 (accepted June 5, 2026)
 - **Deciders:** @idotta
 - **Affects:** `idmt-plugin` (v2 greenfield rewrite), downstream .NET products that consume it
 - **Supersedes:** ADR-0001 §2.3–2.4 (`ServerSession`, `/sys-switch`, step-up) — in part
@@ -283,17 +283,18 @@ Propagating credential changes to issued tokens is IDMT's responsibility, not an
 automatic engine behavior. ASP.NET Core Identity's `SecurityStamp` rotation does
 not revoke OpenIddict reference tokens on its own. IDMT registers a hook on the
 credential-change paths (password change, email change, `UpdateSecurityStampAsync`,
-deactivation, and compromise response) that enumerates the user's tokens through
-`IOpenIddictTokenManager.FindBySubjectAsync` and revokes each with
-`TryRevokeAsync`. OpenIddict exposes no single-call `RevokeBySubjectAsync` and no
-revoke-by-audience overload, so dropping a single tenant's tokens when
-`TenantAccess` is revoked is the same enumeration filtered by the audience
-recorded on each token entry before revoking the matches. The `SecurityStamp`
-remains the source-of-truth signal; this hook is the enforcement, and it is in the
-[§2.9](#29-the-opinionated-and-customizable-seam) locked set. The enumerate-filter-
-by-audience-and-revoke path is on the [§7.0](#70-prototype-gate-precondition-to-ratification)
-prototype gate, because it is a non-trivial hook rather than a one-call primitive
-and its cost grows with the number of tokens a user holds.
+deactivation, and compromise response). For a full credential change, the hook
+drops every token the user holds in one call:
+`IOpenIddictTokenManager.RevokeBySubjectAsync`. A token entry records no audience
+to filter on — the audience lives only in the encrypted token payload — so
+dropping a *single* tenant's tokens uses **authorization grouping** instead:
+every tenant-scoped token a user holds is minted under one OpenIddict
+authorization keyed to (user, tenant), and revoking that tenant calls
+`RevokeByAuthorizationIdAsync`. The prototype proved both single calls against
+real infrastructure, including a 100-token user, so cost does not scale with the
+number of tokens held. The `SecurityStamp` remains the source-of-truth signal;
+this hook is the enforcement, and it is in the
+[§2.9](#29-the-opinionated-and-customizable-seam) locked set.
 
 ### 2.8 System support through a server-side token mint
 
@@ -362,8 +363,10 @@ The locked set, enforced in `Build()`:
 - Refresh-token rotation with reuse detection.
 - The IDMT-owned per-request audience validation handler that binds a token to
   the Finbuckle-resolved tenant ([§2.6](#26-multi-tenancy-integration)).
-- The `SecurityStamp`-change propagation hook that enumerates and revokes a
-  user's tokens ([§2.7](#27-canonical-identity-carried-from-adr-0001)).
+- The `SecurityStamp`-change propagation hook that revokes a user's tokens —
+  `RevokeBySubjectAsync` for a full credential change, `RevokeByAuthorizationIdAsync`
+  on the per-tenant authorization for a single-tenant revoke
+  ([§2.7](#27-canonical-identity-carried-from-adr-0001)).
 - The support-token TTL ceiling.
 - Audited support, with a required reason.
 - A second authentication factor for system users and for users with access to
@@ -591,9 +594,10 @@ decision is auditable later.
 
 Two reviews — an adversarial critic and a validating architect — confirmed that
 several load-bearing claims about how OpenIddict, Finbuckle, and Entity Framework
-Core compose cannot be settled on paper. A prototype spike must pass before this
-ADR moves from Proposed to Accepted. The items after it are genuinely open and
-must not be settled silently during implementation.
+Core compose could not be settled on paper. A prototype spike was required before
+this ADR moved from Proposed to Accepted; it passed (see the prototype outcome in
+[§7.0](#70-prototype-gate-precondition-to-ratification)). The open questions in
+§7.1 remain genuinely open and must not be settled silently during implementation.
 
 ### 7.0 Prototype gate (precondition to ratification)
 
@@ -617,24 +621,50 @@ version, that:
    writes tokens with no ambient tenant.
 5. A hostile consumer override registered after `AddIdmt(...)` fails the startup
    self-check.
-6. The `SecurityStamp`-change hook revokes a user's tokens by enumerating
-   `FindBySubjectAsync` and calling `TryRevokeAsync`, and the single-tenant variant
-   filters that enumeration by each token entry's audience before revoking, with
-   acceptable cost for a user holding many tokens.
-7. A backend-for-frontend session cookie resolves to its server-side reference
+6. The `SecurityStamp`-change hook revokes a user's tokens. The prototype showed
+   the cleanest mechanism is two single store calls, not a manual enumeration:
+   `RevokeBySubjectAsync` for a full credential change, and
+   `RevokeByAuthorizationIdAsync` on a per-(user, tenant) authorization for a
+   single-tenant revoke. A token entry records no audience to filter on (the
+   audience lives only in the encrypted payload), which is why single-tenant
+   revocation uses authorization grouping rather than an audience filter. Proven
+   against a 100-token user; cost does not scale with tokens held.
+7. A backend-for-frontend session cookie resolves to its **server-side** reference
    token and runs the same per-request audience handler a raw bearer request runs,
-   so the cookie path and the bearer path share one validation, and a missing
-   anti-forgery token on a cookie-bearing cross-site request is rejected.
+   so the cookie path and the bearer path share one validation, and a mutating
+   request bearing the session cookie but no anti-forgery token is rejected.
 
 If items 1 through 4 do not compose cleanly, the "own the policy, rent the
 protocol" cost basis must be re-evaluated before the rewrite begins.
+
+**Prototype outcome.** All seven items passed on .NET 10 with OpenIddict 7.5.0,
+Finbuckle.MultiTenant 10.0.3, and SQLite (16 tests). Corrections and scoped
+stand-ins the spike surfaced, folded into this ADR:
+
+- §2.7 is corrected: OpenIddict 7.5.0 *does* expose `RevokeBySubjectAsync`, and a
+  token entry has no audience column. Single-tenant revocation is by authorization
+  grouping (item 6).
+- Support tokens mint server-side, not through a public token-exchange grant
+  ([§2.8](#28-system-support-through-a-server-side-token-mint), item 2).
+- Gate 5 proves the two-layer lock plus detection of registration-expressed
+  subtraction; resolve-time mutation remains uncatchable, as
+  [§2.9](#29-the-opinionated-and-customizable-seam) already concedes.
+- Gate 7 proves server-side session resolution, the shared validation path, and
+  anti-forgery rejection. The spike acquired the session's reference token via a
+  first-party client-credentials back-channel (subject = client; user identity in
+  the server-side session). Carrying subject = user in the token, and validating
+  the `SameSite` value against a real redirect-return, belong to the deferred
+  auth-code + PKCE work (§7.1). The single-instance topology proves revocation
+  correctness, not the bounded-staleness scale-out window (§7.1 backplane).
 
 ### 7.1 Open questions
 
 The following remain undecided and are tracked separately from the gate.
 
 - **First-party and machine-client authentication** without the password grant.
-  Decide between the client-credentials flow, a code exchange, or both.
+  Decide between the client-credentials flow, a code exchange, or both. (The
+  prototype used client-credentials as a back-channel stand-in for the BFF session;
+  the production browser flow is auth-code + PKCE, still to be built.)
 - **Out-of-process resource servers.** v2 assumes the resource API is co-hosted
   with the OpenIddict server so the local validation handler enforces revocation
   ([§2.3](#23-openiddict-as-the-protocol-engine)). Decide whether to support a

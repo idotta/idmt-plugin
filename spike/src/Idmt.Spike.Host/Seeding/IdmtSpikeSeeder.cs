@@ -18,6 +18,11 @@ public static class IdmtSpikeSeeder
 
     public const string SysAdminEmail = "sysadmin@example.com";
 
+    // A plain (non-system) user with TenantAccess to tenant A, used by the BFF
+    // login (gate 7) so it does not conflate with the sys-admin row.
+    public const string BffUserEmail = "bffuser@example.com";
+    public const string BffUserPassword = "BffUser1!";
+
     public static async Task SeedAsync(IServiceProvider sp, CancellationToken ct = default)
     {
         await using var scope = sp.CreateAsyncScope();
@@ -72,6 +77,17 @@ public static class IdmtSpikeSeeder
             await users.CreateAsync(admin, "SysAdmin1!");
 
             idDb.TenantAccess.Add(new TenantAccess { UserId = admin.Id, TenantId = TenantA });
+            await idDb.SaveChangesAsync(ct);
+        }
+
+        // Plain BFF user with TenantAccess to tenant A.
+        var bffUser = await users.FindByEmailAsync(BffUserEmail);
+        if (bffUser is null)
+        {
+            bffUser = new IdmtUser { UserName = BffUserEmail, Email = BffUserEmail };
+            await users.CreateAsync(bffUser, BffUserPassword);
+
+            idDb.TenantAccess.Add(new TenantAccess { UserId = bffUser.Id, TenantId = TenantA });
             await idDb.SaveChangesAsync(ct);
         }
     }

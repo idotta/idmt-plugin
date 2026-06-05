@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Idmt.Spike.Host.Auth;
+using Idmt.Spike.Host.Bff;
 using Idmt.Spike.Host.Seeding;
 using Idmt.Spike.Host.Server;
 using Idmt.Spike.Host.Wiring;
@@ -12,6 +13,8 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddIdmtSpike();
 builder.Services.AddScoped<SupportTokenService>();
+builder.Services.AddScoped<UserTokenMint>();
+builder.Services.AddScoped<TokenRevocationHook>();
 
 var app = builder.Build();
 
@@ -20,6 +23,10 @@ await IdmtSpikeSeeder.SeedAsync(app.Services);
 // Finbuckle must resolve the tenant BEFORE authentication so the audience
 // handler can read the resolved tenant (gate 3).
 app.UseMultiTenant();
+// Gate 7: resolve a BFF session cookie to its server-side reference token and set
+// the bearer header BEFORE authentication, so the cookie path runs the exact same
+// validation pipeline as a raw bearer request.
+app.UseBffSessionResolver();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -78,6 +85,8 @@ app.MapGet("/api/whoami", (ClaimsPrincipal user) =>
         audiences = user.GetAudiences(),
     }))
     .RequireAuthorization();
+
+app.MapBffEndpoints();
 
 app.Run();
 
