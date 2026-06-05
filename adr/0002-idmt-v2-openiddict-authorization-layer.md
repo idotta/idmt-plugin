@@ -666,11 +666,12 @@ spike surfaced, folded into this ADR:
 
 The following remain undecided and are tracked separately from the gate.
 
-- **Machine-client authentication** without the password grant. The browser flow
-  is settled: gate 8 proved **authorization code + PKCE** with a server-side BFF
-  session, so interactive login is no longer open. What remains is the
-  machine-to-machine choice (client credentials, as the spike's resource clients
-  use, and/or a code exchange) for non-interactive callers.
+- **Machine-client authentication** without the password grant. **Decided in
+  [ADR-0003](0003-machine-client-authentication.md):** non-interactive callers use
+  the OAuth 2.0 client-credentials grant against the OpenIddict server, with each
+  trusted gateway a confidential client whose secret is its durable credential.
+  The browser flow was already settled: gate 8 proved **authorization code +
+  PKCE** with a server-side BFF session.
 - **Out-of-process resource servers.** v2 assumes the resource API is co-hosted
   with the OpenIddict server so the local validation handler enforces revocation
   ([§2.3](#23-openiddict-as-the-protocol-engine)). Decide whether to support a
