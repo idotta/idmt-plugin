@@ -62,6 +62,7 @@ public static class Login
         UserManager<IdmtUser> userManager,
         SignInManager<IdmtUser> signInManager,
         IMultiTenantContextAccessor multiTenantContextAccessor,
+        ITenantAccessService tenantAccessService,
         IOptions<IdmtOptions> idmtOptions,
         TimeProvider timeProvider,
         ILogger<LoginHandler> logger) : ILoginHandler
@@ -84,8 +85,8 @@ public static class Login
                     return IdmtErrors.Tenant.Inactive;
                 }
 
-                // Find user by email or username
-                // EF Core multi-tenant filtering automatically ensures user belongs to the current tenant
+                // Phase 1 / Step 10: IdmtUser is global. Tenant membership is enforced by an
+                // explicit TenantAccess gate below — uniform for SysAdmin and tenant users.
                 IdmtUser? user = null;
                 if (request.Email is not null)
                 {
@@ -148,6 +149,13 @@ public static class Login
                     return IdmtErrors.Auth.Unauthorized;
                 }
 
+                // Phase 1 / Step 10: enforce TenantAccess gate after successful credential check.
+                // Locked decision #4: uniform — even SysAdmin requires a TenantAccess row.
+                if (!await tenantAccessService.CanAccessTenantAsync(user.Id, idmtTenant.Id!, cancellationToken))
+                {
+                    return IdmtErrors.Auth.Unauthorized;
+                }
+
                 // Direct cookie sign-in (no middleware delay)
                 var principal = await signInManager.CreateUserPrincipalAsync(user);
                 await signInManager.Context.SignInAsync(
@@ -181,6 +189,7 @@ public static class Login
         UserManager<IdmtUser> userManager,
         SignInManager<IdmtUser> signInManager,
         IMultiTenantContextAccessor multiTenantContextAccessor,
+        ITenantAccessService tenantAccessService,
         IOptionsMonitor<BearerTokenOptions> bearerTokenOptions,
         TimeProvider timeProvider,
         ILogger<TokenLoginHandler> logger) : ITokenLoginHandler
@@ -203,8 +212,8 @@ public static class Login
                     return IdmtErrors.Tenant.Inactive;
                 }
 
-                // Find user by email or username
-                // EF Core multi-tenant filtering automatically ensures user belongs to the current tenant
+                // Phase 1 / Step 10: IdmtUser is global. Tenant membership is enforced by an
+                // explicit TenantAccess gate below — uniform for SysAdmin and tenant users.
                 IdmtUser? user = null;
                 if (request.Email is not null)
                 {
@@ -263,6 +272,13 @@ public static class Login
                     await userManager.ResetAccessFailedCountAsync(user);
                 }
                 else if (!result.Succeeded)
+                {
+                    return IdmtErrors.Auth.Unauthorized;
+                }
+
+                // Phase 1 / Step 10: enforce TenantAccess gate after successful credential check.
+                // Locked decision #4: uniform — even SysAdmin requires a TenantAccess row.
+                if (!await tenantAccessService.CanAccessTenantAsync(user.Id, idmtTenant.Id!, cancellationToken))
                 {
                     return IdmtErrors.Auth.Unauthorized;
                 }

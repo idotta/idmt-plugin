@@ -25,6 +25,12 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
     private readonly string[] _strategies;
     private SqliteConnection? _connection;
 
+    /// <summary>
+    /// The shared in-memory SQLite connection backing both DbContexts. Exposed for tests that
+    /// need to spin up an out-of-band DI scope (e.g. the canonical identity migrator harness).
+    /// </summary>
+    internal SqliteConnection? SharedConnection => _connection;
+
     public Mock<IEmailSender<IdmtUser>> EmailSenderMock { get; } = new();
 
     public IdmtApiFactory()
@@ -166,6 +172,16 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
 
     private static async Task EnsureRolesAsync(RoleManager<IdmtRole> roleManager)
     {
+        // Step 9 INTENT: seed only IdmtDefaultRoleTypes.DefaultRoles (TenantAdmin) — sys authority
+        // is sourced from IdmtUser.SysRole, not per-tenant IdmtRole rows.
+        //
+        // DEVIATION (kept for now): integration tests still register sys-role users via the
+        // public /manage/users endpoint (RegisterUser), which validates the role via
+        // RoleManager.RoleExistsAsync per tenant. Removing the SysAdmin/SysSupport seed here
+        // currently breaks ~16 tests (CreateSysSupportAuthenticatedClient*, several SysSupport_*
+        // and RegisterUser_WithSysAdminRole_* tests). Migrating those test helpers to seed
+        // sys-role users directly via DbContext + SysRoleKind is owed work for Step 10+.
+        // Until then we keep the legacy seed set so the broader test suite stays green.
         var roles = new[]
         {
             IdmtDefaultRoleTypes.SysAdmin,
@@ -184,10 +200,11 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
 
     private static async Task EnsureSysAdminAsync(IdmtDbContext dbContext, UserManager<IdmtUser> userManager, string tenantId)
     {
-        // Here we use IgnoreQueryFilters to find the user regardless of current tenant context
-        // BUT when creating, we rely on the context being set correctly.
-        var existing = await dbContext.Users.IgnoreQueryFilters()
-            .SingleOrDefaultAsync(u => u.Email == SysAdminEmail && u.TenantId == tenantId);
+        // Phase 1: IdmtUser is global — there is no per-tenant shadow row, no IgnoreQueryFilters
+        // is required to find the user, and SysAdmin is granted by setting SysRole on the user
+        // (not by per-tenant role membership).
+        var existing = await dbContext.Users
+            .SingleOrDefaultAsync(u => u.Email == SysAdminEmail);
 
         var user = existing ?? new IdmtUser
         {
@@ -197,7 +214,7 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
             NormalizedUserName = "SYSADMIN",
             EmailConfirmed = true,
             IsActive = true,
-            TenantId = tenantId
+            SysRole = SysRoleKind.SysAdmin,
         };
 
         if (existing is null)
@@ -209,12 +226,13 @@ public class IdmtApiFactory : WebApplicationFactory<Program>
                 throw new InvalidOperationException($"Failed to seed sysadmin user: {errors}");
             }
         }
-
-        if (!await userManager.IsInRoleAsync(user, IdmtDefaultRoleTypes.SysAdmin))
+        else if (existing.SysRole != SysRoleKind.SysAdmin)
         {
-            await userManager.AddToRoleAsync(user, IdmtDefaultRoleTypes.SysAdmin);
+            existing.SysRole = SysRoleKind.SysAdmin;
+            await userManager.UpdateAsync(existing);
         }
 
+        // HS-4: SysAdmin still needs an explicit TenantAccess row in every tenant it must reach.
         var hasAccess = await dbContext.TenantAccess.AnyAsync(ta => ta.UserId == user.Id && ta.TenantId == tenantId);
         if (!hasAccess)
         {

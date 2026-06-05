@@ -39,7 +39,7 @@ public class ResendConfirmationEmailHandlerTests
             Email = "confirmed@test.com",
             EmailConfirmed = true,
             IsActive = true,
-            TenantId = "t1"
+
         };
 
         _userManagerMock

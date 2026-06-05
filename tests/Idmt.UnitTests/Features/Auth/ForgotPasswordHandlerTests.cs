@@ -38,7 +38,7 @@ public class ForgotPasswordHandlerTests
             UserName = "inactive",
             Email = "inactive@test.com",
             IsActive = false,
-            TenantId = "t1"
+
         };
 
         _userManagerMock
@@ -69,7 +69,7 @@ public class ForgotPasswordHandlerTests
             UserName = "testuser",
             Email = "test@test.com",
             IsActive = true,
-            TenantId = "t1"
+
         };
 
         _userManagerMock

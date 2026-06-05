@@ -7,9 +7,6 @@ public class ConfirmEmailRequestValidator : AbstractValidator<ConfirmEmail.Confi
 {
     public ConfirmEmailRequestValidator()
     {
-        RuleFor(x => x.TenantIdentifier).NotEmpty()
-            .WithMessage("Tenant identifier is required");
-
         RuleFor(x => x.Email).NotEmpty()
             .WithMessage("Email is required")
             .Must(Validators.IsValidEmail)

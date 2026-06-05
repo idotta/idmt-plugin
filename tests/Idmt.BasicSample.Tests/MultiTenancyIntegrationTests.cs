@@ -7,7 +7,9 @@ using Idmt.Plugin.Features.Admin;
 using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Features.Manage;
 using Idmt.Plugin.Models;
+using Idmt.Plugin.Persistence;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Idmt.BasicSample.Tests;
@@ -25,11 +27,21 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
 
     private async Task EnsureTenantsExistAsync()
     {
-        using var scope = Factory.Services.CreateScope();
-        var handler = scope.ServiceProvider.GetRequiredService<CreateTenant.ICreateTenantHandler>();
-
-        await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantA, TenantA));
-        await handler.HandleAsync(new CreateTenant.CreateTenantRequest(TenantB, TenantB));
+        // Phase 1 / Step 9: CreateTenantHandler requires authenticated invoker. Drive via HTTP.
+        var sysClient = await CreateAuthenticatedClientAsync();
+        foreach (var tenantId in new[] { TenantA, TenantB })
+        {
+            var response = await sysClient.PostAsJsonAsync("/admin/tenants", new
+            {
+                Identifier = tenantId,
+                Name = tenantId
+            });
+            // Tenant may already exist (Conflict) — ignore that, fail otherwise.
+            if (!response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode.Conflict)
+            {
+                await response.AssertSuccess();
+            }
+        }
     }
 
     private async Task CreateUserInTenantAsync(string tenantIdentifier, string email, string password, string role = IdmtDefaultRoleTypes.TenantAdmin)
@@ -44,9 +56,25 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
         setter.MultiTenantContext = new MultiTenantContext<IdmtTenantInfo>(tenant!);
 
         var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
-        var user = new IdmtUser { UserName = email, Email = email, TenantId = tenant!.Id, EmailConfirmed = true };
+        // Phase 1: IdmtUser is global — no TenantId column. Tenant membership is granted
+        // via an explicit TenantAccess row.
+        var user = new IdmtUser { UserName = email, Email = email, EmailConfirmed = true };
         await userManager.CreateAsync(user, password);
         await userManager.AddToRoleAsync(user, role);
+
+        var dbContext = provider.GetRequiredService<IdmtDbContext>();
+        var hasAccess = await dbContext.TenantAccess.AnyAsync(ta => ta.UserId == user.Id && ta.TenantId == tenant!.Id);
+        if (!hasAccess)
+        {
+            dbContext.TenantAccess.Add(new TenantAccess
+            {
+                UserId = user.Id,
+                TenantId = tenant!.Id,
+                IsActive = true,
+                ExpiresAt = null
+            });
+            await dbContext.SaveChangesAsync();
+        }
     }
 
     #region Login Isolation Tests
@@ -193,7 +221,10 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
         // Create user in Tenant A
         var emailA = $"crosstoken-{Guid.NewGuid():N}@example.com";
         var passwordA = "PasswordA1!";
-        await CreateUserInTenantAsync(TenantA, emailA, passwordA, IdmtDefaultRoleTypes.SysSupport);
+        // Phase 1 / Step 9: SysSupport is no longer seeded as a per-tenant IdentityRole. Use
+        // TenantAdmin (still seeded per-tenant by CreateTenant) — the role choice is irrelevant
+        // to the cross-tenant token rejection assertion.
+        await CreateUserInTenantAsync(TenantA, emailA, passwordA, IdmtDefaultRoleTypes.TenantAdmin);
 
         // Login as Tenant A user
         var clientA = Factory.CreateClientWithTenant(TenantA);
@@ -332,7 +363,7 @@ public class MultiTenancyIntegrationTests : BaseIntegrationTest
         using var publicClient = Factory.CreateClient();
         var resetResponse = await publicClient.PostAsJsonAsync(
             "/auth/reset-password",
-            new { TenantIdentifier = TenantA, Email = emailA, Token = EncodeToken(setupToken), NewPassword = setupPassword });
+            new { Email = emailA, Token = EncodeToken(setupToken), NewPassword = setupPassword });
         await resetResponse.AssertSuccess();
 
         // 3. Login in Tenant A (Success)

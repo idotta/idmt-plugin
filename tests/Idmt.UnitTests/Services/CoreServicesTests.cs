@@ -295,7 +295,8 @@ public class IdmtLinkGeneratorExtendedTests
         var uri = new Uri(result);
         var query = QueryHelpers.ParseQuery(uri.Query);
 
-        Assert.Equal(_tenantInfo.Identifier, query["tenantIdentifier"].ToString());
+        // Locked decision (Phase 1, Step 8): no tenantIdentifier in URL query params.
+        Assert.False(query.ContainsKey("tenantIdentifier"));
         Assert.Equal(email, query["email"].ToString());
         // Token is Base64URL-encoded
         Assert.NotEmpty(query["token"].ToString());
@@ -313,7 +314,8 @@ public class IdmtLinkGeneratorExtendedTests
         var uri = new Uri(result);
         var query = QueryHelpers.ParseQuery(uri.Query);
 
-        Assert.Equal(_tenantInfo.Identifier, query["tenantIdentifier"].ToString());
+        // Locked decision (Phase 1, Step 8): no tenantIdentifier in URL query params.
+        Assert.False(query.ContainsKey("tenantIdentifier"));
         Assert.Equal(email, query["email"].ToString());
         // Token is Base64URL-encoded
         Assert.NotEmpty(query["token"].ToString());

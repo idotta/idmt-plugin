@@ -9,9 +9,6 @@ public class ResetPasswordRequestValidator : AbstractValidator<ResetPassword.Res
 {
     public ResetPasswordRequestValidator(IOptions<IdmtOptions> options)
     {
-        RuleFor(x => x.TenantIdentifier).NotEmpty()
-            .WithMessage("Tenant identifier is required.");
-
         RuleFor(x => x.Email).NotEmpty()
             .WithMessage("Email is required.")
             .Must(Validators.IsValidEmail)

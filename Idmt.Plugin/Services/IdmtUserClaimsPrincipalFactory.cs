@@ -13,7 +13,7 @@ internal sealed class IdmtUserClaimsPrincipalFactory(
     UserManager<IdmtUser> userManager,
     RoleManager<IdmtRole> roleManager,
     IOptions<IdentityOptions> optionsAccessor,
-    IMultiTenantStore<IdmtTenantInfo> tenantStore,
+    IMultiTenantContextAccessor multiTenantContextAccessor,
     IOptions<IdmtOptions> idmtOptions,
     ILogger<IdmtUserClaimsPrincipalFactory> logger)
     : UserClaimsPrincipalFactory<IdmtUser, IdmtRole>(userManager, roleManager, optionsAccessor)
@@ -22,22 +22,38 @@ internal sealed class IdmtUserClaimsPrincipalFactory(
     {
         var identity = await base.GenerateClaimsAsync(user);
 
-        // Add custom claims
-        identity.AddClaim(new Claim(IdmtClaimTypes.IsActive, user.IsActive.ToString()));
-
-        // Add tenant claim for multi-tenant strategies (header, claim, route)
-        // This ensures token validation includes tenant context
-        var claimKey = idmtOptions.Value.MultiTenant.StrategyOptions.GetValueOrDefault(IdmtMultiTenantStrategy.Claim, IdmtMultiTenantStrategy.DefaultClaim);
-
-        // Try to get tenant info from store using user's TenantId
-        var tenantInfo = await tenantStore.GetAsync(user.TenantId);
+        // Fail-closed (CD-4): principal generation requires an ambient tenant context.
+        // Without it we cannot emit the tenant claim — refuse to issue a principal at all
+        // rather than silently dropping the claim.
+        var tenantInfo = multiTenantContextAccessor.MultiTenantContext?.TenantInfo;
         if (tenantInfo is null)
         {
-            logger.LogWarning("Tenant information not found for tenant ID: {TenantId}. User ID: {UserId}. Returning identity without tenant claim.", user.TenantId, user.Id);
-            return identity;
+            throw new InvalidOperationException(
+                "IdmtUserClaimsPrincipalFactory invoked without ambient tenant context. " +
+                "Ensure tenant resolver runs in middleware before authentication.");
         }
 
+        // Add IsActive claim
+        identity.AddClaim(new Claim(IdmtClaimTypes.IsActive, user.IsActive.ToString()));
+
+        // Tenant claim is sourced from the ambient MultiTenant context (post Phase 1) —
+        // user.TenantId no longer exists. The strategy claim type is configurable via IdmtOptions.
+        var claimKey = idmtOptions.Value.MultiTenant.StrategyOptions.GetValueOrDefault(
+            IdmtMultiTenantStrategy.Claim, IdmtMultiTenantStrategy.DefaultClaim);
+
         identity.AddClaim(new Claim(claimKey, tenantInfo.Identifier ?? string.Empty));
+
+        // Emit the SysRole claim only when the user has been assigned a system role.
+        // Enum string values ("SysAdmin"/"SysSupport") match the existing role-policy strings
+        // so RequireSysAdmin/RequireSysUser policies match without per-tenant role membership.
+        if (user.SysRole != SysRoleKind.None)
+        {
+            identity.AddClaim(new Claim(ClaimTypes.Role, user.SysRole.ToString()));
+        }
+
+        logger.LogDebug(
+            "Generated principal for user {UserId} with ambient tenant {TenantIdentifier}.",
+            user.Id, tenantInfo.Identifier);
 
         return identity;
     }

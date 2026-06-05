@@ -70,7 +70,6 @@ public static class RegisterUser
                 Email = request.Email,
                 EmailConfirmed = false,
                 IsActive = true,
-                TenantId = tenantId,
                 LastLoginAt = null,
             };
 
@@ -100,6 +99,18 @@ public static class RegisterUser
                     logger.LogError("Failed to assign role to user: {ErrorMessage}", roleResult.Errors);
                     return IdmtErrors.User.CreationFailed;
                 }
+
+                // Phase 1 / Step 10: registration is intrinsically tenant-scoped — newly registered
+                // users must be granted explicit TenantAccess for the current tenant so that the
+                // uniform login gate (TenantAccessService.CanAccessTenantAsync) admits them.
+                dbContext.TenantAccess.Add(new TenantAccess
+                {
+                    UserId = user.Id,
+                    TenantId = tenantId,
+                    IsActive = true,
+                    ExpiresAt = null,
+                });
+                await dbContext.SaveChangesAsync(cancellationToken);
 
                 await transaction.CommitAsync(cancellationToken);
             }

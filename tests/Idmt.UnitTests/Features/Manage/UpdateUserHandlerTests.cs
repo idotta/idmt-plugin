@@ -54,7 +54,7 @@ public class UpdateUserHandlerTests
             Id = userId,
             UserName = "target@test.com",
             Email = "target@test.com",
-            TenantId = "tenant-1"
+
         };
         SetupUsersQueryable([user]);
         _userManagerMock.Setup(x => x.GetRolesAsync(user)).ReturnsAsync(["SysAdmin"]);
@@ -81,7 +81,7 @@ public class UpdateUserHandlerTests
             Id = userId,
             UserName = "target@test.com",
             Email = "target@test.com",
-            TenantId = "tenant-1",
+
             IsActive = true
         };
         SetupUsersQueryable([user]);

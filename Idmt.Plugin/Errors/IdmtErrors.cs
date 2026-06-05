@@ -135,6 +135,14 @@ public static class IdmtErrors
         public static Error ConfirmationFailed => Error.Failure(
             code: "Email.ConfirmationFailed",
             description: "Unable to confirm email");
+
+        public static Error NoPendingChange => Error.Validation(
+            code: "Email.NoPendingChange",
+            description: "No pending email change to confirm.");
+
+        public static Error PendingMismatch => Error.Validation(
+            code: "Email.PendingMismatch",
+            description: "Pending email does not match request.");
     }
 
     public static class Password
@@ -149,5 +157,9 @@ public static class IdmtErrors
         public static Error Unexpected => Error.Unexpected(
             code: "General.Unexpected",
             description: "An unexpected error occurred");
+
+        public static Error SelfTarget => Error.Forbidden(
+            code: "General.SelfTarget",
+            description: "This operation cannot target the caller");
     }
 }

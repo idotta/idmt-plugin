@@ -126,7 +126,7 @@ public class RefreshTokenHandlerTests
     public async Task ReturnsUnauthorized_WhenUserIsInactive()
     {
         // Arrange
-        var user = new IdmtUser { UserName = "test", Email = "test@test.com", IsActive = false, TenantId = "t1" };
+        var user = new IdmtUser { UserName = "test", Email = "test@test.com", IsActive = false };
         var expiresUtc = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var ticket = CreateTicket(expiresUtc: expiresUtc);
         SetupBearerOptions(unprotectResult: ticket);
@@ -153,7 +153,7 @@ public class RefreshTokenHandlerTests
     public async Task ReturnsUnauthorized_WhenTokenTenantClaimIsNull()
     {
         // Arrange - ticket has no tenant claim
-        var user = new IdmtUser { UserName = "test", Email = "test@test.com", IsActive = true, TenantId = "t1" };
+        var user = new IdmtUser { UserName = "test", Email = "test@test.com", IsActive = true };
         var expiresUtc = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var ticket = CreateTicket(expiresUtc: expiresUtc, tenantClaim: null);
         SetupBearerOptions(unprotectResult: ticket);
@@ -182,7 +182,7 @@ public class RefreshTokenHandlerTests
     public async Task ReturnsUnauthorized_WhenTokenTenantDoesNotMatchCurrentTenant()
     {
         // Arrange - token tenant is different from current tenant
-        var user = new IdmtUser { UserName = "test", Email = "test@test.com", IsActive = true, TenantId = "t1" };
+        var user = new IdmtUser { UserName = "test", Email = "test@test.com", IsActive = true };
         var expiresUtc = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var ticket = CreateTicket(expiresUtc: expiresUtc, tenantClaim: "other-tenant");
         SetupBearerOptions(unprotectResult: ticket);
@@ -211,7 +211,7 @@ public class RefreshTokenHandlerTests
     public async Task ReturnsUnauthorized_WhenCurrentTenantIsNull()
     {
         // Arrange - current tenant context is null
-        var user = new IdmtUser { UserName = "test", Email = "test@test.com", IsActive = true, TenantId = "t1" };
+        var user = new IdmtUser { UserName = "test", Email = "test@test.com", IsActive = true };
         var expiresUtc = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var ticket = CreateTicket(expiresUtc: expiresUtc, tenantClaim: TestTenantIdentifier);
         SetupBearerOptions(unprotectResult: ticket);
@@ -244,7 +244,7 @@ public class RefreshTokenHandlerTests
     {
         // Arrange - set up a valid refresh ticket that passes all existing checks
         var tenantId = "tid-12345";
-        var user = new IdmtUser { UserName = "test", Email = "test@test.com", IsActive = true, TenantId = tenantId };
+        var user = new IdmtUser { UserName = "test", Email = "test@test.com", IsActive = true };
         var expiresUtc = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
         var issuedUtc = new DateTimeOffset(2026, 5, 2, 0, 0, 0, TimeSpan.Zero);
         var ticket = CreateTicket(expiresUtc: expiresUtc, tenantClaim: TestTenantIdentifier, issuedUtc: issuedUtc);

@@ -28,7 +28,9 @@ public static class GetUserInfo
         Task<ErrorOr<GetUserInfoResponse>> HandleAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default);
     }
 
-    internal sealed class GetUserInfoHandler(UserManager<IdmtUser> userManager, IMultiTenantStore<IdmtTenantInfo> tenantStore) : IGetUserInfoHandler
+    internal sealed class GetUserInfoHandler(
+        UserManager<IdmtUser> userManager,
+        IMultiTenantContextAccessor<IdmtTenantInfo> multiTenantContextAccessor) : IGetUserInfoHandler
     {
         public async Task<ErrorOr<GetUserInfoResponse>> HandleAsync(ClaimsPrincipal user, CancellationToken cancellationToken = default)
         {
@@ -44,10 +46,22 @@ public static class GetUserInfo
                 return IdmtErrors.User.NotFound;
             }
 
-            var roles = (await userManager.GetRolesAsync(appUser)).OrderBy(r => r).ToList();
-            if (roles.Count == 0) return IdmtErrors.User.NoRolesAssigned;
+            // Phase 1: per-tenant IdentityRole rows for SysAdmin/SysSupport are no longer seeded.
+            // Sys-level authority is carried by IdmtUser.SysRole (emitted as a Role claim by
+            // IdmtUserClaimsPrincipalFactory). Surface it in the Roles list so callers with sys
+            // authority but no per-tenant IdentityRole assignment do not appear "role-less".
+            var perTenantRoles = await userManager.GetRolesAsync(appUser);
+            var rolesSet = new SortedSet<string>(perTenantRoles, StringComparer.Ordinal);
+            if (appUser.SysRole != SysRoleKind.None)
+            {
+                rolesSet.Add(appUser.SysRole.ToString());
+            }
+            if (rolesSet.Count == 0) return IdmtErrors.User.NoRolesAssigned;
+            var roles = rolesSet.ToList();
 
-            var tenant = await tenantStore.GetAsync(appUser.TenantId);
+            // Phase 1: tenant is sourced from ambient context — IdmtUser is global and no
+            // longer carries TenantId.
+            var tenant = multiTenantContextAccessor.MultiTenantContext?.TenantInfo;
             if (tenant is null) return IdmtErrors.Tenant.NotFound;
 
             return new GetUserInfoResponse(
@@ -56,7 +70,7 @@ public static class GetUserInfo
                 appUser.UserName ?? string.Empty,
                 roles,
                 tenant.Identifier ?? string.Empty,
-                tenant.Name ?? string.Empty
+                tenant.Name ?? tenant.Identifier ?? string.Empty
             );
         }
     }

@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Idmt.Plugin.Features.Admin;
@@ -23,24 +22,35 @@ public static class RevokeTenantAccess
         Task<ErrorOr<Success>> HandleAsync(Guid userId, string tenantIdentifier, CancellationToken cancellationToken = default);
     }
 
-    // Fix: inject IdmtDbContext, UserManager<IdmtUser>, and IMultiTenantStore<IdmtTenantInfo>
-    // as constructor parameters rather than resolving them from a manually-created IServiceProvider
-    // scope. The manual scope bypassed the request lifetime, causing audit-log fields that depend on
-    // ICurrentUserService (resolved through the request scope) to be null.
+    // Phase 1 (canonical identity): RevokeTenantAccess flips TenantAccess.IsActive = false in a single
+    // SaveChangesAsync transaction, then revokes outstanding bearer tokens by canonical UserId. No
+    // shadow IdmtUser deactivation in the target tenant — IdmtUser is global post Phase 1, so there
+    // is no per-tenant user row to flip. The Phase 0 self-target guard at the top of HandleAsync
+    // remains in place per the architectural rule that callers cannot revoke their own access.
     internal sealed class RevokeTenantAccessHandler(
         IdmtDbContext dbContext,
+        UserManager<IdmtUser> userManager,
         IMultiTenantStore<IdmtTenantInfo> tenantStore,
-        ITenantOperationService tenantOps,
         ITokenRevocationService tokenRevocationService,
+        ICurrentUserService currentUserService,
         ILogger<RevokeTenantAccessHandler> logger) : IRevokeTenantAccessHandler
     {
         public async Task<ErrorOr<Success>> HandleAsync(Guid userId, string tenantIdentifier, CancellationToken cancellationToken = default)
         {
-            IdmtUser? user;
+            if (currentUserService.UserId is null)
+            {
+                return IdmtErrors.Auth.Unauthorized;
+            }
+
+            if (userId == currentUserService.UserId.Value)
+            {
+                return IdmtErrors.General.SelfTarget;
+            }
 
             try
             {
-                user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+                // Canonical (global) IdmtUser lookup.
+                var user = await userManager.FindByIdAsync(userId.ToString());
                 if (user is null)
                 {
                     return IdmtErrors.User.NotFound;
@@ -53,50 +63,32 @@ public static class RevokeTenantAccess
                 }
 
                 var tenantAccess = await dbContext.TenantAccess
-                    .FirstOrDefaultAsync(ta => ta.UserId == userId && ta.TenantId == targetTenant.Id, cancellationToken);
+                    .FirstOrDefaultAsync(ta => ta.UserId == user.Id && ta.TenantId == targetTenant.Id, cancellationToken);
                 if (tenantAccess is null)
                 {
                     return IdmtErrors.Tenant.AccessNotFound;
                 }
 
                 tenantAccess.IsActive = false;
-                dbContext.TenantAccess.Update(tenantAccess);
                 await dbContext.SaveChangesAsync(cancellationToken);
 
-                // Revoke any active bearer tokens so the user cannot refresh after access is removed
-                await tokenRevocationService.RevokeUserTokensAsync(userId, targetTenant.Id!, cancellationToken);
+                // Revoke any active bearer tokens so the user cannot refresh after access is removed.
+                // Token revocation keys on canonical UserId — there is no shadow user under Phase 1.
+                await tokenRevocationService.RevokeUserTokensAsync(user.Id, targetTenant.Id!, cancellationToken);
+
+                return Result.Success;
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error revoking tenant access for user {UserId} and tenant {TenantIdentifier}", userId, tenantIdentifier);
                 return IdmtErrors.Tenant.AccessError;
             }
-
-            return await tenantOps.ExecuteInTenantScopeAsync(tenantIdentifier, async sp =>
-            {
-                var tenantUserManager = sp.GetRequiredService<UserManager<IdmtUser>>();
-                try
-                {
-                    var targetUser = await tenantUserManager.Users.FirstOrDefaultAsync(u => u.Email == user.Email && u.UserName == user.UserName, cancellationToken);
-                    if (targetUser is not null)
-                    {
-                        targetUser.IsActive = false;
-                        await tenantUserManager.UpdateAsync(targetUser);
-                    }
-                    return Result.Success;
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Error deactivating user {UserId} in tenant {TenantIdentifier}", userId, tenantIdentifier);
-                    return IdmtErrors.Tenant.AccessError;
-                }
-            }, requireActive: false);
         }
     }
 
     public static RouteHandlerBuilder MapRevokeTenantAccessEndpoint(this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantIdentifier}", async Task<Results<NoContent, NotFound, InternalServerError>> (
+        return endpoints.MapDelete("/users/{userId:guid}/tenants/{tenantIdentifier}", async Task<Results<NoContent, BadRequest, NotFound, ForbidHttpResult, UnauthorizedHttpResult, InternalServerError>> (
             Guid userId,
             string tenantIdentifier,
             IRevokeTenantAccessHandler handler,
@@ -107,13 +99,16 @@ public static class RevokeTenantAccess
             {
                 return result.FirstError.Type switch
                 {
+                    ErrorType.Validation => TypedResults.BadRequest(),
                     ErrorType.NotFound => TypedResults.NotFound(),
+                    ErrorType.Forbidden => TypedResults.Forbid(),
+                    ErrorType.Unauthorized => TypedResults.Unauthorized(),
                     _ => TypedResults.InternalServerError(),
                 };
             }
             return TypedResults.NoContent();
         })
-        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
+        .RequireAuthorization(IdmtAuthOptions.RequireSysAdminPolicy)
         .WithSummary("Revoke user access from a tenant");
     }
 }

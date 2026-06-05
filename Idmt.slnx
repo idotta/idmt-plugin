@@ -6,5 +6,8 @@
     <Project Path="tests/Idmt.BasicSample.Tests/Idmt.BasicSample.Tests.csproj" />
     <Project Path="tests/Idmt.UnitTests/Idmt.UnitTests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Idmt.Migrator/Idmt.Migrator.csproj" />
+  </Folder>
   <Project Path="Idmt.Plugin/Idmt.Plugin.csproj" />
 </Solution>

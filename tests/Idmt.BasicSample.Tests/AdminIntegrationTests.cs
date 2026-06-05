@@ -6,6 +6,7 @@ using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Features.Manage;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -44,38 +45,55 @@ public class AdminIntegrationTests : BaseIntegrationTest
     [Fact]
     public async Task CreateTenant_handler_with_valid_data_succeeds()
     {
-        using var scope = Factory.Services.CreateScope();
-        var handler = scope.ServiceProvider.GetRequiredService<CreateTenant.ICreateTenantHandler>();
-
+        // Phase 1 / Step 9: CreateTenantHandler requires an authenticated invoker — drive it via the
+        // HTTP endpoint (already gated by RequireSysAdmin) instead of direct DI resolution.
+        var sysClient = await CreateAuthenticatedClientAsync();
         var tenantIdentifier = $"tenant-{Guid.NewGuid():N}";
-        var request = new CreateTenant.CreateTenantRequest(tenantIdentifier, "Test Tenant");
-        var result = await handler.HandleAsync(request);
 
-        Assert.False(result.IsError);
-        Assert.Equal(tenantIdentifier, result.Value.Identifier);
+        var response = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantIdentifier,
+            Name = "Test Tenant"
+        });
+        await response.AssertSuccess();
+
+        var body = await response.Content.ReadFromJsonAsync<CreateTenant.CreateTenantResponse>();
+        Assert.NotNull(body);
+        Assert.Equal(tenantIdentifier, body!.Identifier);
     }
 
     [Fact]
     public async Task CreateTenant_handler_with_duplicate_identifier_reactivates()
     {
-        using var scope = Factory.Services.CreateScope();
-        var handler = scope.ServiceProvider.GetRequiredService<CreateTenant.ICreateTenantHandler>();
-        var deleteHandler = scope.ServiceProvider.GetRequiredService<DeleteTenant.IDeleteTenantHandler>();
-
+        var sysClient = await CreateAuthenticatedClientAsync();
         var tenantIdentifier = $"tenant-{Guid.NewGuid():N}";
 
-        // Create initial tenant
-        var request = new CreateTenant.CreateTenantRequest(tenantIdentifier, "Test Tenant");
-        var result = await handler.HandleAsync(request);
-        var tenantId = result.Value!.Id;
+        // Create initial tenant via HTTP.
+        var createResponse = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantIdentifier,
+            Name = "Test Tenant"
+        });
+        await createResponse.AssertSuccess();
+        var created = await createResponse.Content.ReadFromJsonAsync<CreateTenant.CreateTenantResponse>();
+        var tenantId = created!.Id;
 
-        // Delete the tenant
-        await deleteHandler.HandleAsync(tenantIdentifier);
+        // Delete the tenant via direct DI (DeleteTenantHandler does not require an invoker).
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var deleteHandler = scope.ServiceProvider.GetRequiredService<DeleteTenant.IDeleteTenantHandler>();
+            await deleteHandler.HandleAsync(tenantIdentifier);
+        }
 
-        // Reactivate by creating again
-        var reactivateResult = await handler.HandleAsync(request);
-        Assert.False(reactivateResult.IsError);
-        Assert.Equal(tenantId, reactivateResult.Value.Id);
+        // Reactivate by creating again via HTTP.
+        var reactivateResponse = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantIdentifier,
+            Name = "Test Tenant"
+        });
+        await reactivateResponse.AssertSuccess();
+        var reactivated = await reactivateResponse.Content.ReadFromJsonAsync<CreateTenant.CreateTenantResponse>();
+        Assert.Equal(tenantId, reactivated!.Id);
     }
 
     #endregion
@@ -85,13 +103,18 @@ public class AdminIntegrationTests : BaseIntegrationTest
     [Fact]
     public async Task DeleteTenant_handler_with_valid_identifier_succeeds()
     {
-        using var scope = Factory.Services.CreateScope();
-        var createHandler = scope.ServiceProvider.GetRequiredService<CreateTenant.ICreateTenantHandler>();
-        var deleteHandler = scope.ServiceProvider.GetRequiredService<DeleteTenant.IDeleteTenantHandler>();
-
+        var sysClient = await CreateAuthenticatedClientAsync();
         var tenantIdentifier = $"tenant-{Guid.NewGuid():N}";
-        var request = new CreateTenant.CreateTenantRequest(tenantIdentifier, "Test Tenant");
-        await createHandler.HandleAsync(request);
+
+        var createResponse = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantIdentifier,
+            Name = "Test Tenant"
+        });
+        await createResponse.AssertSuccess();
+
+        using var scope = Factory.Services.CreateScope();
+        var deleteHandler = scope.ServiceProvider.GetRequiredService<DeleteTenant.IDeleteTenantHandler>();
 
         var deleted = await deleteHandler.HandleAsync(tenantIdentifier);
         Assert.False(deleted.IsError);
@@ -346,12 +369,14 @@ public class AdminIntegrationTests : BaseIntegrationTest
     }
 
     [Fact]
-    public async Task GetUserTenants_returns_empty_for_user_without_access()
+    public async Task GetUserTenants_returns_only_registering_tenant_for_freshly_registered_user()
     {
+        // Phase 1 / Step 10: registration auto-grants TenantAccess in the registering tenant.
+        // A user registered against the default (sys) tenant has exactly one TenantAccess row —
+        // that tenant.
         var sysClient = await CreateAuthenticatedClientAsync();
         var email = $"notenants-{Guid.NewGuid():N}@example.com";
 
-        // Register user without granting tenant access
         var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
         {
             Email = email,
@@ -360,13 +385,13 @@ public class AdminIntegrationTests : BaseIntegrationTest
         });
         var userId = Guid.Parse((await registerResponse.Content.ReadFromJsonAsync<RegisterUser.RegisterUserResponse>())!.UserId!);
 
-        // Get user tenants
         var response = await sysClient.GetAsync($"/admin/users/{userId}/tenants");
         await response.AssertSuccess();
 
         var paginated = await response.Content.ReadFromJsonAsync<PaginatedResponse<TenantInfoResponse>>();
         Assert.NotNull(paginated);
-        Assert.Empty(paginated!.Items);
+        Assert.Single(paginated!.Items);
+        Assert.Equal(IdmtApiFactory.DefaultTenantIdentifier, paginated.Items[0].Identifier);
     }
 
     [Fact]
@@ -557,6 +582,182 @@ public class AdminIntegrationTests : BaseIntegrationTest
     #endregion
 
     #region Grant Tenant Access Validation Tests
+
+    private async Task<HttpClient> CreateSysSupportAuthenticatedClientAsync()
+    {
+        var sysAdminClient = await CreateAuthenticatedClientAsync();
+        var password = "SysSup1!";
+        var (_, email) = await RegisterAndSetPasswordAsync(
+            sysAdminClient,
+            password,
+            role: IdmtDefaultRoleTypes.SysSupport);
+
+        var client = Factory.CreateClientWithTenant();
+        var loginResponse = await client.PostAsJsonAsync("/auth/token", new
+        {
+            Email = email,
+            Password = password
+        });
+        await loginResponse.AssertSuccess();
+        var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
+        return client;
+    }
+
+    private async Task<(HttpClient Client, Guid UserId)> CreateSysSupportAuthenticatedClientWithIdAsync()
+    {
+        var sysAdminClient = await CreateAuthenticatedClientAsync();
+        var password = "SysSup1!";
+        var (userId, email) = await RegisterAndSetPasswordAsync(
+            sysAdminClient,
+            password,
+            role: IdmtDefaultRoleTypes.SysSupport);
+
+        var client = Factory.CreateClientWithTenant();
+        var loginResponse = await client.PostAsJsonAsync("/auth/token", new
+        {
+            Email = email,
+            Password = password
+        });
+        await loginResponse.AssertSuccess();
+        var tokens = await loginResponse.Content.ReadFromJsonAsync<Login.AccessTokenResponse>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
+        return (client, Guid.Parse(userId));
+    }
+
+    private async Task<Guid> GetSysAdminUserIdAsync()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider;
+
+        var store = provider.GetRequiredService<Finbuckle.MultiTenant.Abstractions.IMultiTenantStore<IdmtTenantInfo>>();
+        var tenant = await store.GetByIdentifierAsync(IdmtApiFactory.DefaultTenantIdentifier)
+            ?? throw new InvalidOperationException("Default tenant not found");
+
+        var setter = provider.GetRequiredService<Finbuckle.MultiTenant.Abstractions.IMultiTenantContextSetter>();
+        setter.MultiTenantContext = new Finbuckle.MultiTenant.Abstractions.MultiTenantContext<IdmtTenantInfo>(tenant);
+
+        var userManager = provider.GetRequiredService<UserManager<IdmtUser>>();
+        var sysAdmin = await userManager.FindByEmailAsync(IdmtApiFactory.SysAdminEmail)
+            ?? throw new InvalidOperationException("Sysadmin not found");
+        return sysAdmin.Id;
+    }
+
+    #region Role-based authorization tests (C2)
+
+    [Fact]
+    public async Task SysSupport_cannot_create_tenant_returns_403()
+    {
+        var client = await CreateSysSupportAuthenticatedClientAsync();
+        var response = await client.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = $"ss-create-{Guid.NewGuid():N}",
+            Name = "SS Forbidden"
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysSupport_cannot_delete_tenant_returns_403()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var target = $"ss-del-{Guid.NewGuid():N}";
+        await sysClient.PostAsJsonAsync("/admin/tenants", new { Identifier = target, Name = "SS Del" });
+
+        var ssClient = await CreateSysSupportAuthenticatedClientAsync();
+        var response = await ssClient.DeleteAsync($"/admin/tenants/{target}");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysSupport_cannot_grant_tenant_access_returns_403()
+    {
+        var (ssClient, _) = await CreateSysSupportAuthenticatedClientWithIdAsync();
+        var response = await ssClient.PostAsJsonAsync(
+            $"/admin/users/{Guid.NewGuid()}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
+            new { ExpiresAt = (DateTime?)null });
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysSupport_cannot_revoke_tenant_access_returns_403()
+    {
+        var (ssClient, _) = await CreateSysSupportAuthenticatedClientWithIdAsync();
+        var response = await ssClient.DeleteAsync(
+            $"/admin/users/{Guid.NewGuid()}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysSupport_can_list_all_tenants_returns_200()
+    {
+        var ssClient = await CreateSysSupportAuthenticatedClientAsync();
+        var response = await ssClient.GetAsync("/admin/tenants");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysSupport_can_get_user_tenants_returns_200()
+    {
+        var ssClient = await CreateSysSupportAuthenticatedClientAsync();
+        var response = await ssClient.GetAsync($"/admin/users/{Guid.NewGuid()}/tenants");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysAdmin_grant_access_to_self_returns_403_with_SelfTarget()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var sysAdminId = await GetSysAdminUserIdAsync();
+        var response = await sysClient.PostAsJsonAsync(
+            $"/admin/users/{sysAdminId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}",
+            new { ExpiresAt = (DateTime?)null });
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SysAdmin_revoke_access_from_self_returns_403_with_SelfTarget()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var sysAdminId = await GetSysAdminUserIdAsync();
+        var response = await sysClient.DeleteAsync(
+            $"/admin/users/{sysAdminId}/tenants/{IdmtApiFactory.DefaultTenantIdentifier}");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Unauthenticated_caller_gets_401_on_admin_write()
+    {
+        var client = Factory.CreateClientWithTenant();
+        var response = await client.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = $"anon-{Guid.NewGuid():N}",
+            Name = "Anon"
+        });
+        Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
+    }
+
+    [Fact]
+    public async Task Unauthenticated_caller_gets_401_on_admin_read()
+    {
+        var client = Factory.CreateClientWithTenant();
+        var response = await client.GetAsync("/admin/tenants");
+        Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
+    }
+
+    [Fact]
+    public async Task SysAdmin_can_create_tenant_returns_201()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var response = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = $"sa-create-{Guid.NewGuid():N}",
+            Name = "SA Create"
+        });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    #endregion
 
     [Fact]
     public async Task GrantTenantAccess_Returns400_WhenExpiresAtIsInPast()

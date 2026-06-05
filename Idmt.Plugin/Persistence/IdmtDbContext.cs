@@ -86,12 +86,49 @@ public class IdmtDbContext
             dto => dto == null ? null : dto.Value.UtcTicks,
             ticks => ticks == null ? null : new DateTimeOffset(ticks.Value, TimeSpan.Zero));
 
-        // Configure user entity with proper multi-tenant support
+        // Phase 1: IdmtUser is a global entity (no per-tenant filter). Email is globally unique.
+        // The Finbuckle MultiTenantIdentityDbContext base implementation stamps every Identity
+        // entity (including IdmtUser) as multi-tenant during base.OnModelCreating. We undo that
+        // here on IdmtUser only so that:
+        //   1. There is no shadow TenantId column,
+        //   2. The legacy (NormalizedUserName, TenantId) unique index is dropped,
+        //   3. Finbuckle's tenant query filter is not applied to IdmtUser.
         builder.Entity<IdmtUser>(entity =>
         {
+            // Drop Finbuckle's auto-stamped multi-tenant annotation on IdmtUser.
+            entity.Metadata.RemoveAnnotation("Finbuckle:MultiTenant");
+
+            // Drop any indexes that referenced the shadow TenantId property — must be done
+            // before the property itself is removed, otherwise EF Core throws.
+            var legacyIndexes = entity.Metadata.GetIndexes()
+                .Where(ix => ix.Properties.Any(p => string.Equals(p.Name, "TenantId", StringComparison.Ordinal)))
+                .ToList();
+            foreach (var ix in legacyIndexes)
+            {
+                entity.Metadata.RemoveIndex(ix);
+            }
+
+            // Drop the shadow TenantId property added by Finbuckle.
+            var tenantIdProperty = entity.Metadata.FindProperty("TenantId");
+            if (tenantIdProperty is not null)
+            {
+                entity.Metadata.RemoveProperty(tenantIdProperty);
+            }
+
+            // Clear any tenant-scoped query filter(s) that Finbuckle injected for IdmtUser.
+            // EF Core 10 supports multiple named query filters; clear them all by name plus
+            // the legacy unnamed filter.
+            foreach (var filter in entity.Metadata.GetDeclaredQueryFilters().ToList())
+            {
+                if (filter.Key is { } key)
+                {
+                    entity.Metadata.SetQueryFilter(key, null);
+                }
+            }
+            entity.Metadata.SetQueryFilter(null);
+
             entity.HasIndex(u => u.IsActive);
-            entity.HasIndex(u => new { u.Email, u.UserName, u.TenantId }).IsUnique();
-            entity.IsMultiTenant();
+            entity.HasIndex(u => u.NormalizedEmail).IsUnique();
             entity.Property(u => u.LastLoginAt).HasConversion(nullableDateTimeOffsetConverter);
         });
 

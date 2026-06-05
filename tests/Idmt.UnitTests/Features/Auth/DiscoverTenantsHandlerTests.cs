@@ -63,18 +63,27 @@ public class DiscoverTenantsHandlerTests : IDisposable
     [Fact]
     public async Task ReturnsTenant_WhenUserExistsInOneTenant()
     {
-        // Arrange
+        // Arrange — Phase 1: tenant membership is granted via TenantAccess; IdmtUser is global.
         var tenantId = Guid.CreateVersion7().ToString();
+        var userId = Guid.NewGuid();
         _dbContext.Set<IdmtTenantInfo>().Add(
             new IdmtTenantInfo(tenantId, "acme-corp", "Acme Corp"));
 
         _dbContext.Users.Add(new IdmtUser
         {
+            Id = userId,
             UserName = "alice",
             Email = "alice@test.com",
             NormalizedEmail = "ALICE@TEST.COM",
             IsActive = true,
-            TenantId = tenantId
+        });
+
+        _dbContext.TenantAccess.Add(new TenantAccess
+        {
+            UserId = userId,
+            TenantId = tenantId,
+            IsActive = true,
+            ExpiresAt = null
         });
         await _dbContext.SaveChangesAsync();
 
@@ -103,7 +112,7 @@ public class DiscoverTenantsHandlerTests : IDisposable
             Email = "inactive@test.com",
             NormalizedEmail = "INACTIVE@TEST.COM",
             IsActive = false,
-            TenantId = tenantId
+
         });
         await _dbContext.SaveChangesAsync();
 
@@ -130,7 +139,7 @@ public class DiscoverTenantsHandlerTests : IDisposable
             Email = "bob@test.com",
             NormalizedEmail = "BOB@TEST.COM",
             IsActive = true,
-            TenantId = tenantId
+
         });
         await _dbContext.SaveChangesAsync();
 
@@ -146,14 +155,14 @@ public class DiscoverTenantsHandlerTests : IDisposable
     [Fact]
     public async Task IncludesTenantAccessGrants()
     {
-        // Arrange
-        var homeTenantId = Guid.CreateVersion7().ToString();
-        var grantedTenantId = Guid.CreateVersion7().ToString();
+        // Arrange — Phase 1: every tenant a user can reach is recorded as a TenantAccess row.
+        var firstTenantId = Guid.CreateVersion7().ToString();
+        var secondTenantId = Guid.CreateVersion7().ToString();
         var userId = Guid.NewGuid();
 
         _dbContext.Set<IdmtTenantInfo>().AddRange(
-            new IdmtTenantInfo(homeTenantId, "home-tenant", "Home Tenant"),
-            new IdmtTenantInfo(grantedTenantId, "granted-tenant", "Granted Tenant"));
+            new IdmtTenantInfo(firstTenantId, "first-tenant", "First Tenant"),
+            new IdmtTenantInfo(secondTenantId, "second-tenant", "Second Tenant"));
 
         _dbContext.Users.Add(new IdmtUser
         {
@@ -162,16 +171,12 @@ public class DiscoverTenantsHandlerTests : IDisposable
             Email = "charlie@test.com",
             NormalizedEmail = "CHARLIE@TEST.COM",
             IsActive = true,
-            TenantId = homeTenantId
         });
 
-        _dbContext.TenantAccess.Add(new TenantAccess
-        {
-            UserId = userId,
-            TenantId = grantedTenantId,
-            IsActive = true,
-            ExpiresAt = null
-        });
+        _dbContext.TenantAccess.AddRange(
+            new TenantAccess { UserId = userId, TenantId = firstTenantId, IsActive = true },
+            new TenantAccess { UserId = userId, TenantId = secondTenantId, IsActive = true });
+
         await _dbContext.SaveChangesAsync();
 
         // Act
@@ -181,20 +186,20 @@ public class DiscoverTenantsHandlerTests : IDisposable
         // Assert
         Assert.False(result.IsError);
         Assert.Equal(2, result.Value.Tenants.Count);
-        Assert.Contains(result.Value.Tenants, t => t.Identifier == "home-tenant");
-        Assert.Contains(result.Value.Tenants, t => t.Identifier == "granted-tenant");
+        Assert.Contains(result.Value.Tenants, t => t.Identifier == "first-tenant");
+        Assert.Contains(result.Value.Tenants, t => t.Identifier == "second-tenant");
     }
 
     [Fact]
     public async Task ExcludesExpiredTenantAccessGrants()
     {
-        // Arrange
-        var homeTenantId = Guid.CreateVersion7().ToString();
+        // Arrange — current grant is active, expired grant is excluded.
+        var activeTenantId = Guid.CreateVersion7().ToString();
         var expiredTenantId = Guid.CreateVersion7().ToString();
         var userId = Guid.NewGuid();
 
         _dbContext.Set<IdmtTenantInfo>().AddRange(
-            new IdmtTenantInfo(homeTenantId, "home-tenant", "Home Tenant"),
+            new IdmtTenantInfo(activeTenantId, "active-tenant", "Active Tenant"),
             new IdmtTenantInfo(expiredTenantId, "expired-tenant", "Expired Tenant"));
 
         _dbContext.Users.Add(new IdmtUser
@@ -204,16 +209,17 @@ public class DiscoverTenantsHandlerTests : IDisposable
             Email = "dave@test.com",
             NormalizedEmail = "DAVE@TEST.COM",
             IsActive = true,
-            TenantId = homeTenantId
         });
 
-        _dbContext.TenantAccess.Add(new TenantAccess
-        {
-            UserId = userId,
-            TenantId = expiredTenantId,
-            IsActive = true,
-            ExpiresAt = new DateTime(2026, 3, 5, 0, 0, 0, DateTimeKind.Utc) // yesterday
-        });
+        _dbContext.TenantAccess.AddRange(
+            new TenantAccess { UserId = userId, TenantId = activeTenantId, IsActive = true, ExpiresAt = null },
+            new TenantAccess
+            {
+                UserId = userId,
+                TenantId = expiredTenantId,
+                IsActive = true,
+                ExpiresAt = new DateTime(2026, 3, 5, 0, 0, 0, DateTimeKind.Utc) // yesterday
+            });
         await _dbContext.SaveChangesAsync();
 
         // Act
@@ -223,19 +229,19 @@ public class DiscoverTenantsHandlerTests : IDisposable
         // Assert
         Assert.False(result.IsError);
         Assert.Single(result.Value.Tenants);
-        Assert.Equal("home-tenant", result.Value.Tenants[0].Identifier);
+        Assert.Equal("active-tenant", result.Value.Tenants[0].Identifier);
     }
 
     [Fact]
     public async Task ExcludesInactiveTenantAccessGrants()
     {
-        // Arrange
-        var homeTenantId = Guid.CreateVersion7().ToString();
+        // Arrange — current grant is active, revoked (IsActive=false) grant is excluded.
+        var activeTenantId = Guid.CreateVersion7().ToString();
         var revokedTenantId = Guid.CreateVersion7().ToString();
         var userId = Guid.NewGuid();
 
         _dbContext.Set<IdmtTenantInfo>().AddRange(
-            new IdmtTenantInfo(homeTenantId, "home-tenant", "Home Tenant"),
+            new IdmtTenantInfo(activeTenantId, "active-tenant", "Active Tenant"),
             new IdmtTenantInfo(revokedTenantId, "revoked-tenant", "Revoked Tenant"));
 
         _dbContext.Users.Add(new IdmtUser
@@ -245,16 +251,11 @@ public class DiscoverTenantsHandlerTests : IDisposable
             Email = "eve@test.com",
             NormalizedEmail = "EVE@TEST.COM",
             IsActive = true,
-            TenantId = homeTenantId
         });
 
-        _dbContext.TenantAccess.Add(new TenantAccess
-        {
-            UserId = userId,
-            TenantId = revokedTenantId,
-            IsActive = false,
-            ExpiresAt = null
-        });
+        _dbContext.TenantAccess.AddRange(
+            new TenantAccess { UserId = userId, TenantId = activeTenantId, IsActive = true, ExpiresAt = null },
+            new TenantAccess { UserId = userId, TenantId = revokedTenantId, IsActive = false, ExpiresAt = null });
         await _dbContext.SaveChangesAsync();
 
         // Act
@@ -264,7 +265,7 @@ public class DiscoverTenantsHandlerTests : IDisposable
         // Assert
         Assert.False(result.IsError);
         Assert.Single(result.Value.Tenants);
-        Assert.Equal("home-tenant", result.Value.Tenants[0].Identifier);
+        Assert.Equal("active-tenant", result.Value.Tenants[0].Identifier);
     }
 
     [Fact]

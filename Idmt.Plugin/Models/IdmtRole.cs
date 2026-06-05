@@ -25,9 +25,14 @@ public static class IdmtDefaultRoleTypes
     public const string SysSupport = "SysSupport";
     public const string TenantAdmin = "TenantAdmin"; // The only non sys role that can create users
 
+    /// <summary>
+    /// Default per-tenant roles seeded into every new tenant.
+    /// Phase 1: SysAdmin/SysSupport are NO LONGER seeded as per-tenant <see cref="IdmtRole"/> rows.
+    /// Sys-level authority is sourced from <see cref="IdmtUser.SysRole"/> + ambient TenantAccess gate.
+    /// The <see cref="SysAdmin"/> and <see cref="SysSupport"/> string constants remain for policy
+    /// <c>RequireRole(...)</c> matches against the <see cref="SysRoleKind"/>-emitted role claim.
+    /// </summary>
     public static string[] DefaultRoles => [
-        SysAdmin,
-        SysSupport,
         TenantAdmin
     ];
 }

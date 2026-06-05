@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Finbuckle.MultiTenant.Abstractions;
 using Idmt.Plugin.Features.Auth;
 using Idmt.Plugin.Models;
 using Idmt.Plugin.Persistence;
@@ -104,6 +105,35 @@ public class AuthIntegrationTests : BaseIntegrationTest
         await response.AssertSuccess();
     }
 
+    [Fact]
+    public async Task POST_Login_UserHasNoTenantAccess_Returns401()
+    {
+        // Phase 1 / Step 10: TenantAccess gate uniformly enforced at login.
+        // User registered + password set in tenant A only, no TenantAccess for tenant B.
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var tenantBIdentifier = $"step10-cookie-{Guid.NewGuid():N}";
+        var createResponse = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantBIdentifier,
+            Name = "Step10 Cookie Tenant"
+        });
+        await createResponse.AssertSuccess();
+
+        var email = $"step10-cookie-{Guid.NewGuid():N}@example.com";
+        const string password = "Step10Cookie1!";
+        var (_, _) = await RegisterAndSetPasswordAsync(sysClient, password, email: email);
+
+        // Tenant A login succeeds (sanity).
+        var clientA = Factory.CreateClientWithTenant();
+        var loginA = await clientA.PostAsJsonAsync("/auth/login", new { Email = email, Password = password });
+        await loginA.AssertSuccess();
+
+        // Tenant B login is denied — no TenantAccess row.
+        var clientB = Factory.CreateClientWithTenant(tenantBIdentifier);
+        var loginB = await clientB.PostAsJsonAsync("/auth/login", new { Email = email, Password = password });
+        Assert.Equal(HttpStatusCode.Unauthorized, loginB.StatusCode);
+    }
+
     #endregion
 
     #region Token Tests (Bearer Token-based)
@@ -192,6 +222,34 @@ public class AuthIntegrationTests : BaseIntegrationTest
         Assert.NotNull(tokens);
         Assert.Equal("Bearer", tokens!.TokenType);
         Assert.True(tokens.ExpiresIn > 0, "ExpiresIn should be a positive number of seconds");
+    }
+
+    [Fact]
+    public async Task POST_Token_UserHasNoTenantAccess_Returns401()
+    {
+        // Phase 1 / Step 10: TenantAccess gate uniformly enforced at /auth/token.
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var tenantBIdentifier = $"step10-token-{Guid.NewGuid():N}";
+        var createResponse = await sysClient.PostAsJsonAsync("/admin/tenants", new
+        {
+            Identifier = tenantBIdentifier,
+            Name = "Step10 Token Tenant"
+        });
+        await createResponse.AssertSuccess();
+
+        var email = $"step10-token-{Guid.NewGuid():N}@example.com";
+        const string password = "Step10Token1!";
+        var (_, _) = await RegisterAndSetPasswordAsync(sysClient, password, email: email);
+
+        // Tenant A token issuance succeeds.
+        var clientA = Factory.CreateClientWithTenant();
+        var tokenA = await clientA.PostAsJsonAsync("/auth/token", new { Email = email, Password = password });
+        await tokenA.AssertSuccess();
+
+        // Tenant B token issuance is denied — no TenantAccess row.
+        var clientB = Factory.CreateClientWithTenant(tenantBIdentifier);
+        var tokenB = await clientB.PostAsJsonAsync("/auth/token", new { Email = email, Password = password });
+        Assert.Equal(HttpStatusCode.Unauthorized, tokenB.StatusCode);
     }
 
     [Fact]
@@ -404,11 +462,64 @@ public class AuthIntegrationTests : BaseIntegrationTest
         var confirmToken = await GenerateEmailConfirmationTokenAsync(newEmail);
         var encodedToken = EncodeToken(confirmToken);
 
-        // Confirm email via POST /confirm-email with Base64URL-encoded token
-        using var publicClient = Factory.CreateClient();
+        // Confirm email via POST /confirm-email with Base64URL-encoded token.
+        // Body shape is { Email, Token } — tenant resolved via header (per consumer config).
+        using var publicClient = Factory.CreateClientWithTenant();
         var confirmResponse = await publicClient.PostAsJsonAsync(
             "/auth/confirm-email",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = newEmail, Token = encodedToken });
+            new { Email = newEmail, Token = encodedToken });
+
+        await confirmResponse.AssertSuccess();
+    }
+
+    [Fact]
+    public async Task ConfirmEmail_BodyWithExtraTenantIdentifier_IsIgnored()
+    {
+        // Backward-compat: ASP.NET Core JSON deserializer silently ignores unknown
+        // members by default. A legacy client sending TenantIdentifier in body is
+        // still accepted; the tenant is resolved from the request scope only.
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var newEmail = $"confirm-extra-{Guid.NewGuid():N}@example.com";
+
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
+        {
+            Email = newEmail,
+            Username = $"confirmextra{Guid.NewGuid():N}",
+            Role = IdmtDefaultRoleTypes.TenantAdmin
+        });
+        await registerResponse.AssertSuccess();
+
+        var confirmToken = await GenerateEmailConfirmationTokenAsync(newEmail);
+        var encodedToken = EncodeToken(confirmToken);
+
+        using var publicClient = Factory.CreateClientWithTenant();
+        var confirmResponse = await publicClient.PostAsJsonAsync(
+            "/auth/confirm-email",
+            new { TenantIdentifier = "nonexistent-tenant", Email = newEmail, Token = encodedToken });
+
+        await confirmResponse.AssertSuccess();
+    }
+
+    [Fact]
+    public async Task ConfirmEmail_Get_NoTenantIdentifierInQuery_Succeeds()
+    {
+        var sysClient = await CreateAuthenticatedClientAsync();
+        var newEmail = $"confirm-get-{Guid.NewGuid():N}@example.com";
+
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
+        {
+            Email = newEmail,
+            Username = $"confirmget{Guid.NewGuid():N}",
+            Role = IdmtDefaultRoleTypes.TenantAdmin
+        });
+        await registerResponse.AssertSuccess();
+
+        var confirmToken = await GenerateEmailConfirmationTokenAsync(newEmail);
+        var encodedToken = EncodeToken(confirmToken);
+
+        using var publicClient = Factory.CreateClientWithTenant();
+        var url = $"/auth/confirm-email?email={Uri.EscapeDataString(newEmail)}&token={Uri.EscapeDataString(encodedToken)}";
+        var confirmResponse = await publicClient.GetAsync(url);
 
         await confirmResponse.AssertSuccess();
     }
@@ -417,24 +528,11 @@ public class AuthIntegrationTests : BaseIntegrationTest
     public async Task ConfirmEmail_with_invalid_token_fails()
     {
         var newEmail = $"invalid-{Guid.NewGuid():N}@example.com";
-        using var publicClient = Factory.CreateClient();
+        using var publicClient = Factory.CreateClientWithTenant();
 
         var confirmResponse = await publicClient.PostAsJsonAsync(
             "/auth/confirm-email",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = newEmail, Token = "invalid-token" });
-
-        Assert.False(confirmResponse.IsSuccessStatusCode);
-    }
-
-    [Fact]
-    public async Task ConfirmEmail_with_invalid_tenant_fails()
-    {
-        var newEmail = $"confirm-{Guid.NewGuid():N}@example.com";
-        using var publicClient = Factory.CreateClient();
-
-        var confirmResponse = await publicClient.PostAsJsonAsync(
-            "/auth/confirm-email",
-            new { TenantIdentifier = "nonexistent-tenant", Email = newEmail, Token = "some-token" });
+            new { Email = newEmail, Token = "invalid-token" });
 
         Assert.False(confirmResponse.IsSuccessStatusCode);
     }
@@ -442,11 +540,11 @@ public class AuthIntegrationTests : BaseIntegrationTest
     [Fact]
     public async Task ConfirmEmail_with_missing_email_fails()
     {
-        using var publicClient = Factory.CreateClient();
+        using var publicClient = Factory.CreateClientWithTenant();
 
         var confirmResponse = await publicClient.PostAsJsonAsync(
             "/auth/confirm-email",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = "", Token = "some-token" });
+            new { Email = "", Token = "some-token" });
 
         Assert.False(confirmResponse.IsSuccessStatusCode);
     }
@@ -455,11 +553,11 @@ public class AuthIntegrationTests : BaseIntegrationTest
     public async Task ConfirmEmail_with_missing_token_fails()
     {
         var newEmail = $"confirm-{Guid.NewGuid():N}@example.com";
-        using var publicClient = Factory.CreateClient();
+        using var publicClient = Factory.CreateClientWithTenant();
 
         var confirmResponse = await publicClient.PostAsJsonAsync(
             "/auth/confirm-email",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = newEmail, Token = "" });
+            new { Email = newEmail, Token = "" });
 
         Assert.False(confirmResponse.IsSuccessStatusCode);
     }
@@ -578,7 +676,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         using var publicClient = Factory.CreateClient();
         await publicClient.PostAsJsonAsync(
             "/auth/reset-password",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = email, Token = EncodeToken(setupToken), NewPassword = "InitialPassword1!" });
+            new { Email = email, Token = EncodeToken(setupToken), NewPassword = "InitialPassword1!" });
 
         Factory.EmailSenderMock.Invocations.Clear();
 
@@ -615,25 +713,13 @@ public class AuthIntegrationTests : BaseIntegrationTest
     }
 
     [Fact]
-    public async Task ResetPassword_Returns400_WhenTenantIdentifierMissing()
-    {
-        using var publicClient = Factory.CreateClient();
-
-        var resetResponse = await publicClient.PostAsJsonAsync(
-            "/auth/reset-password",
-            new { TenantIdentifier = "", Email = "test@example.com", Token = "some-token", NewPassword = "NewPassword1!" });
-
-        Assert.False(resetResponse.IsSuccessStatusCode);
-    }
-
-    [Fact]
     public async Task ResetPassword_Returns400_WhenTokenMissing()
     {
         using var publicClient = Factory.CreateClient();
 
         var resetResponse = await publicClient.PostAsJsonAsync(
             "/auth/reset-password",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = "test@example.com", Token = "", NewPassword = "NewPassword1!" });
+            new { Email = "test@example.com", Token = "", NewPassword = "NewPassword1!" });
 
         Assert.False(resetResponse.IsSuccessStatusCode);
     }
@@ -662,7 +748,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         using var publicClient = Factory.CreateClient();
         var resetResponse = await publicClient.PostAsJsonAsync(
             "/auth/reset-password",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = email, Token = EncodeToken(resetToken), NewPassword = "NewPassword1!" });
+            new { Email = email, Token = EncodeToken(resetToken), NewPassword = "NewPassword1!" });
 
         await resetResponse.AssertSuccess();
     }
@@ -688,7 +774,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
         const string newPassword = "NewPassword1!";
         await publicClient.PostAsJsonAsync(
             "/auth/reset-password",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = email, Token = EncodeToken(resetToken), NewPassword = newPassword });
+            new { Email = email, Token = EncodeToken(resetToken), NewPassword = newPassword });
 
         // Login with new password
         using var loginClient = Factory.CreateClientWithTenant();
@@ -709,7 +795,7 @@ public class AuthIntegrationTests : BaseIntegrationTest
 
         var resetResponse = await publicClient.PostAsJsonAsync(
             "/auth/reset-password",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = email, Token = "invalid-token", NewPassword = "NewPassword1!" });
+            new { Email = email, Token = "invalid-token", NewPassword = "NewPassword1!" });
 
         Assert.False(resetResponse.IsSuccessStatusCode);
     }
@@ -734,9 +820,85 @@ public class AuthIntegrationTests : BaseIntegrationTest
         using var publicClient = Factory.CreateClient();
         var resetResponse = await publicClient.PostAsJsonAsync(
             "/auth/reset-password",
-            new { TenantIdentifier = IdmtApiFactory.DefaultTenantIdentifier, Email = email, Token = EncodeToken(resetToken), NewPassword = "weak" });
+            new { Email = email, Token = EncodeToken(resetToken), NewPassword = "weak" });
 
         Assert.False(resetResponse.IsSuccessStatusCode);
+    }
+
+    [Fact]
+    public async Task POST_ResetPassword_NoTenantIdentifierInBody_Succeeds()
+    {
+        // Phase-1 Step 6 regression: tenant must be resolved from ambient context
+        // (Finbuckle), not from request body. Body shape no longer carries
+        // TenantIdentifier.
+        var email = $"reset-no-tid-{Guid.NewGuid():N}@example.com";
+        var sysClient = await CreateAuthenticatedClientAsync();
+
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
+        {
+            Email = email,
+            Username = $"resetnotid{Guid.NewGuid():N}",
+            Role = IdmtDefaultRoleTypes.TenantAdmin
+        });
+        await registerResponse.AssertSuccess();
+        var resetToken = await GeneratePasswordResetTokenAsync(email);
+
+        using var publicClient = Factory.CreateClient();
+        var resetResponse = await publicClient.PostAsJsonAsync(
+            "/auth/reset-password",
+            new { Email = email, Token = EncodeToken(resetToken), NewPassword = "NewPassword1!" });
+
+        await resetResponse.AssertSuccess();
+    }
+
+    [Fact]
+    public async Task POST_ResetPassword_DoesNotFlipEmailConfirmed()
+    {
+        // C7 regression: successful password reset must NOT mutate EmailConfirmed.
+        var email = $"reset-c7-{Guid.NewGuid():N}@example.com";
+        var sysClient = await CreateAuthenticatedClientAsync();
+
+        var registerResponse = await sysClient.PostAsJsonAsync("/manage/users", new
+        {
+            Email = email,
+            Username = $"resetc7{Guid.NewGuid():N}",
+            Role = IdmtDefaultRoleTypes.TenantAdmin
+        });
+        await registerResponse.AssertSuccess();
+
+        // Newly registered user has EmailConfirmed = false. Verify pre-state.
+        Assert.False(await GetEmailConfirmedAsync(email));
+
+        var resetToken = await GeneratePasswordResetTokenAsync(email);
+
+        using var publicClient = Factory.CreateClient();
+        var resetResponse = await publicClient.PostAsJsonAsync(
+            "/auth/reset-password",
+            new { Email = email, Token = EncodeToken(resetToken), NewPassword = "NewPassword1!" });
+        await resetResponse.AssertSuccess();
+
+        // Critical: EmailConfirmed must STILL be false after a successful reset.
+        Assert.False(await GetEmailConfirmedAsync(email));
+    }
+
+    private async Task<bool> GetEmailConfirmedAsync(string email, string? tenantIdentifier = null)
+    {
+        tenantIdentifier ??= IdmtApiFactory.DefaultTenantIdentifier;
+
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider;
+
+        var store = provider.GetRequiredService<IMultiTenantStore<IdmtTenantInfo>>();
+        var tenant = await store.GetByIdentifierAsync(tenantIdentifier)
+            ?? throw new InvalidOperationException($"Tenant '{tenantIdentifier}' not found.");
+
+        var setter = provider.GetRequiredService<IMultiTenantContextSetter>();
+        setter.MultiTenantContext = new MultiTenantContext<IdmtTenantInfo>(tenant);
+
+        var userManager = provider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<IdmtUser>>();
+        var user = await userManager.FindByEmailAsync(email)
+            ?? throw new InvalidOperationException($"User '{email}' not found.");
+        return user.EmailConfirmed;
     }
 
     #endregion

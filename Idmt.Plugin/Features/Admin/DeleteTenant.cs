@@ -71,7 +71,7 @@ public static class DeleteTenant
             }
             return TypedResults.NoContent();
         })
-        .RequireAuthorization(IdmtAuthOptions.RequireSysUserPolicy)
+        .RequireAuthorization(IdmtAuthOptions.RequireSysAdminPolicy)
         .WithSummary("Delete tenant")
         .WithDescription("Soft deletes a tenant by its identifier");
     }

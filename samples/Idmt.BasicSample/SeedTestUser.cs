@@ -45,14 +45,14 @@ public static class SeedTestUser
             return; // User already exists
         }
 
-        // Create test user
+        // Create test user (Phase 1: IdmtUser is global — no TenantId column)
         var user = new IdmtUser
         {
             Email = TestUserEmail,
             UserName = "testadmin",
             EmailConfirmed = true,
             IsActive = true,
-            TenantId = tenant.Id!
+            SysRole = SysRoleKind.SysAdmin,
         };
 
         var result = await userManager.CreateAsync(user, TestUserPassword);
