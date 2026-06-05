@@ -67,7 +67,8 @@ matter here reach the server with different information available.
 For the authorization-code flow, the tenant is resolved at `/connect/authorize`.
 The user arrives at the authorize endpoint through a tenant-aware route, signs
 in against an interactive session, and the resolved tenant is carried into the
-issued token's audience. The route segment is present, so Finbuckle has what it
+issued token's audience through the same RFC 8707 `resource` parameter the
+refresh grant uses. The route segment is present, so Finbuckle has what it
 needs.
 
 For the refresh grant, the request reaches `/connect/token` with no tenant route
@@ -80,6 +81,15 @@ document single-issuer and conformant. Per-tenant route endpoints would
 multiply the issuer surface and break that conformance. The cost of the
 convention is that refresh clients must send the `resource` parameter, which is
 a documented requirement, not a hidden one.
+
+This is the standard RFC 8707 `resource` parameter, not a custom form field. The
+spike used a custom `tenant` parameter and set the audience directly so
+OpenIddict would not run its `resource` validation against an unregistered URN.
+v2 does not copy that. Each tenant's URN is registered as an OpenIddict resource
+(the seeder does this per tenant, see [seeding and
+bootstrap](13-seeding-bootstrap.md)), so the engine accepts the URN as a valid
+`resource` value and binds it into the token's `aud` natively. Drop the spike's
+custom `tenant` form field from the prescribed convention.
 
 Support tokens take neither path. IDMT mints them server-side and sets their
 `aud` directly, so they carry no public grant and do not go through `resource`
@@ -117,6 +127,13 @@ parameter, that parameter must match the token's `aud`; a mismatch is rejected.
 The `resource` parameter is allowed to restate the tenant, but it can never
 substitute a different one.
 
+The refresh handler reads that authoritative `aud` from the decrypted presented
+token at exchange time, not from a store query, so there is no audience column to
+look up and none to keep in sync. This is the same fact stated from the
+persistence side in [revocation hooks](07-revocation-hooks.md), where the store
+holds no audience column: the two documents read consistently because the
+audience always travels in the token, never in a row.
+
 The attack this blocks is direct. Without the rule, a client holding a tenant-A
 refresh token could send `resource=urn:idmt:tenant:B` and mint a tenant-B access
 token, escalating from one tenant to another with a token it already legitimately
@@ -145,6 +162,20 @@ skips non-access-token principals (only access tokens are tenant-bound), and it
 refuses rather than guesses when no tenant was resolved at all, rejecting a
 token-bound request that arrives with no resolved tenant instead of letting it
 through.
+
+That last strictness has a necessary limit: the handler is scoped to resource
+APIs only, and must not run against OpenIddict's own protocol endpoints. The
+spike handler keys solely on `AccessTokenPrincipal`, but several protocol
+endpoints (`/connect/introspect`, `/connect/revoke`, `/connect/userinfo`)
+legitimately present a token that resolves to an access-token principal while no
+tenant is resolved for the request, because those endpoints are not reached
+through a tenant-aware route. The strict "no resolved tenant means reject" rule
+would turn those legitimate protocol calls into 401s. v2 confines the handler so
+it only enforces on resource-API requests: skip enforcement when the request
+path is one of the OpenIddict protocol endpoints (introspection, revocation,
+userinfo, token, and authorize), and let the engine's own validation own those.
+The resolved-tenant requirement then applies exactly where it should, the
+resource layer, and nowhere it would break the protocol.
 
 Ordering matters. The handler runs late: the spike sets the descriptor order to
 `int.MaxValue - 100_000`, after the built-in validation handlers have run and

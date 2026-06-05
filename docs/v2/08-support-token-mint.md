@@ -27,10 +27,13 @@ machinery.
 
 You build four things:
 
-- The mint service, modeled on the proven spike `SupportTokenService`. It opens
-  an explicit transaction on the OpenIddict context, runs the system-role and
-  `TenantAccess` checks, calls `IOpenIddictTokenManager.CreateAsync`, stages a
-  `SupportAudit` row in the same context, and commits both writes together.
+- The mint service, modeled on the proven spike `SupportTokenService` and
+  corrected so it yields a bearer-validatable token. It opens an explicit
+  transaction on the OpenIddict context, runs the system-role and `TenantAccess`
+  checks, builds a `ClaimsPrincipal` carrying the audience, destinations, scope,
+  and `act` claim and assigns it to `descriptor.Principal`, calls
+  `IOpenIddictTokenManager.CreateAsync`, stages a `SupportAudit` row in the same
+  context, and commits both writes together.
 - The `support` scope and the actor projection. A support token carries the
   `support` scope and an RFC 8693 `act` (actor) claim that names the system
   user. IDMT surfaces the actor as a `support_of` alias so implementers project
@@ -90,6 +93,63 @@ authorization. A support-token revocation is the same single row update as any
 other token revocation, and the same per-request audience handler binds it to
 its tenant. One code path means one set of invariants to test.
 
+The spike's `SupportTokenService` created a status-checkable store row but did
+not build that row to be bearer-validatable: it set no audience and no
+destinations, so the token it produced could not have been presented to a
+tenant-scoped route and accepted. The build corrects this. The next section
+specifies exactly how the mint produces a presentable, tenant-audienced
+reference handle.
+
+## The mint must yield a validatable token
+
+The mint must produce a bearer-validatable reference token, not just a store row
+that reads `Valid`. This is the difference between a token that a tenant-scoped
+route accepts and one that only the status API can see.
+
+The critical API fact: `OpenIddictTokenDescriptor` has no `Audiences` property.
+Audiences and destinations do not live on the descriptor. They live on a
+`ClaimsPrincipal`, set through `SetAudiences(...)` and `SetDestinations(...)` on
+its identity, which is exactly what the public-grant path already does
+(`Program.cs`: `identity.SetAudiences(TenantUrns.For(tenant))` followed by
+`identity.SetDestinations(static _ => [Destinations.AccessToken])`). The mint
+builds that principal and assigns it to `descriptor.Principal` before
+`CreateAsync`. Do not look for, or reference, a descriptor audiences field; it
+does not exist.
+
+The mint builds the principal and assigns it:
+
+```csharp
+var identity = new ClaimsIdentity(
+    OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
+    Claims.Name,
+    Claims.Role);
+
+identity.SetClaim(Claims.Subject, actorUserId.ToString());
+identity.SetScopes(Scopes.Support);
+identity.SetAudiences(TenantUrns.For(tenantIdentifier));
+identity.SetDestinations(static _ => [Destinations.AccessToken]);
+// project the RFC 8693 act (actor) claim naming the system user here too.
+
+var descriptor = new OpenIddictTokenDescriptor
+{
+    Principal = new ClaimsPrincipal(identity),
+    Subject = actorUserId.ToString(),
+    Type = TokenTypeHints.AccessToken,
+    Status = Statuses.Valid,
+    CreationDate = now,
+    ExpirationDate = now.AddMinutes(15),
+    ReferenceId = Guid.NewGuid().ToString("N"),
+};
+
+var token = await tokens.CreateAsync(descriptor, ct);
+```
+
+`SetAudiences(TenantUrns.For(tenantIdentifier))` binds the token to the target
+tenant so the per-request audience handler accepts it on that tenant's routes
+and rejects it elsewhere. `SetDestinations(static _ => [Destinations.AccessToken])`
+puts the claims on the access token. The audit row write that follows still runs
+in the same owned transaction as this `CreateAsync`, so atomicity is unchanged.
+
 ## Why a server-side mint, not a public grant
 
 The mint shape is the central decision of ADR §2.8, and it is driven entirely by
@@ -128,17 +188,26 @@ written in the same transaction as the token-store insert, before the token is
 returned, with a required reason. The result is a hard guarantee: no support
 token ever exists without its audit row, and no partial mint survives a failure.
 
-The mint follows the proven spike sequence:
+The mint follows the proven spike sequence, corrected so the token it produces is
+bearer-validatable (see [the mint must yield a validatable token](#the-mint-must-yield-a-validatable-token)):
 
 1. Open an explicit transaction on the OpenIddict context with
    `BeginTransactionAsync`.
-2. Call `IOpenIddictTokenManager.CreateAsync`, which persists the token entry to
-   that same context inside the open transaction. The token is now written but
-   uncommitted.
-3. Stage the `SupportAudit` row in the same context. The reason column is `NOT
+2. Build the `ClaimsPrincipal` that carries the support token's audience,
+   destinations, scope, and `act` claim, and assign it to `descriptor.Principal`
+   (detailed in the next section).
+3. Call `IOpenIddictTokenManager.CreateAsync` with that descriptor, which
+   persists the token entry to that same context inside the open transaction. The
+   token is now written but uncommitted.
+4. Stage the `SupportAudit` row in the same context. The reason column is `NOT
    NULL`, so a missing reason fails at the database.
-4. Call `SaveChangesAsync`, then `CommitAsync`. Both the token and the audit row
+5. Call `SaveChangesAsync`, then `CommitAsync`. Both the token and the audit row
    commit together.
+
+The audit row write stays in the same owned transaction as the token insert, so
+atomicity is preserved exactly as the spike proved it. Adding the principal to
+the descriptor changes only what the token contains, not where or when it is
+written.
 
 Gate 2's forced-failure case proves the rollback half of this. The test injects
 an audit-write failure (a null reason that violates the `NOT NULL` column) after
@@ -185,10 +254,10 @@ before wiring the mint.
 
 - [Persistence and contexts](03-persistence-and-contexts.md). The `SupportAudit`
   table lives in the OpenIddict context (`IdmtOpenIddictDbContext`) precisely so
-  it shares the token store's transaction. Placing it in the multi-tenant
-  identity context would break atomicity, because the audit write would then run
-  against a different `DbContext` and could not enlist in the token's
-  transaction.
+  it shares the token store's transaction. This placement is authoritative: 03 is
+  corrected to match it. Placing it in the multi-tenant identity context would
+  break atomicity, because the audit write would then run against a different
+  `DbContext` and could not enlist in the token's transaction.
 - [OpenIddict server configuration](04-openiddict-server.md). The mint depends
   on reference tokens, the `support` scope being seeded, and the token-exchange
   grant staying unregistered.
@@ -205,6 +274,12 @@ infrastructure rather than in description.
 
 The mint is correct when:
 
+- **End-to-end validatable.** A minted support token presented to a tenant-scoped
+  route returns 200; after the token is revoked, re-presenting it returns 401.
+  This is the acceptance criterion, not a check of any descriptor field. Invariant
+  7 (audited support) is not proven until this end-to-end round trip passes,
+  because a token that cannot be presented is not the capability the mint claims
+  to deliver.
 - **Atomic success.** A clean mint persists both the token and the audit row,
   together, after the gate passes. The token count and the audit count each
   increase by exactly one.
@@ -218,9 +293,9 @@ The mint is correct when:
   expires at or below the ceiling, never above it.
 
 These checks land in the support-token suite. See the
-[test suite](14-test-suite.md) for the full set, including the support audit
-atomicity test and the support TTL cap test called out in the ADR's test
-strategy.
+[test suite](14-test-suite.md) for the full set, including the end-to-end
+present-then-revoke validation test, the support audit atomicity test, and the
+support TTL cap test called out in the ADR's test strategy.
 
 ## Next steps
 

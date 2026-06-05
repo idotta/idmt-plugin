@@ -1,14 +1,18 @@
 # Persistence and contexts
 
-The v2 persistence layer is two Entity Framework Core contexts with two
-independent migration histories. `IdmtDbContext` is the multi-tenant application
+The v2 persistence layer is a physical split into three Entity Framework Core
+contexts, each with its own independent migration history. This is a real
+context split, not a single context presented as "conceptually consolidated":
+the product ships the three contexts named below and the spike proved the split,
+not a merge. `IdmtDbContext` is the multi-tenant application and identity
 context: it holds the canonical identity tables and lets Finbuckle stamp
 `TenantId` on save. `IdmtOpenIddictDbContext` is a separate, tenant-agnostic
 context that hosts the OpenIddict stores and never derives from Finbuckle's
-`MultiTenantDbContext`. You split persistence this way because the token
-endpoint issues tokens in a pipeline scope where the ambient tenant is often
-unset, and a Finbuckle-derived context would try to stamp and filter on
-`TenantId` there, which throws or mis-stamps.
+`MultiTenantDbContext`. `IdmtTenantStoreDbContext` is the dedicated tenant-store
+context that persists the tenant metadata Finbuckle resolves against. You split
+persistence this way because the token endpoint issues tokens in a pipeline
+scope where the ambient tenant is often unset, and a Finbuckle-derived context
+would try to stamp and filter on `TenantId` there, which throws or mis-stamps.
 
 This split is the sharpest integration risk in v2, the reconciliation of
 Finbuckle's tenant stamping with OpenIddict's token stores, and the spike's
@@ -19,21 +23,27 @@ token entity has no `TenantId` column at all.
 
 ## What you build
 
-You build two contexts and two migration histories, one history per context.
-The two contexts share a database but never share a migration history, so each
-evolves on its own schedule and neither stamps the other's tables.
+You build three contexts and three migration histories, one history per context.
+The contexts may share a database, but they never share a migration history, so
+each evolves on its own schedule and neither stamps the other's tables. Each
+context names its own `MigrationsHistoryTable` so the histories cannot collide in
+a shared database (see [Migrations](#migrations)).
 
-- `IdmtDbContext`: the multi-tenant application context. It holds `IdmtUser`,
-  `IdmtRole`, `TenantAccess`, the system-role assignment, the email-change
-  staging, and the support-audit tables. Finbuckle stamps `TenantId` on the
+- `IdmtDbContext`: the multi-tenant application and identity context. It holds
+  `IdmtUser`, `IdmtRole`, `TenantAccess`, `ClientTenantAccess`, the system-role
+  assignment, and the email-change staging. Finbuckle stamps `TenantId` on the
   multi-tenant entities at `SaveChanges` and fixes the context's tenant for its
   lifetime.
 - `IdmtOpenIddictDbContext`: the tenant-agnostic OpenIddict context. It hosts
   the OpenIddict application, authorization, scope, and token stores through
-  `builder.UseOpenIddict()`. It does not derive from `MultiTenantDbContext`, so
-  Finbuckle never stamps or filters its tables.
-- Two migration histories, generated and applied with the four `dotnet ef`
-  commands in [Migrations](#migrations).
+  `builder.UseOpenIddict()`, plus the support-audit table (owned here for
+  transaction atomicity, see [the tenant-agnostic OpenIddict
+  context](#the-tenant-agnostic-openiddict-context)). It does not derive from
+  `MultiTenantDbContext`, so Finbuckle never stamps or filters its tables.
+- `IdmtTenantStoreDbContext`: the dedicated tenant-store context that persists
+  the tenant metadata Finbuckle resolves against.
+- Three migration histories, generated and applied with the `dotnet ef` commands
+  in [Migrations](#migrations).
 
 ## Source of truth
 
@@ -67,11 +77,19 @@ The tables it owns are the application side of v2:
 - `IdmtUser`: the global canonical identity, one row per human.
 - `IdmtRole`: the per-tenant role.
 - `TenantAccess`: the user-to-tenant edge the issuance gate queries.
+- `ClientTenantAccess`: the machine-client-to-tenant edge the client-credentials
+  gate queries (the client analog of `TenantAccess`, defined in
+  [02-core-domain.md](02-core-domain.md)). It belongs with the multi-tenant
+  application and identity data, so it lives in this context and this context's
+  migration history.
 - the system-role assignment.
 - the email-change staging table.
-- the support-audit tables (see the placement note in [the tenant-agnostic
-  OpenIddict context](#the-tenant-agnostic-openiddict-context) for the case
-  where the audit row must share OpenIddict's transaction).
+
+The support-audit table is not owned here. It lives in the OpenIddict context so
+the audit row and the token-store insert commit or roll back together. See [the
+tenant-agnostic OpenIddict context](#the-tenant-agnostic-openiddict-context),
+with [08-support-token-mint.md](08-support-token-mint.md) authoritative for the
+atomicity guarantee that drives the placement.
 
 Finbuckle stamps `TenantId` onto tracked multi-tenant entities on `SaveChanges`
 and treats the context's tenant as fixed for its lifetime. The spike split the
@@ -80,10 +98,13 @@ application side across two contexts to isolate each half of gate 4:
 plain (non-multi-tenant) context, because the gate must query `TenantAccess` by
 `(userId, tenantId)` at the token endpoint where there is no ambient tenant,
 and `IdmtTenantDbContext` extends `MultiTenantDbContext` and holds the
-`[MultiTenant]` entity whose `TenantId` is stamped on save. The product
-consolidates this application side conceptually as `IdmtDbContext`. The split in
-the spike exists to prove the stamping half coexists with the tenant-agnostic
-OpenIddict stores, not to prescribe two application contexts in the product.
+`[MultiTenant]` entity whose `TenantId` is stamped on save. The product keeps
+this as a real physical split rather than collapsing it into one
+`MultiTenantDbContext`, because the gate's no-ambient-tenant query is exactly
+what the split proves works. The names above are the spike's; the product's
+application-side context is `IdmtDbContext`, and where the gate must read
+`TenantAccess` with no ambient tenant it does so through the plain (non-Finbuckle)
+half of that split.
 
 ## The tenant-agnostic OpenIddict context
 
@@ -118,15 +139,16 @@ endpoint must read. A plain context avoids both the save-side stamping and the
 read-side filtering, which is why the split is mandatory and not a tuning
 choice.
 
-The audit-table placement is conditional. When the support audit must share
-OpenIddict's transaction so the audit row and the token-store insert commit or
-roll back together, the audit table lives in this context rather than in
-`IdmtDbContext`. The spike places `SupportAudit` in `IdmtOpenIddictDbContext`
-for exactly this reason: the OpenIddict store resolves the same scoped
-`DbContext`, so the token insert enlists in IDMT's transaction, and a forced
-audit-write failure rolls back the already-persisted token. See
+The support-audit table lives in this context, not in `IdmtDbContext`. The
+support audit must share OpenIddict's transaction so the audit row and the
+token-store insert commit or roll back together, so `SupportAudit` is owned by
+this context's migration history. The spike places `SupportAudit` in
+`IdmtOpenIddictDbContext` for exactly this reason: the OpenIddict store resolves
+the same scoped `DbContext`, so the token insert enlists in IDMT's transaction,
+and a forced audit-write failure rolls back the already-persisted token. See
 [08-support-token-mint.md](08-support-token-mint.md) for the mint flow and the
-atomicity guarantee that drives this placement.
+atomicity guarantee that drives this placement; 08 is authoritative for the
+support-audit ownership.
 
 ## Why two contexts
 
@@ -157,16 +179,35 @@ OAuth tables opt out of it, and the two coexist in one database.
 
 Each context owns an independent migration history. You generate and apply each
 history with its own `dotnet ef` command targeting the context by name, so the
-two schemas evolve and deploy without colliding.
+three schemas evolve and deploy without colliding.
 
 Generate the initial schema, one migration per context, then apply each:
 
 ```bash
 dotnet ef migrations add InitialCreate --context IdmtDbContext
 dotnet ef migrations add InitialCreate --context IdmtOpenIddictDbContext
+dotnet ef migrations add InitialCreate --context IdmtTenantStoreDbContext
 dotnet ef database update --context IdmtDbContext
 dotnet ef database update --context IdmtOpenIddictDbContext
+dotnet ef database update --context IdmtTenantStoreDbContext
 ```
+
+When the three contexts share a database, give each its own history table so the
+default `__EFMigrationsHistory` table does not collide. Each context sets a
+distinct `MigrationsHistoryTable` (or a distinct schema) on its provider
+configuration, for example:
+
+```csharp
+options.UseSqlite(
+    connectionString,
+    sql => sql.MigrationsHistoryTable("__IdmtMigrationsHistory"));
+// IdmtOpenIddictDbContext -> "__IdmtOpenIddictMigrationsHistory"
+// IdmtTenantStoreDbContext -> "__IdmtTenantStoreMigrationsHistory"
+```
+
+The spike ran the contexts on separate in-memory SQLite connections, so it never
+exercised the shared-database case. The per-context history table is the
+provision that makes a single shared database safe for the three histories.
 
 There is no `RevokedToken` table in v2. The OpenIddict token store is
 authoritative for revocation, so a revocation is a row update in the OpenIddict
@@ -209,7 +250,7 @@ a mocked store.
 
 ## Next steps
 
-With the two contexts and their migration histories in place, you wire the
+With the three contexts and their migration histories in place, you wire the
 OpenIddict server on top of `IdmtOpenIddictDbContext`. That configuration locks
 reference tokens, token-entry validation, refresh rotation, and the audience
 handler.

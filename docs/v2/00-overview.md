@@ -3,7 +3,7 @@
 This playbook is the engineering build guide for IDMT v2, a .NET 10 and
 C# 14 multi-tenant identity library. It turns the accepted architecture in
 [ADR 0002](../../adr/0002-idmt-v2-openiddict-authorization-layer.md) into an
-ordered set of build tasks you follow to ship the three packages. You follow
+ordered set of build tasks you follow to ship the two packages. You follow
 this playbook if you're implementing IDMT v2, reviewing that implementation, or
 extending it as a consumer who needs to know which behavior is locked and which
 is yours to shape. v2 is greenfield: there is no v1 migration path, no
@@ -42,31 +42,43 @@ system-admin side. This division is fixed, and the rest of the playbook holds it
 
 ## Package map
 
-v2 ships as three NuGet packages plus a test project that enforces the boundary
-between them. The boundary that matters keeps infrastructure types out of the
-domain, and you enforce it with a fitness test rather than a convention. The
-following list names each package and the single responsibility it carries.
+v2 ships as two NuGet packages, built from three projects plus a test project
+that enforces the boundary between them. `Idmt.Core` is a separate project but
+not a shipped package: there is no consumer of the domain without the host, so
+its assembly is folded into the `Idmt.AspNetCore` package. The split stays a
+project boundary purely to keep the engine-isolation guarantee compile-enforced.
+The boundary that matters keeps the engine infrastructure (OpenIddict, Finbuckle,
+Entity Framework Core) out of the domain, and you enforce it with a fitness test
+rather than a convention. The following list names each project and the single
+responsibility it carries.
 
-- `Idmt.Core`: the domain only (canonical `IdmtUser`, `IdmtRole`,
-  `TenantAccess`, `SysRole`, the authorization policies, the support-capability
-  rule, and the repository and service ports), referencing zero infrastructure
-  (no OpenIddict, Finbuckle, Entity Framework Core, or ASP.NET Core).
-- `Idmt.AspNetCore`: the composition root and the only package most consumers
-  add, hosting OpenIddict, Finbuckle, Entity Framework Core, and the endpoints
-  in dedicated folders.
+- `Idmt.Core`: a separate, non-packable project holding the domain only (canonical
+  `IdmtUser`, `IdmtRole`, `TenantAccess`, `ClientTenantAccess`, `SysRole`, the
+  authorization policies, the support-capability rule, the gate service ports, and
+  a clock port). It references no engine infrastructure (no OpenIddict, Finbuckle,
+  or Entity Framework Core) and depends only on the ASP.NET Core Identity
+  abstractions its entities extend. Data access is not abstracted here: it lives in
+  `Idmt.AspNetCore` against Entity Framework Core directly.
+- `Idmt.AspNetCore`: the composition root and the package most consumers add,
+  hosting OpenIddict, Finbuckle, Entity Framework Core, and the endpoints in
+  dedicated folders. Its package includes the `Idmt.Core` assembly.
 - `Idmt.Mfa`: the opt-in second factor (TOTP now, WebAuthn through
-  `fido2-net-lib` later), kept separate so the WebAuthn dependency stays off the
-  main package.
+  `fido2-net-lib` later), shipped as its own package so the WebAuthn dependency
+  stays off the main package.
 - `Idmt.Architecture.Tests`: the fitness function that fails the build if
-  `Idmt.Core` references any infrastructure assembly.
+  `Idmt.Core` references any denied infrastructure assembly.
 
 ## Locked security invariants
 
-These are the nine security properties IDMT applies unconditionally inside the
-builder's `Build()` step, regardless of what a consumer configured. They are the
-heart of the "opinionated but customizable" seam: a consumer can add behavior
-but cannot subtract any one of them. The list below states each invariant in one
-line; [`10-locked-seam.md`](10-locked-seam.md) covers how `Build()` enforces them.
+These are the nine security properties IDMT applies unconditionally, regardless
+of what a consumer configured. They are the heart of the "opinionated but
+customizable" seam: a consumer can add behavior but cannot subtract any one of
+them. They are not all enforced the same way. The options-flag invariants (class
+A) are enforced by the `Build()` last-wins registration plus a startup self-check;
+the rest (class B) are guaranteed structurally by the absence of a subtraction
+seam plus the CI test suite. The list below states each invariant in one line;
+[`10-locked-seam.md`](10-locked-seam.md) holds the full split and covers how each
+class is enforced.
 
 1. The uniform `TenantAccess` gate runs at token issuance for every grant and at
    every server-side support-token mint.
@@ -89,12 +101,18 @@ line; [`10-locked-seam.md`](10-locked-seam.md) covers how `Build()` enforces the
    anti-forgery token) is mandatory on the backend-for-frontend session whenever
    that session surface is enabled.
 
-The lock is two layers. `Build()` applies the locked configuration as the
-last-registered options, so it overrides earlier consumer configuration and
-stops accidental subtraction, and an `IStartupFilter` self-check asserts the
-invariants at startup and fails fast when one is missing. A consumer can add
-behavior on top of any invariant, but cannot subtract a locked property without
-the build or startup failing.
+The lock works in two ways, split by class. For the class A options-flag
+invariants (reference tokens, token-entry validation, refresh rotation, and the
+audience handler registration), `Build()` applies the locked configuration as the
+last-registered options so it overrides earlier consumer configuration, and an
+`IStartupFilter` self-check asserts those flags at startup and fails fast when one
+is missing. The class B invariants (the uniform gate, the TTL ceiling, atomic
+audit, MFA, and CSRF) are not snapshot-checkable flags: they are guaranteed
+structurally, because IDMT exposes no API to disable them, owns their call sites,
+and the test suite fails on regression. A consumer can add behavior on top of any
+invariant, but cannot subtract a locked property without the build, the startup
+self-check, or CI failing. [`10-locked-seam.md`](10-locked-seam.md) holds the full
+class A versus class B split.
 
 ## Build tasks
 
@@ -105,9 +123,9 @@ makes.
 
 | File | Task | Source (ADR / spike) |
 |------|------|----------------------|
-| `01-solution-and-packages.md` | Greenfield solution scaffold: three packages plus `Idmt.Architecture.Tests` fitness function | §2.2, §4 |
-| `02-core-domain.md` | `Idmt.Core`: `IdmtUser` (global), `IdmtRole` (per-tenant), `SysRole`/`SysRoleKind`, `TenantAccess`, policy constants, support-capability rules, repository and service ports | §2.1, §2.7 |
-| `03-persistence-and-contexts.md` | Two EF Core contexts: `IdmtDbContext` (multi-tenant) and `IdmtOpenIddictDbContext` (tenant-agnostic); two migration histories | §2.6, §3; gate 4 |
+| `01-solution-and-packages.md` | Greenfield solution scaffold: two packages, the non-packable `Idmt.Core` project, plus the `Idmt.Architecture.Tests` fitness function | §2.2, §4 |
+| `02-core-domain.md` | `Idmt.Core`: `IdmtUser` (global), `IdmtRole` (per-tenant), `SysRole`/`SysRoleKind`, `TenantAccess`, policy constants, support-capability rules, gate service ports, clock port | §2.1, §2.7 |
+| `03-persistence-and-contexts.md` | Three public EF Core contexts: `IdmtDbContext` (identity and multi-tenant app data), `IdmtOpenIddictDbContext` (tenant-agnostic OpenIddict store), and the tenant-store context (tenant metadata); separate migration histories | §2.6, §3; gate 4 |
 | `04-openiddict-server.md` | Engine wiring: reference tokens, `EnableTokenEntryValidation()`, `UseLocalServer()`, grants (auth-code with PKCE, client credentials, refresh), `/connect/*` endpoints | §2.3, §2.5; gate 1 |
 | `05-multitenancy-audience.md` | Finbuckle wiring, `TenantUrns`, `TenantAudienceValidationHandler`, `resource` parameter convention, refresh `aud` precedence | §2.4, §2.6; gates 3, 4 |
 | `06-tenant-access-gate.md` | Uniform `TenantAccess` gate at issuance for every grant and every mint | §2.7; gates 2, 6 |

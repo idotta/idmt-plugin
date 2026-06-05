@@ -33,10 +33,15 @@ You build three things:
 - The two revoke paths. Full revocation drops every token the subject holds in
   one call. Single-tenant revocation finds the `(user, tenant)` authorization
   and drops the tokens grouped under it.
-- The `SecurityStamp` hook. A hook on the credential-change paths (password
-  change, email change, `UpdateSecurityStampAsync`, deactivation) that calls the
-  full or per-tenant revoke depending on the scope of the change. This is locked
-  invariant 5.
+- The `SecurityStamp` hook, wired through a custom `UserManager<IdmtUser>`
+  override. The override is the single chokepoint on the credential-change paths
+  (password change, email change, `UpdateSecurityStampAsync`, deactivation) that
+  calls the full or per-tenant revoke depending on the scope of the change. This
+  is locked invariant 5.
+- An authorization uniqueness guard on `(subject, tenant)`. A unique constraint
+  or upsert that holds the at-most-one-authorization invariant the per-tenant
+  revoke depends on. This is a build requirement of this task, not deferred
+  hardening (see the section below).
 
 ## Source of truth
 
@@ -141,8 +146,32 @@ OpenIddict store. The `SecurityStamp` stays the source-of-truth signal that a
 credential changed; the hook is the action that propagates that signal to issued
 tokens, because the engine does not.
 
-IDMT registers the hook on the credential-change paths: password change, email
-change, `UpdateSecurityStampAsync`, and deactivation, plus compromise response.
+### Where the hook is wired
+
+Identity exposes no built-in "stamp changed" event, so there is no callback to
+subscribe to. The interception point IDMT uses is a custom `UserManager<IdmtUser>`
+override. Every credential change funnels through `UserManager<IdmtUser>`, so
+overriding the credential-change methods on a derived manager is the single
+chokepoint where the revoke can fire without scattering call sites:
+
+- Override `UpdateSecurityStampAsync` (the method every credential rotation
+  ultimately calls) to run the base rotation and then fire the full revoke.
+- Override the password-change, email-change, and deactivation paths the same
+  way, choosing the full or per-tenant revoke for the scope of the change, then
+  delegating to `base`.
+
+Register the derived manager in DI (for example with
+`AddUserManager<IdmtUserManager>()` on the Identity builder) so it replaces the
+default `UserManager<IdmtUser>` everywhere IDMT and consumers resolve it. The
+override is the only thing that guarantees a credential change reaches the
+OpenIddict store.
+
+The startup self-check cannot observe that this override is installed: the
+self-check inspects options, and a `UserManager` substitution is a DI
+registration, not an options flag. A dedicated test therefore covers that the
+override fires the revoke. That test lives in
+[the test suite](14-test-suite.md); this page only requires the override.
+
 The hook chooses its revoke path by the scope of the change:
 
 - A full credential change calls the full path, `RevokeBySubjectAsync`, so every
@@ -158,11 +187,13 @@ reference tokens validated with `EnableTokenEntryValidation()` (locked in
 local validation handler reads that entry on the very next request, so a revoked
 token returns 401 before its TTL would have expired.
 
-## Hardening and deferred work
+## Authorization uniqueness: a build requirement
 
-This section is a promoted spike TODO, and it is load-bearing. The spike's
+This is a build requirement of this task, not deferred hardening. The spike's
 find-or-create authorization is correct only when mints run sequentially, and the
-production implementation must close that gap before it ships.
+production implementation must close that gap before it ships. Duplicate
+authorizations make single-tenant revocation under-revoke and leave live tokens,
+so the guard is part of what "the per-tenant revoke works" means.
 
 The hazard is in `EnsureTenantAuthorizationAsync`. It is a check-then-create:
 find the `(subject, tenant)` authorization, and create one if none exists. The
@@ -180,10 +211,15 @@ unaffected, because `RevokeBySubjectAsync` drops every token regardless of how
 many authorizations group them.
 
 The production implementation must guarantee at most one authorization per
-`(subject, tenant)`. You add a uniqueness guard or an upsert on
+`(subject, tenant)`. You add a unique constraint or an upsert on
 `(subject, tenant)` authorizations so concurrent mints converge on one row
 rather than racing to create two. This is a correctness requirement for
-single-tenant revocation, not an optimization.
+single-tenant revocation, not an optimization, and it ships with this task.
+
+A concurrent-mint test proves the guard holds: two parallel mints for the same
+`(subject, tenant)` must converge on exactly one authorization, so a later
+single-tenant revoke drops every token rather than missing a duplicate's group.
+That test lives in [the test suite](14-test-suite.md).
 
 ## Dependencies
 

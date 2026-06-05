@@ -39,7 +39,8 @@ open question that tracks factor selection. The seam doc holds the full
 statement of the fail-fast rule.
 
 - [ADR 0002 §2.2](../../adr/0002-idmt-v2-openiddict-authorization-layer.md#22-module-boundaries-three-packages),
-  the three packages, including `Idmt.Mfa` as the opt-in factor package.
+  the module split, with `Idmt.Mfa` as the opt-in factor package (one of the two
+  shipped packages; `Idmt.Core` is a project folded into `Idmt.AspNetCore`).
 - [ADR 0002 §2.9](../../adr/0002-idmt-v2-openiddict-authorization-layer.md#29-the-opinionated-and-customizable-seam),
   locked invariant 8 (the second-factor requirement) and the MFA fail-fast rule.
 - [ADR 0002 §5.2](../../adr/0002-idmt-v2-openiddict-authorization-layer.md#52-risk-and-mitigation),
@@ -62,6 +63,16 @@ alongside the other domain invariants, and it references no factor technology.
 It does not know what TOTP is. It knows only that a registered provider must
 confirm a second factor for a triggering user, and that no token issues without
 that confirmation.
+
+The confirmation happens at the interactive `/connect/authorize` step, where a
+user subject is present and the provider can prompt for the factor. Once the
+provider confirms, the satisfaction is recorded into the authorization, and the
+issuance path reads that recorded state before it mints a token (the issuance
+read lives in [the tenant-access gate](06-tenant-access-gate.md), a separate read
+at the same handler, not a parameter on the gate). A pure client-credentials
+grant has no user subject and no interactive authorize step, so it cannot be a
+triggering user and is exempt from the second-factor requirement; only the
+user-bearing grants reach this check.
 
 The implementation is the factor itself: the TOTP secret, the enrollment flow,
 the six-digit code check, and later the WebAuthn credential. All of that lives
@@ -115,17 +126,25 @@ record that choice in writing. The full statement lives in
 
 - MFA enforcement is on, which is the default.
 - No factor provider is registered.
-- Either the sys-admin surface is mapped, or multi-tenant membership is
-  permitted.
+- Either `EnableSysAdminSurface()` was called on the builder, or multi-tenant
+  membership is permitted.
 
-A purely single-tenant app with no sys-admin surface can never produce a
-triggering user, so it never trips the check and never pays the MFA-provider tax
-on day one. The moment a deployment maps the sys-admin surface or permits
-multi-tenant membership, it can produce a triggering user, so the build demands
-either a registered provider or an explicit opt-out.
+The trigger keys on the registration-time builder flag, not on whether a surface
+is mapped. `MapIdmtSysAdminApi` runs after `Build()`, so `Build()` cannot observe
+the mapping; the `EnableSysAdminSurface()` flag the builder records at
+registration time is the signal `Build()` reads. (`MapIdmtSysAdminApi` in turn
+asserts that the same flag was set, so the two stay in step.)
 
-The opt-out is deliberate friction. A deployment that maps those surfaces and
-genuinely wants single factor for the locked classes must opt out explicitly.
+A purely single-tenant app that never calls `EnableSysAdminSurface()` can never
+produce a triggering user, so it never trips the check and never pays the
+MFA-provider tax on day one. The moment a deployment calls
+`EnableSysAdminSurface()` or permits multi-tenant membership, it can produce a
+triggering user, so the build demands either a registered provider or an explicit
+opt-out.
+
+The opt-out is deliberate friction. A deployment that calls
+`EnableSysAdminSurface()` or permits multi-tenant membership and genuinely wants
+single factor for the locked classes must opt out explicitly.
 That explicit opt-out turns the canonical-identity blast-radius risk into a
 recorded choice rather than an accident: the dangerous configuration stays
 reachable, but only on purpose and only in writing.
@@ -192,10 +211,10 @@ configuration and the gate refuses an unenforced token. The first criterion is
 the fail-fast rule; the second is the MFA-required issuance test from
 [§4](../../adr/0002-idmt-v2-openiddict-authorization-layer.md#4-test-strategy).
 
-- With enforcement on and no factor provider registered, a build that maps the
-  sys-admin surface or permits multi-tenant membership fails fast. A
-  single-tenant build with no sys-admin surface, under the same provider-less
-  configuration, builds without error.
+- With enforcement on and no factor provider registered, a build that called
+  `EnableSysAdminSurface()` or permits multi-tenant membership fails fast. A
+  single-tenant build that never called `EnableSysAdminSurface()`, under the same
+  provider-less configuration, builds without error.
 - With a TOTP provider registered and enforcement on, a system user who has not
   enrolled a second factor is not issued a token, and neither is a multi-tenant
   user who has not enrolled one. This is the MFA-required issuance test, and it

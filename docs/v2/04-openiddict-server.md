@@ -253,6 +253,16 @@ configuration), and production must keep HTTPS required, so it does not call
 `DisableTransportSecurityRequirement()`. Treat both as required production
 configuration, not optional polish.
 
+With a single issuer and the tenant carried as the token audience, signing-key
+custody (a key vault and a rotation policy) is a primary control, not polish. The
+canonical-identity model plus a single signing key concentrates blast radius: one
+leaked or unrotated signing key is forgeable across every tenant at once, because
+all tenants share that key and the issuer. That is why managed key custody and
+rotation are listed above as required production configuration rather than a
+hardening nicety. The alternative, per-tenant signing keys for hard cryptographic
+tenant isolation, is deliberately not the default and remains open question 4 in
+[`15-hardening-and-open-questions.md`](15-hardening-and-open-questions.md).
+
 ## Dependencies
 
 This task depends on the persistence layer being in place first, and it composes

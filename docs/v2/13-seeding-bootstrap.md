@@ -136,6 +136,22 @@ scope. You register application scopes the same conditional way you register
 clients: look the scope up by name through `IOpenIddictScopeManager`, and create
 it only when it is missing.
 
+## Tenant resources
+
+You register each tenant's URN as an OpenIddict resource so the RFC 8707
+`resource` parameter validates against it. The audience layer binds a token to a
+tenant by stamping the tenant URN as the audience, and a caller asks for that
+binding by passing the URN in the standard `resource` parameter rather than the
+spike's custom `tenant` form field. For OpenIddict to accept the `resource`
+value, the URN has to exist in the scope or resource catalog; an unregistered
+resource is rejected. So the seeder, when it seeds a tenant, also registers that
+tenant's URN through `IOpenIddictScopeManager` as a resource, keyed by the
+tenant's Finbuckle identifier through `TenantUrns.For(tenantIdentifier)`. See
+[multitenancy and the audience layer](05-multitenancy-audience.md) for the
+`resource` convention and how the URN becomes the token audience. You register
+each resource the same conditional way as scopes and clients: look it up first,
+create it only when it is missing.
+
 ## First system administrator
 
 You bootstrap the first system administrator by creating an initial `IdmtUser`
@@ -172,6 +188,15 @@ await users.CreateAsync(admin, /* password from configuration */);
 idDb.TenantAccess.Add(new TenantAccess { UserId = admin.Id, TenantId = TenantA });
 await idDb.SaveChangesAsync(ct);
 ```
+
+The value written into `TenantAccess.TenantId` is the Finbuckle tenant
+identifier string (here `TenantA` holds the identifier, for example `"acme"`),
+not the Finbuckle internal `Id`. The gate is called with the resolved tenant's
+identifier, so the seeder has to write the identifier for the lookup to match.
+Writing the internal `Id` instead would make every gate check miss and lock the
+admin out of every tenant. See
+[the tenant-access gate](06-tenant-access-gate.md) for the identifier semantics
+the gate relies on.
 
 You source the admin's email and initial credential from configuration so they
 are not hard-coded, and you create the row only when the user does not already
@@ -220,6 +245,9 @@ checks that prove it.
   `ProofKeyForCodeExchange` requirement is enforced, not decorative).
 - The `support` scope exists in the scope catalog, so the support-token mint can
   issue it and validation accepts it.
+- Each seeded tenant's URN is registered as an OpenIddict resource, so an
+  authorize or token request that passes that URN in the RFC 8707 `resource`
+  parameter validates instead of being rejected as an unknown resource.
 - The first administrator can authenticate and reach the sys-admin surface behind
   `RequireSysAdmin`, and holds a `TenantAccess` row that lets the admin act in a
   tenant.

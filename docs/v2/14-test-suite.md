@@ -23,12 +23,18 @@ style. Together they cover every locked invariant in §2.9 and every test listed
 in §4.
 
 The architecture fitness test lives in `Idmt.Architecture.Tests` and asserts the
-§2.2 dependency rule: `Idmt.Core` references no infrastructure assembly (no
-OpenIddict, no Finbuckle, no Entity Framework Core, no ASP.NET Core). This is the
-fitness function described in [the solution and packages doc](01-solution-and-packages.md),
-and it is the one test in the suite with no spike gate, because it guards a
-compile-time boundary rather than a runtime mechanism. It fails the build the
-moment a domain type reaches for a vendor type.
+§2.2 dependency rule with its carve-out: `Idmt.Core` references no infrastructure
+assembly (no OpenIddict, no Finbuckle, no Entity Framework Core, and not the
+Identity Entity Framework Core store package), while the allowed ASP.NET Core
+Identity abstractions (`Microsoft.Extensions.Identity.Stores`,
+`Microsoft.AspNetCore.Identity`) are explicitly not flagged. The test pins both
+halves: the denied infrastructure assemblies still fail the build, and the two
+permitted abstraction assemblies pass, so the carve-out cannot silently widen into
+a leak. This is the fitness function described in
+[the solution and packages doc](01-solution-and-packages.md), and it is the one
+test in the suite with no spike gate, because it guards a compile-time boundary
+rather than a runtime mechanism. It fails the build the moment a domain type
+reaches for a denied vendor type.
 
 The integration matrix runs each remaining invariant against the configured
 handlers, not against mocks. You authenticate a client for a tenant, exercise the
@@ -70,16 +76,20 @@ extend it are noted in the gate column.
 
 | Test | What it asserts | ADR §4 item | Spike gate |
 |---|---|---|---|
-| Architecture fitness | `Idmt.Core` references zero infrastructure assemblies; vendor types appear only in their owning folder. | Architecture fitness function | None (the §2.2 fitness function; see [solution and packages](01-solution-and-packages.md)) |
+| Architecture fitness | `Idmt.Core` references no denied infrastructure assembly and the allowed Identity abstractions (`Microsoft.Extensions.Identity.Stores`, `Microsoft.AspNetCore.Identity`) are not flagged; vendor types appear only in their owning folder. | Architecture fitness function | None (the §2.2 fitness function; see [solution and packages](01-solution-and-packages.md)) |
 | Route-mutation fuzzer | Authenticate for tenant A, mutate the route segment to every other known tenant, and assert 403 or 401 from the real audience handler. | Route-mutation fuzzer | Gate 3 (audience handler) |
-| `TenantAccess` gate, parametric | For every grant type, including refresh, plus the server-side support mint, a user with no or expired `TenantAccess` is denied a token. | `TenantAccess` gate, parametric | Gates 2 and 6 |
+| `TenantAccess` gate, parametric (public grants) | Parametric across the auth-code, refresh, and client-credentials grants: a subject with no or expired `TenantAccess` (or, for client-credentials, a client with no `ClientTenantAccess`) is denied a token by the sign-in-path gate handler. | `TenantAccess` gate, parametric | None for the public grants (gates 2 and 6 prove only the server-side mint and the `SecurityStamp` hook, not any public grant; net-new) |
+| Gate port unit outcomes | Through the gate port directly (no host), assert the three outcomes: active-unexpired passes, expired fails, missing fails. | `TenantAccess` gate, parametric | None (net-new unit test of the gate port; no separate rule type) |
 | Reference-token instant revocation | Mint a token, revoke it, and assert the next request returns 401 before the token's TTL expires, against the configured handler. | Reference-token instant revocation | Gate 1 |
 | Refresh reuse detection | Rotate a refresh token, replay the consumed one, and assert rejection plus token-family revocation. | Refresh reuse detection | None (OpenIddict built-in; no dedicated gate, net-new product test) |
 | Cross-grant audience isolation | Present a tenant-A refresh token at `/connect/token` resolving tenant B, and assert rejection. | Cross-grant audience isolation | Gate 3 family (audience binding) |
+| Support token end-to-end (mint, present, revoke) | Mint a support token, present it to a tenant-scoped route and assert 200, revoke it, re-present and assert 401. Invariant 7 is not proven until this passes. | Support audit atomicity / `TenantAccess` gate | None (the spike mint produced a store row that was not bearer-validatable; net-new end-to-end proof) |
 | Support audit atomicity | Force an audit-write failure during a support mint and assert neither the token nor the audit row survives (shared transaction rolls back). | Support audit atomicity | Gate 2 |
 | Support TTL cap | Request a lifetime above the ceiling and assert the issued token expires at or below the ceiling. | Support TTL cap | None (net-new product test) |
 | Cross-tenant token rejection | Use a tenant-A token against a tenant-B route and assert 401 from the audience handler. | Cross-tenant token rejection | Gate 3 |
+| Same-tenant pass (ordering regression guard) | Present a tenant-A token to a tenant-A route and assert 200. This pins the middleware order (Finbuckle resolves the tenant before authentication): a regression that runs auth before tenant resolution leaves the resolved tenant null and fails this test in CI. | Cross-tenant token rejection | Gate 3 (audience handler) |
 | `SecurityStamp` propagation | Rotate a user's `SecurityStamp` and assert all of that user's reference tokens return 401 on the next request. | `SecurityStamp` propagation | Gate 6 |
+| `UserManager` override fires the revoke | Drive a credential change through the custom `UserManager<IdmtUser>` override (password change, email change, stamp update, or deactivation) and assert the revoke fired. The startup self-check cannot observe that the override is installed, so this test is the only guard that it is wired. | `SecurityStamp` propagation | None (net-new; see [revocation hooks](07-revocation-hooks.md)) |
 | MFA-required issuance | With enforcement on, assert no token issues for a system user or a multi-tenant user that has not satisfied a second factor. | MFA-required issuance | None (net-new; see [MFA](12-mfa.md)) |
 | Authorize-cookie tenant isolation | Assert an authorize-endpoint sign-in cookie minted for tenant A cannot be replayed against tenant B. | Authorize-cookie tenant isolation | Gate 8 family (interactive authorize session) |
 | BFF session isolation | Assert a tenant-A session cookie cannot drive a tenant-B request, and that it resolves through the same audience handler a raw bearer uses (no second validation path). | Backend-for-frontend session isolation | Gate 7 |
@@ -92,20 +102,22 @@ extend it are noted in the gate column.
 
 The eight spike gates map directly into product tests, so promotion is mostly a
 relocation rather than a rewrite. Gate 1 becomes the reference-token instant
-revocation test, gate 2 becomes the support audit atomicity test and one arm of
-the parametric `TenantAccess` gate, gate 3 becomes the cross-tenant rejection and
-route-mutation fuzzer and seeds the cross-grant audience-isolation test, gate 4's
-dual-context composition underpins the whole token-store layer the matrix
-exercises, gate 5 becomes the configuration integrity test, gate 6 becomes the
-`SecurityStamp` propagation test and the second arm of the parametric gate, and
-gates 7 and 8 become the BFF session isolation, BFF CSRF, no-token-in-the-browser,
-and authorize-cookie isolation tests. Each gate already ran against real
-OpenIddict, Finbuckle, and SQLite, so the product test inherits a proven
-mechanism and changes only the host wiring and the seed data.
+revocation test, gate 2 becomes the support audit atomicity test, gate 3 becomes
+the cross-tenant rejection, the same-tenant pass guard, and the route-mutation
+fuzzer, and seeds the cross-grant audience-isolation test, gate 4's dual-context
+composition underpins the whole token-store layer the matrix exercises, gate 5
+becomes the configuration integrity test, gate 6 becomes the `SecurityStamp`
+propagation test, and gates 7 and 8 become the BFF session isolation, BFF CSRF,
+no-token-in-the-browser, and authorize-cookie isolation tests. Each gate already
+ran against real OpenIddict, Finbuckle, and SQLite, so the product test inherits a
+proven mechanism and changes only the host wiring and the seed data. Note that
+gates 2 and 6 prove the server-side mint and the `SecurityStamp` hook only, not
+any public grant: the parametric `TenantAccess` gate over the public grants is
+net-new (see below), so invariant 1 is not cited as proven by these gates alone.
 
 ## Net-new tests not covered by the spike
 
-Five tests are net-new because the spike did not exercise their mechanism, and
+Several tests are net-new because the spike did not exercise their mechanism, and
 each is a product test you build from scratch rather than a promoted gate. The
 MFA-required issuance test asserts that no token issues for a system user or a
 multi-tenant user without a second factor; it is net-new because the spike never
@@ -116,6 +128,21 @@ detection test promotes an OpenIddict built-in into an explicit product test, so
 a future configuration change cannot silently disable rotation without failing
 CI. The OAuth 2.1 posture test asserts the absence of the password grant, which
 no gate covered because the spike never registered the grant to begin with.
+
+Four more are net-new and address gaps the tracker review surfaced. The
+parametric `TenantAccess` gate over the public grants (auth-code, refresh, and
+client-credentials) is net-new because gates 2 and 6 proved only the server-side
+mint and the `SecurityStamp` hook, so invariant 1 was previously over-credited;
+the matching gate port unit test pins the three gate outcomes (active-unexpired
+passes, expired fails, missing fails) directly through the port with no host and
+no separate rule type. The support token end-to-end test (mint, present for 200,
+revoke, re-present for 401) is net-new because the spike's mint produced a store
+row that was not bearer-validatable, so invariant 7 is not proven until this
+passes. The `UserManager` override test asserts the credential-change override
+fires the revoke, which the startup self-check cannot observe. And the same-tenant
+pass test guards the middleware order (Finbuckle before authentication) so an
+ordering regression fails CI rather than silently passing.
+
 Finally, the real cross-site `SameSite` redirect is out of scope here: the spike
 ran the BFF flow in-process, so a genuine cross-site redirect is deferred to
 [hardening and open questions](15-hardening-and-open-questions.md) and is not a

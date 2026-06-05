@@ -19,16 +19,25 @@ tokens promptly.
 ## What you build
 
 This section names the concrete deliverables so you can scope the work before
-reading the detail. The gate is one small port and a set of call sites; the work
-is making sure the port is called at every issuance point and nowhere is missed.
+reading the detail. The user gate and the client gate are two small ports, and
+the public grants share a single call site (a server event handler); the work is
+making sure the right gate is called at every issuance point and nowhere is
+missed.
 
-You build three things:
+You build four things:
 
 - The `ITenantAccessGate` port, declared in `Idmt.Core` and implemented in
   `Idmt.AspNetCore`, with a single `CanAccessAsync(userId, tenantIdentifier, ct)`
   method that matches the proven spike shape.
-- The per-grant enforcement: a gate call inside the `/connect/token` handler for
-  every grant type that issues a tenant-scoped token, placed before sign-in.
+- The `IClientTenantAccessGate` port, the client analog declared in `Idmt.Core`
+  and implemented in `Idmt.AspNetCore`, with a single
+  `CanAccessAsync(clientId, tenantIdentifier, ct)` method. It gates pure
+  machine-to-machine tokens that have no user subject (defined in
+  [02-core-domain.md](02-core-domain.md) and persisted per
+  [03-persistence-and-contexts.md](03-persistence-and-contexts.md)).
+- The per-grant enforcement: a single `IOpenIddictServerHandler<ProcessSignInContext>`
+  that fires once a principal is established, calls the right gate for the grant,
+  and rejects denials with `context.Reject(...)`.
 - The mint enforcement: a gate call inside the server-side support-token mint,
   run before the token is created, in addition to the system-role capability
   check.
@@ -69,6 +78,13 @@ A token for tenant `T` issues only when all of these hold:
 - That row's `IsActive` is `true`.
 - That row's `ExpiresAt` is unset (`null`) or in the future relative to the
   current clock.
+
+Stated as one predicate over the matched row, the decision is
+`isActive && (expiresAt is null || expiresAt > now)`. There is no separate rule
+type for this; it is a three-condition boolean evaluated inline by the gate
+implementation. SQLite evaluates the `expiresAt > now` comparison in memory
+because the spike's provider cannot translate the `DateTimeOffset` comparison
+(see [the gate port](#the-gate-port)).
 
 There is no system-admin bypass. A system administrator holds a `SysRole`
 capability, which is orthogonal to tenant access: it lets the administrator mint
@@ -112,7 +128,14 @@ token endpoint runs in a pipeline scope where the ambient tenant is often unset,
 so the gate must take the tenant as an explicit argument rather than read it from
 `IMultiTenantContextAccessor`. The implementation queries `TenantAccess` by
 `(userId, tenantIdentifier)`, keeps the rows where `IsActive` is `true`, and
-returns `true` when any surviving row has `ExpiresAt` null or in the future.
+returns `true` when any surviving row has `ExpiresAt` null or in the future,
+which is the predicate `isActive && (expiresAt is null || expiresAt > now)`.
+
+`TenantAccess.TenantId` stores the Finbuckle tenant *identifier* string (the
+same value the audience URN carries as `urn:idmt:tenant:{identifier}`), not the
+tenant's internal `Id`. The gate is called with that identifier, so the column it
+matches against holds the identifier, and the seeder writes the same value (see
+[13-seeding-bootstrap.md](13-seeding-bootstrap.md)).
 
 The implementation lives in `Idmt.AspNetCore` because it depends on the
 canonical-identity context. The seam in
@@ -122,35 +145,77 @@ a call site.
 
 ## Enforcement points
 
-The gate's value is entirely in where it runs. A correct port called at four
-issuance points and missed at a fifth is a hole, so the rule is mechanical: the
-gate runs at every place a tenant-scoped token is born, before the token exists.
-This section lists each point and where the check sits.
+The gate's value is entirely in where it runs. A correct port called at one
+public grant and missed at another is a hole, so the public grants share a single
+enforcement point rather than a per-handler call that a new grant could forget.
+The gate runs at every place a tenant-scoped token is born, before the token
+exists. This section names that single handler, the per-grant detail it covers,
+and the one server-side mint that runs the gate inline.
 
-- **Authorization-code grant** (`/connect/token`, code exchange). The handler
-  resolves the canonical user from the authorization code and the requested
-  tenant (resolved at `/connect/authorize` and carried forward), then calls the
-  gate before it signs in the principal. A failed gate returns an error response;
-  no token is created.
-- **Refresh grant** (`/connect/token`, refresh). The tenant is authoritative from
-  the presented refresh token's original `aud`, not from the `resource`
-  parameter. The handler re-runs the gate against that tenant on every refresh,
-  before issuing the rotated token, so access revoked between the original
-  issuance and the refresh is honored. This is the single most important
-  difference from v1: a `TenantAccess` revoked after login stops the next refresh.
-- **Client-credentials grant** (`/connect/token`), where it represents a
-  user-scoped token. When a client-credentials exchange resolves to a canonical
-  user acting in a tenant, the handler gates that `(user, tenant)` pair before
-  sign-in, the same as the code grant. A pure machine-to-machine token with no
-  user subject is out of the gate's scope, because there is no user to check
-  `TenantAccess` for.
+The public grants are gated by one `IOpenIddictServerHandler<ProcessSignInContext>`.
+It fires after the grant-specific handling has run and a principal is
+established, so it sees a settled subject for the authorization-code, refresh,
+and client-credentials grants alike. It calls the gate for the resolved
+`(subject, tenant)` and, on denial, calls `context.Reject(...)` with an OAuth
+error so the response is protocol-compliant rather than a raw failure. Routing a
+single handler across the three grants is what makes the "gate at every grant"
+invariant structural: there is one call site, and a new grant inherits it.
+
+What the handler reads differs by grant:
+
+- **Authorization-code grant** (`/connect/token`, code exchange). The principal
+  carries the canonical user and the tenant resolved at `/connect/authorize` and
+  carried forward in the authorization. The handler calls the user gate
+  (`ITenantAccessGate`) for that `(user, tenant)` pair. A denial rejects the
+  exchange; no token is created.
+- **Refresh grant** (`/connect/token`, refresh). The tenant is authoritative
+  from the presented refresh token's original `aud`, read out of the decrypted
+  presented token, not from the `resource` parameter. The handler re-runs the
+  user gate against that tenant on every refresh, before the rotated token is
+  issued, so access revoked between the original issuance and the refresh is
+  honored. This is the single most important difference from v1: a `TenantAccess`
+  revoked after login stops the next refresh.
+- **Client-credentials grant** (`/connect/token`). A pure machine-to-machine
+  token has no user subject, so the handler uses the client-to-tenant gate
+  (`IClientTenantAccessGate`) for the `(clientId, tenant)` pair, not the user
+  gate. This is the issuance gate for the client-credentials grant; the machine
+  path is gated, not out of scope. See
+  [16-machine-client-auth.md](16-machine-client-auth.md) for the client gate and
+  its `ClientTenantAccess` backing.
+
+The server-side support-token mint runs the gate inline, not through the
+ProcessSignIn handler, because it has no public grant:
+
 - **Server-side support-token mint** (`SupportTokenService`). The gate runs
   inside the mint, before `CreateAsync`, in the same transaction as the
   token-store insert and the audit write. The mint first checks that the actor
-  holds an active `SysRole` capability, then calls the gate for the target
+  holds an active `SysRole` capability, then calls the user gate for the target
   tenant; both must pass before the token is created. See gate 2 in
   `spike/src/Idmt.Spike.Host/Server/SupportTokenService.cs`, where the gate
   returns `no_tenant_access` and the mint denies the token.
+
+## Claims and second-factor state at issuance
+
+The same `ProcessSignInContext` handler that runs the gate is where IDMT
+projects its issuance claims, after the gate passes and before the token is
+written. Two reads happen here, both keyed on the resolved `(user, tenant)` and
+both distinct from the gate decision itself.
+
+First, role projection. For the resolved tenant the handler projects the user's
+`IdmtRole` assignments as role claims on the principal, with access-token
+destinations, so the tenant policies (`RequireTenantManager`,
+`RequireTenantMember`) have a claim source on the issued token. The projection is
+snapshot-at-issuance for reference tokens, the same as every other claim IDMT
+writes.
+
+Second, the second-factor read. For user grants the handler reads the recorded
+second-factor state for the authorization (the satisfaction recorded at
+interactive `/connect/authorize`, see [12-mfa.md](12-mfa.md)) and enforces the
+MFA requirement at issuance. Pure client-credentials tokens have no user
+subject and are exempt from this read. The MFA check is a separate read at this
+handler, not a parameter on the gate: the `TenantAccess` gate stays a synchronous
+`(userId, tenant)` decision, and the factor state is read alongside it, not
+folded into `CanAccessAsync`.
 
 The per-`(user, tenant)` minting unit in
 `spike/src/Idmt.Spike.Host/Server/UserTokenMint.cs` (gate 6) is the object the
@@ -193,10 +258,11 @@ both. Read these before you wire it.
   `IsActive` and `ExpiresAt`), the canonical `IdmtUser`, and the
   `ITenantAccessGate` port declaration. The gate is one of the service ports the
   core domain exposes.
-- [OpenIddict server](04-openiddict-server.md): the `/connect/token` handler and
-  the grant types (authorization code, refresh, client credentials) where the
-  gate's call sites live, and the `resource`-parameter tenant convention the
-  refresh grant reconciles against the token's `aud`.
+- [OpenIddict server](04-openiddict-server.md): the `/connect/token` pipeline and
+  the `ProcessSignInContext` event handler where the single public-grant call
+  site lives across the authorization-code, refresh, and client-credentials
+  grants, and the RFC 8707 `resource`-parameter tenant convention the refresh
+  grant reconciles against the token's `aud`.
 
 ## Acceptance criteria
 
@@ -214,8 +280,9 @@ suite must assert each of these:
   unexpired `TenantAccess` for the requested tenant.
 - The refresh grant denies a rotated token when the original tenant's
   `TenantAccess` has been revoked or expired since the first issuance.
-- The client-credentials grant, where it resolves to a user-scoped token, denies
-  a token to a user with no active, unexpired `TenantAccess` for the tenant.
+- The client-credentials grant denies a token to a machine client with no
+  active, unexpired `ClientTenantAccess` for the tenant, through the client gate
+  (`IClientTenantAccessGate`).
 - The support-token mint denies a token (gate 2, `no_tenant_access`) to a system
   user who holds the `SysRole` capability but has no active, unexpired
   `TenantAccess` for the target tenant.

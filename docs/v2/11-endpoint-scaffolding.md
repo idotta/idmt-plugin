@@ -97,6 +97,17 @@ It creates a route group under a fixed prefix (for example,
 `/api/v2/sysadmin`), attaches the `RequireSysAdmin` policy to the group,
 and delegates to the per-area feature classes. It returns the group.
 
+`MapIdmtSysAdminApi` asserts that `EnableSysAdminSurface()` was called on the
+builder before it maps anything. The assertion exists because the surface
+carries a locked control (the MFA fail-fast, invariant 8) that `Build()` can
+only enforce when it sees the flag at registration time, and `Build()` runs
+before this mapping. If the surface is mapped without the flag, the locked
+control would not have been wired, so the mapping throws rather than mounting
+an un-gated sys-admin surface. The same pattern applies to the BFF session
+mapping, which asserts `EnableBffSession()` was called so the CSRF control
+(invariant 9) is in place. See
+[the locked seam](10-locked-seam.md#surface-opt-in-flags) for the flag side.
+
 The built-in routes mounted under this group cover:
 
 - Tenant lifecycle: create, activate, suspend, and delete tenants.
@@ -118,16 +129,105 @@ you add to that group inherits `RequireSysAdmin`. A request that does not
 carry a token with the `SysAdmin` role claim is rejected by the
 authorization middleware before it reaches any handler you mount.
 
+## Email transport, link generation, and the out-of-band email-change flow
+
+The tenant surface mounts the email-confirmation, resend-confirmation, and
+out-of-band email-change endpoints, but the transport and link-generation
+machinery behind them is currently mounted yet unbuilt. This section assigns it
+an owner so it does not fall between the scaffolding and the core domain. The
+email cross-cutting concern is owned here, alongside the tenant surface that
+exposes its endpoints, and it reuses the v1 shapes rather than inventing new
+ones.
+
+- Email transport: the `IIdmtEmailSender` abstraction (the v1 shape) sends
+  confirmation, password-reset, and email-change messages. The builder's
+  `WithEmailTransport(...)` seam in [the locked seam](10-locked-seam.md#the-iidmtbuilder-fluent-interface)
+  registers the concrete sender; the default in development is the no-op or
+  logging sender the v1 sample uses.
+- Link generation: `IIdmtLinkGenerator` (the v1 interface in
+  `Idmt.Plugin/Services/IdmtLinkGenerator.cs`) builds the confirm-email,
+  password-reset, and confirm-email-change links. Keep its v1 contract:
+  `GenerateConfirmEmailLink`, `GeneratePasswordResetLink`, and
+  `GenerateConfirmEmailChangeLink`, with the locked decision that the tenant
+  identifier is not embedded as a query parameter (path or claim resolution
+  carries it instead).
+- The out-of-band email-change flow: `PUT /manage/info` stages the next email
+  into `IdmtUser.PendingEmail` and returns 202 Accepted while staged; `Email`
+  is committed only when the recipient POSTs the Identity-issued token to the
+  confirm-email-change endpoint. This is the v1 flow carried forward unchanged.
+- PII masking: structured logs in this surface mask email addresses through
+  `PiiMasker` (the v1 shape in `Idmt.Plugin/Services/PiiMasker.cs`), so a
+  confirmation or change log line never records a raw address.
+
+## Request and response record shapes for locked-invariant operations
+
+The slice records for most endpoints can be left to the implementer, following
+the vertical-slice convention. Two of the sys-admin operations touch locked
+invariants, so their request records are pinned here to keep the locked behavior
+unambiguous. They use `required` members rather than `= null!;` initializers,
+per the C# 14 convention.
+
+The support-mint request carries the audited reason that invariant 7 requires,
+so `Reason` is a `required` member with a FluentValidation `NotEmpty` rule. The
+TTL is optional because the support-token TTL ceiling (invariant 6) applies a
+default and clamps any supplied value down to the ceiling; a consumer can lower
+it but never raise it past the ceiling.
+
+```csharp
+public sealed record MintSupportTokenRequest
+{
+    public required Guid TargetUserId { get; init; }
+    public required string TenantIdentifier { get; init; }
+    public required string Reason { get; init; }
+    public TimeSpan? Ttl { get; init; }
+}
+
+internal sealed class MintSupportTokenRequestValidator
+    : AbstractValidator<MintSupportTokenRequest>
+{
+    public MintSupportTokenRequestValidator()
+    {
+        RuleFor(x => x.Reason).NotEmpty();
+    }
+}
+```
+
+The `TenantAccess` grant and revoke records carry the target user and the
+Finbuckle tenant identifier the uniform gate (invariant 1) keys on. Grant takes
+an optional expiry; revoke needs only the pairing. These mirror the v1 admin
+slice shapes in `Idmt.Plugin/Features/Admin/`.
+
+```csharp
+public sealed record GrantTenantAccessRequest
+{
+    public required Guid UserId { get; init; }
+    public required string TenantIdentifier { get; init; }
+    public DateTimeOffset? ExpiresAt { get; init; }
+}
+
+public sealed record RevokeTenantAccessRequest
+{
+    public required Guid UserId { get; init; }
+    public required string TenantIdentifier { get; init; }
+}
+```
+
 ## Authorization policy constants
 
-The five policy names are public constants in `Idmt.Core`, in
-`IdmtPolicies`. They are declared in the domain rather than in
-`Idmt.AspNetCore` because they name the authorization model IDMT owns, and
-both the scaffolding and consumer code reference them from one canonical
-spelling. The
+Four of the constants in `IdmtPolicies` are gating authorization policies:
+`RequireSysAdmin`, `RequireSysUser`, `RequireTenantManager`, and
+`RequireTenantMember`. They are public constants in `Idmt.Core`, declared in
+the domain rather than in `Idmt.AspNetCore` because they name the authorization
+model IDMT owns, and both the scaffolding and consumer code reference them from
+one canonical spelling. The
 [core domain doc](02-core-domain.md#authorization-policy-constants)
 covers their declaration and the `SysRoleKind` enum alignment in detail.
-This section explains what each policy gates and where it appears.
+This section explains what each one gates and where it appears.
+
+`SupportSession` is listed here too, but it is a different kind of thing: a
+claims-inspection helper a handler reads, not a gating policy the middleware
+enforces. It is documented at the end of the section for that reason and is not
+interchangeable with the four gating policies above.
 
 `RequireSysAdmin` gates callers who hold the `SysAdmin` system role. The
 `MapIdmtSysAdminApi` scaffolding attaches it to the sys-admin group.
@@ -153,14 +253,18 @@ route under that group, including any route you add to the returned group,
 requires a valid tenant-scoped reference token for the Finbuckle-resolved
 tenant.
 
-`SupportSession` is the impersonation-detection policy from the support
-mint. A token minted through the server-side support path carries the
-`support` scope and an RFC 8693 `act` claim naming the system user. The
-`SupportSession` policy matches when those claims are present. You apply
-it inside a handler to detect that the caller is an impersonating system
-user and then refuse destructive operations or surface a warning banner to
-the user. See [the support-token mint doc](08-support-token-mint.md) for
-the full claim projection.
+`SupportSession` is the impersonation-detection helper from the support mint.
+It is not a gating authorization policy and is not attached to a route group or
+an endpoint; the authorization middleware never evaluates it. A token minted
+through the server-side support path carries the `support` scope and an RFC 8693
+`act` claim naming the system user. `SupportSession` is a claims-inspection
+check you run inside a handler against the current `ClaimsPrincipal`: when those
+claims are present, the caller is an impersonating system user, and the handler
+can then refuse destructive operations or surface a warning banner to the user.
+Do not treat it as interchangeable with the four gating policies above; it gates
+nothing on its own and only informs handler logic. See
+[the support-token mint doc](08-support-token-mint.md) for the full claim
+projection.
 
 ## Mounting your own endpoints
 

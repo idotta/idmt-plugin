@@ -9,9 +9,13 @@ declined to settle, which you must record explicitly rather than answer silently
 while you write code.
 
 Read this as a bottom line up front. The core build (docs `00` through `14`) is
-complete and correct on a single instance. Nothing here blocks that build. Every
-item below is scheduled work or a decision to capture, and each one names exactly
-what the spike proved and what it left for you.
+complete and correct on a single instance. The near-term-hardening and
+open-question items below are scheduled work or a decision to capture, and each
+one names exactly what the spike proved and what it left for you. Two items the
+review originally tracked here as hardening have since been promoted into build
+requirements of their owning tasks and are no longer deferred (see
+[Promoted to owning tasks](#promoted-to-owning-tasks)); those two do block their
+tasks.
 
 ## Source of truth
 
@@ -34,10 +38,14 @@ The anchors you need:
 The three spike "production fix" comments, by repo-relative path:
 
 - `spike/src/Idmt.Spike.Host/Bff/AuthCodeEndpoints.cs`: the `state` value is not
-  bound to the browser, so the BFF login flow is open to OAuth login-CSRF.
+  bound to the browser, so the BFF login flow is open to OAuth login-CSRF. This is
+  now a blocking build requirement of task `09`, not a hardening item (see
+  [Promoted to owning tasks](#promoted-to-owning-tasks)).
 - `spike/src/Idmt.Spike.Host/Server/UserTokenMint.cs`: the find-or-create
   authorization is idempotent only sequentially, so concurrent mints can
-  duplicate a `(subject, tenant)` authorization.
+  duplicate a `(subject, tenant)` authorization. This is now a build requirement
+  of task `07`, not a hardening item (see
+  [Promoted to owning tasks](#promoted-to-owning-tasks)).
 - `spike/src/Idmt.Spike.Host/Bff/BffEndpoints.cs`: the gate-7 session token came
   from a client-credentials back-channel stand-in. Gate 8 resolved this, so this
   one is closed (see [Resolved stand-ins](#resolved-stand-ins)).
@@ -70,42 +78,6 @@ so settling that question and building this item are the same piece of work. See
 [`04-openiddict-server.md`](04-openiddict-server.md) for where the local handler
 and its caching live.
 
-### State-to-browser binding for the BFF login
-
-This is the most important promoted TODO. The spike's BFF login proves the
-authorization-code-with-PKCE composition end to end, but the `state` value it
-generates is server-global and not tied to the browser that started the flow.
-Any browser that presents a valid `state` at `/bff/callback` consumes the flow,
-which is textbook OAuth login-CSRF. The comment in
-`spike/src/Idmt.Spike.Host/Bff/AuthCodeEndpoints.cs` flags this and says, in so
-many words, do not copy it as-is.
-
-You must bind `state` to the initiating browser. At flow initiation, set a
-short-lived `bff_oauth_state` cookie that is `httpOnly`, `Secure`, and
-`SameSite=Lax`, carrying the same `state` value. In `/bff/callback`, require a
-constant-time match between the inbound `state` and the cookie before you consume
-the flow, then clear the cookie. Without this match, the flow stays open to
-login-CSRF. The details and the surrounding flow live in
-[`09-browser-login-bff.md`](09-browser-login-bff.md).
-
-### Authorization uniqueness guard for the mint
-
-The mint groups every tenant-scoped token a user holds under one OpenIddict
-authorization keyed to `(subject, tenant)`, which is how the single-tenant
-revoke finds and drops exactly that tenant's tokens. The spike's
-find-or-create, in `spike/src/Idmt.Spike.Host/Server/UserTokenMint.cs`, is
-idempotent only when calls run sequentially. The spike is single-threaded, so
-its proof holds.
-
-Under concurrency the check-then-create races: two mints for the same
-`(subject, tenant)` can both miss the existing row and both create an
-authorization. A later single-tenant revoke then hits one authorization and
-misses the other, so it under-revokes and leaves live tokens behind, which is a
-revocation-correctness defect, not a cosmetic one. You must add a uniqueness
-constraint on `(subject, tenant)` or an upsert so the grouping invariant holds
-under concurrent mints. The grouping design and the revoke path live in
-[`07-revocation-hooks.md`](07-revocation-hooks.md).
-
 ### Real cross-site SameSite redirect test
 
 The spike ran in-process against a `TestServer`, so the authorization-code
@@ -121,6 +93,56 @@ pairs naturally with the
 [state-to-browser binding](#state-to-browser-binding-for-the-bff-login) item,
 since both concern cookie behavior across the redirect. Add it to the suite in
 [`14-test-suite.md`](14-test-suite.md).
+
+## Promoted to owning tasks
+
+Two items the review first logged here as near-term hardening are not hardening at
+all. Each is a single-instance correctness defect, not a scale-out gap, so each
+is now a blocking build requirement of the task that owns the surface. They are
+recorded here only as a pointer to where the requirement now lives. Do not treat
+them as deferred, and do not schedule them into the production-readiness milestone;
+they ship with their owning task.
+
+### State-to-browser binding for the BFF login (now a requirement of task 09)
+
+This is a single-instance login-CSRF defect, not scale-out polish, so it is a
+blocking build requirement of [`09-browser-login-bff.md`](09-browser-login-bff.md),
+not a deferred hardening item. The spike's BFF login proves the
+authorization-code-with-PKCE composition end to end, but the `state` value it
+generates is server-global and not tied to the browser that started the flow.
+Any browser that presents a valid `state` at `/bff/callback` consumes the flow,
+which is textbook OAuth login-CSRF. The comment in
+`spike/src/Idmt.Spike.Host/Bff/AuthCodeEndpoints.cs` flags this and says, in so
+many words, do not copy it as-is.
+
+The fix is owned by task `09`: bind `state` to the initiating browser. At flow
+initiation, set a short-lived `bff_oauth_state` cookie that is `httpOnly`,
+`Secure`, and `SameSite=Lax`, carrying the same `state` value. In `/bff/callback`,
+require a constant-time match between the inbound `state` and the cookie before you
+consume the flow, then clear the cookie, and add an acceptance test. The details
+and the surrounding flow live in
+[`09-browser-login-bff.md`](09-browser-login-bff.md).
+
+### Authorization uniqueness guard for the mint (now a requirement of task 07)
+
+This is a single-instance revocation-correctness defect under concurrent mints,
+not scale-out polish, so it is a build requirement of
+[`07-revocation-hooks.md`](07-revocation-hooks.md), not a deferred hardening item.
+The mint groups every tenant-scoped token a user holds under one OpenIddict
+authorization keyed to `(subject, tenant)`, which is how the single-tenant revoke
+finds and drops exactly that tenant's tokens. The spike's find-or-create, in
+`spike/src/Idmt.Spike.Host/Server/UserTokenMint.cs`, is idempotent only when calls
+run sequentially. The spike is single-threaded, so its proof holds.
+
+Under concurrency the check-then-create races: two mints for the same
+`(subject, tenant)` can both miss the existing row and both create an
+authorization. A later single-tenant revoke then hits one authorization and
+misses the other, so it under-revokes and leaves live tokens behind, which is a
+revocation-correctness defect, not a cosmetic one. The fix is owned by task `07`:
+add a uniqueness constraint on `(subject, tenant)` or an upsert so the grouping
+invariant holds under concurrent mints, and add a concurrent-mint test. The
+grouping design and the revoke path live in
+[`07-revocation-hooks.md`](07-revocation-hooks.md).
 
 ## Open questions
 
@@ -177,6 +199,15 @@ cost of that simplicity. You revisit this only if hard cryptographic tenant
 isolation becomes a stated requirement, and if you do, you record the move away
 from the single-issuer default as an explicit decision.
 
+This default has a cost that is not deferred: because the canonical-identity model
+plus a single signing key concentrates blast radius across all tenants, one leaked
+or unrotated signing key is forgeable against every tenant at once. That elevates
+production signing-key custody (a key vault and a rotation policy) from polish to a
+primary control. The custody requirement itself is not open; it is required
+production configuration documented in the certificates section of
+[`04-openiddict-server.md`](04-openiddict-server.md). Only the per-tenant-keys
+alternative is the open question here.
+
 ### 5. Multi-factor factor selection and rollout timeline
 
 The requirement is locked: system users and multi-tenant users must satisfy a
@@ -216,11 +247,11 @@ This doc closes the build playbook, so it points backward rather than forward.
 Start from the [playbook overview](00-overview.md) for how the pieces fit, then
 follow each item below to the doc that owns the surface it touches.
 
-- The backplane and the out-of-process question touch
-  [`04-openiddict-server.md`](04-openiddict-server.md).
-- The state-to-browser binding and the cross-site redirect test touch
-  [`09-browser-login-bff.md`](09-browser-login-bff.md).
-- The authorization uniqueness guard touches
+- The backplane, the out-of-process question, and the signing-key custody note
+  touch [`04-openiddict-server.md`](04-openiddict-server.md).
+- The state-to-browser binding (now a requirement of task `09`) and the cross-site
+  redirect test touch [`09-browser-login-bff.md`](09-browser-login-bff.md).
+- The authorization uniqueness guard (now a requirement of task `07`) touches
   [`07-revocation-hooks.md`](07-revocation-hooks.md).
 - The cross-site redirect test lands in
   [`14-test-suite.md`](14-test-suite.md).

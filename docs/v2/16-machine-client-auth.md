@@ -24,8 +24,9 @@ operable.
 
 - A confidential client registration per trusted gateway or service, with a
   client secret that is the durable credential.
-- A machine-client-to-tenant authorization gate, the client analog of the
-  `TenantAccess` gate.
+- A machine-client-to-tenant authorization gate, `IClientTenantAccessGate`, the
+  client analog of the `TenantAccess` gate, backed by the `ClientTenantAccess`
+  entity.
 - A provisioning surface on the sys-admin API that creates a client, returns its
   secret once, rotates the secret, and revokes the client.
 - A machine-caller marker on the issued token (for example an `auth_type` claim)
@@ -46,7 +47,11 @@ build.
 - The spike's proven client-credentials path: the confidential `spike-client` in
   `spike/src/Idmt.Spike.Host/Seeding/IdmtSpikeSeeder.cs`, and
   `AllowClientCredentialsFlow()` in
-  `spike/src/Idmt.Spike.Host/Wiring/SpikeWiring.cs`.
+  `spike/src/Idmt.Spike.Host/Wiring/SpikeWiring.cs`. One deviation: where the
+  spike passed the target tenant as a custom `tenant` form field, the product
+  registers the tenant URN as an OpenIddict resource and uses the standard RFC
+  8707 `resource` parameter instead (decision Ha). Do not carry the custom field
+  forward.
 - The reference design this models, in `preditor-cloud`:
   `src/Domain/Entities/AssetToken.cs` and
   `src/Infrastructure/Auth/AssetTokenAuthenticationHandler.cs`.
@@ -59,7 +64,11 @@ refresh token.
 
 1. The gateway calls `/connect/token` with `grant_type=client_credentials`, its
    `client_id` and secret, and the target tenant as the RFC 8707 `resource`
-   parameter `urn:idmt:tenant:{identifier}`.
+   parameter `urn:idmt:tenant:{identifier}`. The tenant URN is registered as an
+   OpenIddict resource (the seeder registers each tenant's URN, see
+   [`13-seeding-bootstrap.md`](13-seeding-bootstrap.md)), so this is the standard
+   `resource` parameter, not the spike's custom `tenant` form field. Machine
+   clients do not rely on that custom field.
 2. The machine-client-to-tenant gate runs at issuance and rejects the request if
    the client is not authorized for that tenant.
 3. OpenIddict issues a reference access token whose audience is the tenant URN,
@@ -94,14 +103,23 @@ secrets at rest by default, so you do not store the raw value.
 ## The machine-client-to-tenant gate
 
 A machine token for tenant T is issued only if the client is authorized for
-tenant T. This is the client analog of the `TenantAccess` gate in
-[`06-tenant-access-gate.md`](06-tenant-access-gate.md), and it closes the same
-hole: without it, any registered client could request a token for any tenant by
-varying the `resource` parameter.
+tenant T. The gate is `IClientTenantAccessGate`, the client analog of the
+`TenantAccess` gate in [`06-tenant-access-gate.md`](06-tenant-access-gate.md),
+declared in [`02-core-domain.md`](02-core-domain.md) with the signature
+`Task<bool> CanAccessAsync(string clientId, string tenantIdentifier, CancellationToken ct)`.
+It closes the same hole: without it, any registered client could request a token
+for any tenant by varying the `resource` parameter.
 
-You store a client-to-tenant authorization (a `ClientTenantAccess` analog of
-`TenantAccess`, with the same active and optional-expiry shape) and check it at
-token issuance, before the token is created. The `preditor-cloud` handler proves
+You store a client-to-tenant authorization in the `ClientTenantAccess` entity
+(the client analog of `TenantAccess`, with the same active and optional-expiry
+shape), defined in [`02-core-domain.md`](02-core-domain.md) and persisted in the
+multi-tenant application context per
+[`03-persistence-and-contexts.md`](03-persistence-and-contexts.md). The gate is
+the issuance gate for the client-credentials grant: it runs at the single
+public-grant `ProcessSignInContext` handler in
+[`06-tenant-access-gate.md`](06-tenant-access-gate.md), which routes the
+client-credentials grant to `IClientTenantAccessGate` (no user subject) and
+rejects denials with `context.Reject(...)`. The `preditor-cloud` handler proves
 why this matters: it performs an explicit tenant-match and fails a token
 presented under the wrong tenant. In v2 the audience binding plus this issuance
 gate give you the same guarantee on the single validation path.
