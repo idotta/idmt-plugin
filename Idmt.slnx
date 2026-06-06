@@ -3,11 +3,15 @@
     <Project Path="samples/Idmt.BasicSample/Idmt.BasicSample.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Idmt.Architecture.Tests/Idmt.Architecture.Tests.csproj" />
     <Project Path="tests/Idmt.BasicSample.Tests/Idmt.BasicSample.Tests.csproj" />
     <Project Path="tests/Idmt.UnitTests/Idmt.UnitTests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Idmt.Migrator/Idmt.Migrator.csproj" />
   </Folder>
+  <Project Path="Idmt.Core/Idmt.Core.csproj" />
+  <Project Path="Idmt.AspNetCore/Idmt.AspNetCore.csproj" />
+  <Project Path="Idmt.Mfa/Idmt.Mfa.csproj" />
   <Project Path="Idmt.Plugin/Idmt.Plugin.csproj" />
 </Solution>

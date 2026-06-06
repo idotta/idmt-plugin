@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- OpenIddict server and store (pinned to the spike's proven versions). -->
+    <PackageReference Include="OpenIddict.AspNetCore" Version="7.5.0" />
+    <PackageReference Include="OpenIddict.EntityFrameworkCore" Version="7.5.0" />
+
+    <!-- Finbuckle multi-tenancy and its Identity/EF Core bridges. -->
+    <PackageReference Include="Finbuckle.MultiTenant.AspNetCore" Version="10.0.3" />
+    <PackageReference Include="Finbuckle.MultiTenant.EntityFrameworkCore" Version="10.0.3" />
+    <PackageReference Include="Finbuckle.MultiTenant.Identity.EntityFrameworkCore" Version="10.0.3" />
+
+    <!-- ASP.NET Core Identity backed by EF Core (the store binding lives here, not in Core). -->
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.3" />
+
+    <!-- Persisted, shared Data Protection key ring (see 09-browser-login-bff.md). -->
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Idmt.Core\Idmt.Core.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Idmt.Core is non-packable, so bundle its assembly into this package. -->
+  <PropertyGroup>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludeCoreAssembly</TargetsForTfmSpecificBuildOutput>
+  </PropertyGroup>
+  <Target Name="IncludeCoreAssembly">
+    <ItemGroup>
+      <BuildOutputInPackage Include="$(OutputPath)Idmt.Core.dll" />
+    </ItemGroup>
+  </Target>
+
+</Project>
