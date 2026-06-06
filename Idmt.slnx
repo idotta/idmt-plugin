@@ -4,6 +4,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Idmt.Architecture.Tests/Idmt.Architecture.Tests.csproj" />
+    <Project Path="tests/Idmt.Core.Tests/Idmt.Core.Tests.csproj" />
     <Project Path="tests/Idmt.BasicSample.Tests/Idmt.BasicSample.Tests.csproj" />
     <Project Path="tests/Idmt.UnitTests/Idmt.UnitTests.csproj" />
   </Folder>
