@@ -33,6 +33,8 @@ Adopt a **canonical-identity** model for all Identity tables, with tenant associ
 
 Drop `TenantId` from **all** Identity tables: `IdmtUser`, `IdmtRole`, `AspNetUserClaims`, `AspNetUserLogins`, `AspNetUserTokens`, `AspNetRoleClaims`. Retire `AspNetUserRoles` (its job moves to `TenantAccessRole`).
 
+> **Superseded for `IdmtRole` by [ADR-0002 §2.7](0002-idmt-v2-openiddict-authorization-layer.md#27-canonical-identity-carried-from-adr-0001).** `IdmtRole` remains per-tenant in v2: it keeps an explicit, declared `TenantId` column (not a Finbuckle shadow column), scoped by explicit query rather than a Finbuckle tenant filter, because issuance projects role claims at the no-ambient-tenant token endpoint. See [docs/v2/03a](../docs/v2/03a-idmtdbcontext-base-class-rectification.md).
+
 ```text
 IdmtUser
   Id                      uuid PK
@@ -262,7 +264,7 @@ For PreditorCloud's pre-prod state: force a password reset for all users at cuto
 2. Run dry-run consolidation; review divergence report.
 3. Enter maintenance window. Drop active sessions.
 4. Consolidate `IdmtUser` rows; populate `TenantAccess`, `TenantAccessRole`, `SysRoleAssignment` from the old shadow-row + role tables.
-5. Drop `TenantId` from Identity tables; drop `AspNetUserRoles`.
+5. Drop `TenantId` from Identity tables; drop `AspNetUserRoles`. (Superseded for `IdmtRole` by ADR-0002 §2.7: `IdmtRole` keeps an explicit `TenantId` column. v2 is greenfield, so this migration step does not run; see ADR-0002 §3.)
 6. Force password reset email to all users.
 7. Deploy new authorization stack.
 8. Smoke-test §4.
@@ -327,4 +329,4 @@ CI must enforce the new isolation guarantees. Without these, the loss of physica
 - CLAUDE.md §"Auth Flow" — current login flow.
 - Okta October 2023 security incident — root-account model failure mode (cited as anti-pattern, not as direct precedent).
 - ASP.NET Core Identity — `UserManager.GenerateChangeEmailTokenAsync` / `ChangeEmailAsync`.
-- Finbuckle.MultiTenant — `IsMultiTenant()` is **not** applied to Identity tables under this design.
+- Finbuckle.MultiTenant — `IsMultiTenant()` is **not** applied to any IDMT Identity table under this design (including `IdmtRole`, whose tenant scoping is an explicit `TenantId` column queried explicitly). `IdmtDbContext` implements `IMultiTenantDbContext` so that `IsMultiTenant()` remains available to consumers for their own application entities; see [docs/v2/03a](../docs/v2/03a-idmtdbcontext-base-class-rectification.md).

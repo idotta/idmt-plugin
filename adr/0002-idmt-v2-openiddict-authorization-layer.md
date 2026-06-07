@@ -271,7 +271,11 @@ The identity model from ADR-0001 stays, and the access gate gets stronger. This
 is the part of ADR-0001 that v2 keeps rather than supersedes.
 
 `IdmtUser` remains the global canonical identity, one row per human, with a
-globally unique normalized email. `IdmtRole` remains per-tenant. `SysRole`
+globally unique normalized email. `IdmtRole` remains per-tenant via an explicit,
+declared `TenantId` column scoped by explicit query, not a Finbuckle filter,
+because issuance projects role claims at the no-ambient-tenant token endpoint
+(see [docs/v2/06-tenant-access-gate.md](../docs/v2/06-tenant-access-gate.md) and
+[docs/v2/03a](../docs/v2/03a-idmtdbcontext-base-class-rectification.md)). `SysRole`
 remains the global system-role flag. `TenantAccess` remains the user-to-tenant
 edge with `IsActive` and optional `ExpiresAt`. The uniform `TenantAccess` gate
 remains: no user, including a system administrator, gets a token for a tenant

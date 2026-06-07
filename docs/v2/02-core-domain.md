@@ -89,7 +89,11 @@ flag), and `LastLoginAt`. There is exactly one row per human regardless of how
 many tenants that human can reach.
 
 `IdmtRole` is the per-tenant role. It extends `IdentityRole<Guid>` and adds a
-`TenantId` string, so a role name scopes to a tenant. System authority does not
+`TenantId` string, so a role name scopes to a tenant. The scoping is explicit
+(callers query by `TenantId`), not a Finbuckle filter, because issuance projects
+role claims at the no-ambient-tenant token endpoint (see
+[03-persistence-and-contexts.md](03-persistence-and-contexts.md) and
+[06-tenant-access-gate.md](06-tenant-access-gate.md)). System authority does not
 live here: post-canonicalization, `SysAdmin` and `SysSupport` are not seeded as
 per-tenant role rows. They come from `IdmtUser.SysRole` and the uniform gate. The
 default role catalog (`IdmtDefaultRoleTypes.DefaultRoles`) gains a designated
@@ -129,7 +133,9 @@ public enum SysRoleKind
 }
 
 // Global canonical identity: one row per human, globally unique normalized
-// email, no TenantId. (Base class nuance is discussed below.)
+// email, no TenantId. It is global by construction: IdmtDbContext derives from
+// the plain IdentityDbContext (not Finbuckle's identity context), so no Identity
+// table is tenant-stamped. See 03-persistence-and-contexts.md.
 public class IdmtUser : IdentityUser<Guid>
 {
     public override Guid Id { get; set; } = Guid.CreateVersion7();

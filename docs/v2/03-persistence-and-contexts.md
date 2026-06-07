@@ -4,9 +4,12 @@ The v2 persistence layer is a physical split into three Entity Framework Core
 contexts, each with its own independent migration history. This is a real
 context split, not a single context presented as "conceptually consolidated":
 the product ships the three contexts named below and the spike proved the split,
-not a merge. `IdmtDbContext` is the multi-tenant application and identity
-context: it holds the canonical identity tables and lets Finbuckle stamp
-`TenantId` on save. `IdmtOpenIddictDbContext` is a separate, tenant-agnostic
+not a merge. `IdmtDbContext` is the application and identity context: it derives
+from ASP.NET Core Identity's `IdentityDbContext<IdmtUser, IdmtRole, Guid>` and
+implements Finbuckle's `IMultiTenantDbContext`. The IDMT identity tables are
+global by construction (the plain Identity base never stamps them), and the
+context provides Finbuckle stamping and filtering for the `[MultiTenant]`
+application entities a consumer adds. `IdmtOpenIddictDbContext` is a separate, tenant-agnostic
 context that hosts the OpenIddict stores and never derives from Finbuckle's
 `MultiTenantDbContext`. `IdmtTenantStoreDbContext` is the dedicated tenant-store
 context that persists the tenant metadata Finbuckle resolves against. You split
@@ -31,9 +34,10 @@ a shared database (see [Migrations](#migrations)).
 
 - `IdmtDbContext`: the multi-tenant application and identity context. It holds
   `IdmtUser`, `IdmtRole`, `TenantAccess`, `ClientTenantAccess`, the system-role
-  assignment, and the email-change staging. Finbuckle stamps `TenantId` on the
-  multi-tenant entities at `SaveChanges` and fixes the context's tenant for its
-  lifetime.
+  assignment, and the email-change staging. Its own Identity and gate tables are
+  not Finbuckle-managed; it implements `IMultiTenantDbContext` and stamps
+  `TenantId` at `SaveChanges` only on the `[MultiTenant]` entities a consumer
+  adds.
 - `IdmtOpenIddictDbContext`: the tenant-agnostic OpenIddict context. It hosts
   the OpenIddict application, authorization, scope, and token stores through
   `builder.UseOpenIddict()`, plus the support-audit table (owned here for
@@ -68,14 +72,19 @@ contract for what the ADR fixes in prose.
 ## The multi-tenant application context
 
 `IdmtDbContext` is the application and identity context. It holds the canonical
-identity model and the tenant-scoped application tables, and it lets Finbuckle
-do its full job: stamp `TenantId` on save and apply read-side query filters per
-the ambient tenant.
+identity model and hosts the tenant-scoped application tables a consumer adds. It
+derives from `IdentityDbContext<IdmtUser, IdmtRole, Guid>` and implements
+`IMultiTenantDbContext`, so the Identity tables stay global while Finbuckle does
+its full job (stamp `TenantId` on save, apply read-side query filters per the
+ambient tenant) for any `[MultiTenant]` entity a consumer marks.
 
 The tables it owns are the application side of v2:
 
 - `IdmtUser`: the global canonical identity, one row per human.
-- `IdmtRole`: the per-tenant role.
+- `IdmtRole`: the per-tenant role, scoped by an explicit `TenantId` column and
+  explicit queries, not by a Finbuckle filter (issuance reads roles at the
+  no-ambient-tenant token endpoint; see
+  [the tenant access gate](06-tenant-access-gate.md)).
 - `TenantAccess`: the user-to-tenant edge the issuance gate queries.
 - `ClientTenantAccess`: the machine-client-to-tenant edge the client-credentials
   gate queries (the client analog of `TenantAccess`, defined in
@@ -91,20 +100,29 @@ tenant-agnostic OpenIddict context](#the-tenant-agnostic-openiddict-context),
 with [08-support-token-mint.md](08-support-token-mint.md) authoritative for the
 atomicity guarantee that drives the placement.
 
-Finbuckle stamps `TenantId` onto tracked multi-tenant entities on `SaveChanges`
-and treats the context's tenant as fixed for its lifetime. The spike split the
-application side across two contexts to isolate each half of gate 4:
-`IdmtIdentityDbContext` holds the global identity rows plus `TenantAccess` as a
-plain (non-multi-tenant) context, because the gate must query `TenantAccess` by
-`(userId, tenantId)` at the token endpoint where there is no ambient tenant,
-and `IdmtTenantDbContext` extends `MultiTenantDbContext` and holds the
-`[MultiTenant]` entity whose `TenantId` is stamped on save. The product keeps
-this as a real physical split rather than collapsing it into one
-`MultiTenantDbContext`, because the gate's no-ambient-tenant query is exactly
-what the split proves works. The names above are the spike's; the product's
-application-side context is `IdmtDbContext`, and where the gate must read
-`TenantAccess` with no ambient tenant it does so through the plain (non-Finbuckle)
-half of that split.
+Identity tables must stay readable at the token endpoint, where the ambient
+tenant is unset: issuance queries `TenantAccess` by `(userId, tenant)` and
+projects a user's `IdmtRole` assignments for the resolved tenant, both with the
+tenant passed explicitly. So no IDMT identity table is Finbuckle-managed. The
+product achieves this by construction rather than by stamping then undoing:
+`IdmtDbContext` derives from the plain `IdentityDbContext<IdmtUser, IdmtRole,
+Guid>`, which never stamps Identity tables, and implements `IMultiTenantDbContext`
+(the `TenantInfo` / `TenantMismatchMode` / `TenantNotSetMode` members, a
+`ConfigureMultiTenant()` call in `OnModelCreating`, and `EnforceMultiTenant()` in
+the `SaveChanges` overrides). That interface implementation is what gives
+consumer-added `[MultiTenant]` entities the same stamping and filtering
+Finbuckle's `MultiTenantDbContext` would, without applying any of it to the
+Identity tables. `IdmtRole` keeps a real, declared `TenantId` column and a
+`(TenantId, Name)` unique index, scoped by explicit query.
+
+The spike proved the composition with a two-context split on the application
+side: `IdmtIdentityDbContext`, a plain context holding the global identity rows
+plus `TenantAccess`, and `IdmtTenantDbContext`, a `MultiTenantDbContext` holding
+a `[MultiTenant]` entity stamped on save. The product folds both halves into one
+`IdmtDbContext` using the `IdentityDbContext` + `IMultiTenantDbContext` shape
+above: the global half is the default (unmarked Identity and gate tables) and the
+stamped half is any `[MultiTenant]` entity a consumer marks. There is no
+de-tenant / rip-out step.
 
 ## The tenant-agnostic OpenIddict context
 
