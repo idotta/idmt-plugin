@@ -74,13 +74,24 @@ self-contained JWT carries its claims on the wire, so it stays valid until it
 expires no matter what the server does, which reintroduces the C1 revocation gap.
 IDMT does not offer self-contained access tokens as an option.
 
-You configure this on the server with `UseReferenceAccessTokens()` and
-`DisableAccessTokenEncryption()`. The first makes the access token a reference
-handle backed by a store entry. The second keeps the opaque handle from being an
-encrypted self-contained payload, so the value is a reference to server-side data
-rather than a sealed envelope the client carries. ID tokens for OpenID Connect
-clients remain signed JWTs, which is protocol-correct and not a revocation
-concern.
+You configure this on the server with `UseReferenceAccessTokens()`. That makes the
+access token a reference handle backed by a store entry: the wire value the client
+carries is an opaque identifier, and the claims live in the server-side token
+store. ID tokens for OpenID Connect clients remain signed JWTs, which is
+protocol-correct and not a revocation concern.
+
+OpenIddict's default access-token encryption stays **on**. It is tempting to add
+`DisableAccessTokenEncryption()` (the spike did), but that is wrong for this
+architecture and is not called. With reference tokens the wire value is opaque
+either way; the flag only changes the *stored* payload from an encrypted envelope
+(JWE) to a signed-only JWT, which would leave the subject, scopes, and tenant
+audience readable to anyone with token-table read access. Because validation is
+co-hosted and local (`UseLocalServer()`), it holds the keys and decrypts the
+payload transparently, so encryption costs nothing here. The only documented
+reason to disable it is a third-party resource server that cannot do JWE, which
+bearer-only co-hosting (ADR §2.4) rules out. Keeping it on is also what the rest
+of ADR 0002 assumes: the audience binding relies on the tenant living "only in the
+encrypted payload" (§2.3).
 
 ```csharp
 services.AddOpenIddict()
@@ -89,8 +100,8 @@ services.AddOpenIddict()
     .AddServer(o =>
     {
         // Reference (opaque) access tokens: the locked engine choice.
+        // Access-token encryption stays on (the OpenIddict default).
         o.UseReferenceAccessTokens();
-        o.DisableAccessTokenEncryption();
         // ... grants, scopes, endpoints, certificates below.
     });
 ```
