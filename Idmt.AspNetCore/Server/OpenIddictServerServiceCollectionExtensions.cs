@@ -70,6 +70,13 @@ public static class OpenIddictServerServiceCollectionExtensions
                     .EnableTokenEndpointPassthrough()          // IDMT gate handler runs here (task 06)
                     .EnableAuthorizationEndpointPassthrough(); // IDMT login handler runs here (task 09)
 
+                // The refresh audience precedence rule (ADR §2.6 — a tenant-A refresh token
+                // cannot mint a tenant-B access token via resource=urn:idmt:tenant:B) is
+                // enforced by the engine's own ValidateResources: tenant URNs are registered
+                // as scopes, never as static resources, so a stray tenant resource parameter
+                // is an unknown target and is rejected. AddIdmtMultiTenancy installs a startup
+                // guard that keeps tenant URNs out of Options.Resources so this holds.
+
                 // Certificates and DisableTransportSecurityRequirement (dev/test only)
                 // are supplied by the consumer; the library ships none.
                 configureServer?.Invoke(o);
@@ -79,7 +86,9 @@ public static class OpenIddictServerServiceCollectionExtensions
                 o.UseLocalServer();              // co-hosted: reads the shared token store
                 o.EnableTokenEntryValidation();  // per-request revocation — LOCKED (ADR §2.3)
                 o.UseAspNetCore();
-                // Task 05 registers the IDMT per-request audience handler here.
+                // The per-request audience handler (ADR §2.6, §2.9) is registered by
+                // AddIdmtMultiTenancy, which owns the Finbuckle tenant accessor it depends
+                // on. configureValidation remains the additive (non-subtractive) seam.
                 configureValidation?.Invoke(o);
             });
 

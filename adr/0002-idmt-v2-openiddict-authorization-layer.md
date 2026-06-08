@@ -225,23 +225,43 @@ resource, but both stamping it and checking it are code IDMT owns; the engine
 does neither dynamically on its own.
 
 At issuance, the tenant is resolved and stamped into the access token's `aud`
-claim. The authorization-code flow resolves the tenant at `/connect/authorize`.
-The refresh grant reaches `/connect/token` with no tenant route segment, so the
-client supplies the tenant through the RFC 8707 `resource` parameter as
-`urn:idmt:tenant:{identifier}`. (Support tokens carry no public grant; IDMT mints
-them server-side and sets their `aud` directly — see
-[§2.8](#28-system-support-through-a-server-side-token-mint).) We lock the `resource`-parameter
-convention rather than route-based resolution (`/{tenant}/connect/token`) so the
-OpenID Connect discovery document stays single-issuer and conformant. The cost is
-that clients must send the `resource` parameter, which is a documented
-requirement.
+claim. Each tenant is published as a per-tenant OpenIddict scope,
+`urn:idmt:tenant:{identifier}`, whose registered resource is that same URN, so a
+grant that carries the tenant scope has the URN resolved into the token's audience
+at sign-in. The authorization-code flow resolves the tenant at `/connect/authorize`,
+reached through a tenant-aware route, and carries the tenant scope into the issued
+access token and its refresh token. The refresh grant then reaches `/connect/token`
+with no tenant route segment and needs none: the tenant scope is already part of
+the presented refresh token's grant, so the refreshed access token is re-bound to
+the same tenant automatically. (Support tokens carry no public grant; IDMT mints
+them server-side and sets their `aud` directly, see
+[§2.8](#28-system-support-through-a-server-side-token-mint).) A single token
+endpoint, rather than per-tenant route endpoints (`/{tenant}/connect/token`),
+keeps the OpenID Connect discovery document single-issuer and conformant.
 
-For a refresh, the tenant is authoritative from the presented refresh token's
-original `aud`, not from the `resource` parameter. If a client sends a `resource`
-parameter on refresh, it must match the token's `aud`; a mismatch is rejected.
-This precedence prevents a client from presenting a tenant-A refresh token with
-`resource=urn:idmt:tenant:B` to mint a tenant-B access token. The §4 cross-grant
-audience-isolation test asserts exactly this rejection.
+A refresh cannot switch tenant. The binding is authoritative from the tenant scope
+carried in the presented refresh token, and the refreshed token can only be
+re-bound to that same tenant. A client cannot substitute a different tenant by
+passing `resource=urn:idmt:tenant:B`: tenant URNs are published as scopes, never as
+static OpenIddict resources, so a stray tenant `resource` parameter names an
+unregistered target and the engine's own `ValidateResources` rejects it. A startup
+self-check ([§2.9](#29-the-opinionated-and-customizable-seam)) keeps tenant URNs
+out of the static resource set so that rejection always holds. This blocks the
+escalation where a tenant-A refresh token mints a tenant-B access token, and the
+§4 cross-grant audience-isolation test asserts the rejection.
+
+> Correction (2026-06): an earlier draft of this section had the refresh client
+> supply its tenant through the RFC 8707 `resource` parameter, with a matching
+> value accepted and a mismatch rejected by a dedicated IDMT handler. That
+> mechanism does not hold. OpenIddict validates the `resource` parameter only
+> against the static resource set, which correctly never contains the per-tenant
+> URNs, so every tenant `resource` parameter on refresh is rejected whether it
+> matches or not. The binding instead rides the per-tenant scope carried in the
+> refresh token, and the prohibition on switching tenants is enforced by the
+> engine plus the §2.9 startup guard described above. The dedicated
+> refresh-precedence handler was removed as redundant: it could never run before
+> the engine's own rejection, and the placement that did run could not read the
+> granted tenant.
 
 At the resource, OpenIddict's built-in audience validation compares `aud` only
 against a **static** configured audience set, not against a per-request resolved
